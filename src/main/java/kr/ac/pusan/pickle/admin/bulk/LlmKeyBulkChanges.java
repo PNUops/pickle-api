@@ -80,7 +80,8 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
     }
 
     @Override
-    void validate(AdminBulkChangeRequest request, List<FieldValidationError> errors) {
+    void validate(AdminBulkChangeRequest request, List<FieldValidationError> errors,
+            Instant now) {
         AdminBulkChangeSpec change = request.change();
         switch (change.kind()) {
             case LLM_KEY_LIMITS -> {

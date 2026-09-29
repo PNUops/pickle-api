@@ -21,6 +21,7 @@ import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.llm.CreditModelPatterns;
@@ -61,8 +62,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
 
 /** Administrator reads and state changes for LLM API keys. */
@@ -362,7 +361,8 @@ public class AdminLlmKeyService {
             BigDecimal limit = key.getCreditLimit();
             var reset = key.getCreditLimitReset();
             long internalKeyId = key.getId();
-            afterCommit(() -> provisioner.updateLimitAfterChange(
+            afterCommit("openrouter limit update " + key.getPublicId(),
+                    () -> provisioner.updateLimitAfterChange(
                     internalKeyId, hash, limit, reset));
         } else if (moneyChanged && key.getCreditLimit().signum() > 0) {
             // First money on a key with no OpenRouter half yet. The branch
@@ -370,7 +370,7 @@ public class AdminLlmKeyService {
             // this the key waits for the sweep, which is the same
             // several-minute silence a fresh approval used to get.
             long internalKeyId = key.getId();
-            afterCommit(() -> {
+            afterCommit("enqueue openrouter provision " + key.getPublicId(), () -> {
                 try {
                     jobScheduler.enqueue(() -> provisioner.provision(internalKeyId));
                 } catch (RuntimeException e) {
@@ -494,7 +494,7 @@ public class AdminLlmKeyService {
             // key on seeing this one, and the sweep would only return in a
             // few minutes; queue the attempt now, as the limits path does.
             long internalKeyId = key.getId();
-            afterCommit(() -> {
+            afterCommit("enqueue openrouter provision " + key.getPublicId(), () -> {
                 try {
                     jobScheduler.enqueue(() -> provisioner.provision(internalKeyId));
                 } catch (RuntimeException e) {
@@ -522,7 +522,8 @@ public class AdminLlmKeyService {
         if (key.getOpenrouterKeyHash() != null) {
             String hash = key.getOpenrouterKeyHash();
             long internalKeyId = key.getId();
-            afterCommit(() -> provisioner.setDisabledAfterStatusChange(
+            afterCommit("openrouter status change " + key.getPublicId(),
+                    () -> provisioner.setDisabledAfterStatusChange(
                     internalKeyId, hash, true));
         }
     }
@@ -543,7 +544,8 @@ public class AdminLlmKeyService {
         if (key.getOpenrouterKeyHash() != null) {
             String hash = key.getOpenrouterKeyHash();
             long internalKeyId = key.getId();
-            afterCommit(() -> provisioner.setDisabledAfterStatusChange(
+            afterCommit("openrouter status change " + key.getPublicId(),
+                    () -> provisioner.setDisabledAfterStatusChange(
                     internalKeyId, hash, false));
         }
     }
@@ -569,7 +571,8 @@ public class AdminLlmKeyService {
         String openrouterKeyHash = key.getOpenrouterKeyHash();
         if (openrouterKeyHash != null) {
             long internalKeyId = key.getId();
-            afterCommit(() -> provisioner.deleteAfterRevoke(internalKeyId, openrouterKeyHash));
+            afterCommit("openrouter delete " + key.getPublicId(),
+                    () -> provisioner.deleteAfterRevoke(internalKeyId, openrouterKeyHash));
         }
     }
 
@@ -673,13 +676,8 @@ public class AdminLlmKeyService {
         return new References(workspaces, orgs, requests, accounts);
     }
 
-    private static void afterCommit(Runnable action) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                action.run();
-            }
-        });
+    private static void afterCommit(String label, Runnable action) {
+        AfterCommit.run(label, action);
     }
 
     private static ApiException notFound() {

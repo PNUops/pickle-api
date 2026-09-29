@@ -34,6 +34,15 @@ public record AdminBulkChangeSpec(
         @Schema(description = "kind가 VM_DELETION일 때") @Valid
         @Nullable AdminBulkVmDeletionChange vmDeletion,
 
+        @Schema(description = "kind가 DOMAIN_RENEWAL일 때") @Valid
+        @Nullable AdminBulkDomainRenewalChange domainRenewal,
+
+        @Schema(description = "kind가 DOMAIN_FORCE_RELEASE일 때") @Valid
+        @Nullable AdminBulkDomainForceReleaseChange domainForceRelease,
+
+        @Schema(description = "kind가 DOMAIN_VERIFY일 때") @Valid
+        @Nullable AdminBulkDomainVerifyChange domainVerify,
+
         @Schema(description = "kind가 ACCESS일 때") @Valid
         @Nullable AdminBulkAccessChange access) {
 }

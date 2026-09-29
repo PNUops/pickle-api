@@ -23,6 +23,7 @@ import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeSpec;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import kr.ac.pusan.pickle.llm.LlmGatewayGenerations;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.stereotype.Service;
@@ -71,16 +72,28 @@ public class AdminBulkChangeService {
     @Transactional(readOnly = true)
     public AdminBulkChangePreviewResponse preview(AuthenticatedUser actor,
             AdminBulkChangeRequest request) {
-        BulkChangeHandler<?> handler = validate(request, false);
-        return new AdminBulkChangePreviewResponse(preview(handler, actor, request));
+        Instant now = clock.instant();
+        BulkChangeHandler<?> handler = validate(request, false, now);
+        return new AdminBulkChangePreviewResponse(preview(handler, actor, request, now));
     }
 
     @Transactional
     public AdminBulkChangeApplyResponse apply(AuthenticatedUser actor,
             AdminBulkChangeRequest request, String ip) {
-        BulkChangeHandler<?> handler = validate(request, true);
+        Instant now = clock.instant();
+        BulkChangeHandler<?> handler = validate(request, true, now);
         UUID batchId = UUID.randomUUID();
-        List<AdminBulkChangeApplyItem> items = apply(handler, actor, request, batchId, ip);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        // Every after-commit callback of this call is isolated from the
+        // others, the summary's included, so one failed enqueue, push or
+        // audit insert does not drop the rest. The summary is registered
+        // first and filled in after the targets: callbacks run in
+        // registration order, and it holds the counts only once they exist.
+        List<AdminBulkChangeApplyItem> items = AfterCommit.isolating("batch " + batchId, () -> {
+            auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                    AuditService.ADMIN_BULK_CHANGE, "bulk_change", batchId, summary, ip);
+            return apply(handler, actor, request, batchId, ip, now);
+        });
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (AdminBulkChangeResult result : AdminBulkChangeResult.values()) {
             counts.put(result.name(), 0);
@@ -88,21 +101,17 @@ public class AdminBulkChangeService {
         for (AdminBulkChangeApplyItem item : items) {
             counts.merge(item.result().name(), 1, Integer::sum);
         }
-        Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("batchId", batchId);
         summary.put("targetType", request.targetType().name());
         summary.put("kind", request.change().kind().name());
         summary.put("targets", items.size());
         summary.put("counts", counts);
-        auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.ADMIN_BULK_CHANGE, "bulk_change", batchId, summary, ip);
         return new AdminBulkChangeApplyResponse(batchId, items);
     }
 
     private <T> List<AdminBulkChangePreviewItem> preview(BulkChangeHandler<T> handler,
-            AuthenticatedUser actor, AdminBulkChangeRequest request) {
+            AuthenticatedUser actor, AdminBulkChangeRequest request, Instant now) {
         AdminBulkChangeSpec change = request.change();
-        Instant now = clock.instant();
         Map<UUID, T> targets = handler.load(request);
         List<AdminBulkChangePreviewItem> items = new ArrayList<>();
         for (UUID targetId : request.targetIds()) {
@@ -128,7 +137,8 @@ public class AdminBulkChangeService {
     }
 
     private <T> List<AdminBulkChangeApplyItem> apply(BulkChangeHandler<T> handler,
-            AuthenticatedUser actor, AdminBulkChangeRequest request, UUID batchId, String ip) {
+            AuthenticatedUser actor, AdminBulkChangeRequest request, UUID batchId, String ip,
+            Instant validatedAt) {
         AdminBulkChangeSpec change = request.change();
         Map<UUID, String> fingerprints = request.fingerprints();
         Map<UUID, T> targets = handler.load(request);
@@ -155,7 +165,7 @@ public class AdminBulkChangeService {
                         handler.fingerprintValues(target, change)))) {
                     continue;
                 }
-                if (handler.judge(actor, target, change, clock.instant()).writes()) {
+                if (handler.judge(actor, target, change, validatedAt).writes()) {
                     anyWrite = true;
                     break;
                 }
@@ -167,6 +177,9 @@ public class AdminBulkChangeService {
         for (UUID targetId : reachable) {
             handler.lock(targets.get(targetId));
         }
+        // Judged at the moment the rows are held, not the moment the request
+        // arrived: a lock wait may have been long. The request-level checks
+        // keep the earlier instant, the one they were answered at.
         Instant now = clock.instant();
         Map<UUID, AdminBulkChangeApplyItem> results = new LinkedHashMap<>();
         for (UUID targetId : order) {
@@ -219,7 +232,8 @@ public class AdminBulkChangeService {
      * one 422: the kind and target type agree, exactly the kind's member is
      * present, no id repeats, and (on apply) every target has a fingerprint.
      */
-    private BulkChangeHandler<?> validate(AdminBulkChangeRequest request, boolean applying) {
+    private BulkChangeHandler<?> validate(AdminBulkChangeRequest request, boolean applying,
+            Instant now) {
         List<FieldValidationError> errors = new ArrayList<>();
         AdminBulkChangeSpec change = request.change();
         AdminBulkChangeKind kind = change.kind();
@@ -245,7 +259,7 @@ public class AdminBulkChangeService {
             throw new IllegalStateException("no handler for bulk change kind " + kind);
         }
         if (errors.isEmpty()) {
-            handler.validate(request, errors);
+            handler.validate(request, errors, now);
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
@@ -261,6 +275,9 @@ public class AdminBulkChangeService {
         members.put(AdminBulkChangeKind.VM_PERIOD, change.vmPeriod());
         members.put(AdminBulkChangeKind.VM_POWER, change.vmPower());
         members.put(AdminBulkChangeKind.VM_DELETION, change.vmDeletion());
+        members.put(AdminBulkChangeKind.DOMAIN_RENEWAL, change.domainRenewal());
+        members.put(AdminBulkChangeKind.DOMAIN_FORCE_RELEASE, change.domainForceRelease());
+        members.put(AdminBulkChangeKind.DOMAIN_VERIFY, change.domainVerify());
         members.put(AdminBulkChangeKind.ACCESS, change.access());
         for (AdminBulkChangeKind kind : AdminBulkChangeKind.values()) {
             Object member = members.get(kind);
@@ -281,6 +298,9 @@ public class AdminBulkChangeService {
             case VM_PERIOD -> "vmPeriod";
             case VM_POWER -> "vmPower";
             case VM_DELETION -> "vmDeletion";
+            case DOMAIN_RENEWAL -> "domainRenewal";
+            case DOMAIN_FORCE_RELEASE -> "domainForceRelease";
+            case DOMAIN_VERIFY -> "domainVerify";
             case ACCESS -> "access";
         };
     }

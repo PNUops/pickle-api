@@ -21,6 +21,7 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.networkpolicy.PublicSourcePolicyService;
 import kr.ac.pusan.pickle.networkpolicy.VmNetworkPathOperationStore;
@@ -48,8 +49,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * User HTTP publishing (contract tag {@code publishing}): attach domains to a
@@ -206,7 +205,7 @@ public class PublishingService {
         boolean managed = networkPaths.replaceHttp(vm.getId(), saved.getId(), oldPort, resolvedPort);
         if (!managed && domain.getStatus() == DomainStatus.ACTIVE) {
             long routeId = saved.getId();
-            enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+            enqueueAfterCommit("enqueue route apply #" + routeId, () -> routeApplyJob.apply(routeId));
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_UPDATE,
                 "domain", domain.getPublicId(), Map.of("fqdn", domain.getFqdn(), "port", resolvedPort), ip);
@@ -292,7 +291,8 @@ public class PublishingService {
         // per-user rate limit + per-domain in-flight dedupe bound the abuse.
         rateLimitService.hit("domain_verify", "user:" + actor.id(),
                 RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
-        runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
+        runAfterCommit("enqueue verify domain #" + domainId,
+                () -> domainVerificationJob.requestVerify(domainId));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_VERIFY,
                 "domain", domain.getPublicId(), Map.of("fqdn", domain.getFqdn()), ip);
         return assembler.toDomainDetail(domain, vm.getPublicId());
@@ -385,10 +385,11 @@ public class PublishingService {
         boolean managed = networkPaths.openHttp(domain.getVmId(), routeId, port);
         if (domain.getStatus() == DomainStatus.ACTIVE) {
             if (!managed) {
-                enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+                enqueueAfterCommit("enqueue route apply #" + routeId, () -> routeApplyJob.apply(routeId));
             }
         } else {
-            runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
+            runAfterCommit("enqueue verify domain #" + domainId,
+                () -> domainVerificationJob.requestVerify(domainId));
         }
     }
 
@@ -538,10 +539,11 @@ public class PublishingService {
         boolean managed = networkPaths.openHttp(domain.getVmId(), routeId, port);
         if (domain.getStatus() == DomainStatus.ACTIVE) {
             if (!managed) {
-                enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+                enqueueAfterCommit("enqueue route apply #" + routeId, () -> routeApplyJob.apply(routeId));
             }
         } else {
-            runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
+            runAfterCommit("enqueue verify domain #" + domainId,
+                () -> domainVerificationJob.requestVerify(domainId));
         }
         return domain;
     }
@@ -588,7 +590,7 @@ public class PublishingService {
             live.setGeneration(routeGenerations.next());
             long routeId = live.getId();
             if (!networkPaths.closeHttp(domain.getVmId(), routeId)) {
-                enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+                enqueueAfterCommit("enqueue route apply #" + routeId, () -> routeApplyJob.apply(routeId));
             }
         }
         if (live != null) {
@@ -744,17 +746,12 @@ public class PublishingService {
         return vmIds.isEmpty() ? List.of(-1L) : List.copyOf(vmIds);
     }
 
-    private void enqueueAfterCommit(JobLambda job) {
-        runAfterCommit(() -> jobScheduler.enqueue(job));
+    private void enqueueAfterCommit(String label, JobLambda job) {
+        runAfterCommit(label, () -> jobScheduler.enqueue(job));
     }
 
-    private void runAfterCommit(Runnable action) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                action.run();
-            }
-        });
+    private void runAfterCommit(String label, Runnable action) {
+        AfterCommit.run(label, action);
     }
 
     private static ApiException domainNotServing() {

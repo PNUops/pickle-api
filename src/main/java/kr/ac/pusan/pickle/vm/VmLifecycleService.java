@@ -14,6 +14,7 @@ import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.provisioning.VmPowerJobs;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -24,8 +25,6 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * User-facing VM power control (contract ops startVm/shutdownVm/rebootVm/
@@ -98,7 +97,8 @@ public class VmLifecycleService {
         claimPowerAction(id, PowerAction.START, List.of(VmStatus.STOPPED),
                 "STOPPED 상태의 VM만 시작할 수 있습니다.");
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.start(id, actorId, false));
+        enqueueAfterCommit("enqueue vm start #" + id,
+                () -> vmPowerJobs.start(id, actorId, false));
         return new MessageResponse("VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -110,7 +110,8 @@ public class VmLifecycleService {
         claimPowerAction(id, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
                 "RUNNING 상태의 VM만 종료할 수 있습니다.");
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.shutdown(id, actorId, false));
+        enqueueAfterCommit("enqueue vm shutdown #" + id,
+                () -> vmPowerJobs.shutdown(id, actorId, false));
         return new MessageResponse("VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -125,7 +126,8 @@ public class VmLifecycleService {
             throw powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
         }
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.reboot(id, actorId, false));
+        enqueueAfterCommit("enqueue vm reboot #" + id,
+                () -> vmPowerJobs.reboot(id, actorId, false));
         return new MessageResponse("VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -138,7 +140,8 @@ public class VmLifecycleService {
                 List.of(VmStatus.RUNNING, VmStatus.REBOOTING),
                 "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.forceStop(id, actorId, false));
+        enqueueAfterCommit("enqueue vm forceStop #" + id,
+                () -> vmPowerJobs.forceStop(id, actorId, false));
         return new MessageResponse("VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -201,7 +204,8 @@ public class VmLifecycleService {
                     return powerConflict(id, "STOPPED 상태의 VM만 시작할 수 있습니다.");
                 }
                 recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_START, batchId, ip);
-                enqueueAfterCommit(() -> vmPowerJobs.start(id, actorId, true));
+                enqueueAfterCommit("enqueue vm start #" + id,
+                () -> vmPowerJobs.start(id, actorId, true));
             }
             case SHUTDOWN -> {
                 if (vmRepository.claimPowerAction(id, PowerAction.SHUTDOWN,
@@ -209,7 +213,8 @@ public class VmLifecycleService {
                     return powerConflict(id, "RUNNING 상태의 VM만 종료할 수 있습니다.");
                 }
                 recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_SHUTDOWN, batchId, ip);
-                enqueueAfterCommit(() -> vmPowerJobs.shutdown(id, actorId, true));
+                enqueueAfterCommit("enqueue vm shutdown #" + id,
+                () -> vmPowerJobs.shutdown(id, actorId, true));
             }
             case REBOOT -> {
                 if (vmRepository.claimReboot(id, VmStatus.RUNNING, VmStatus.REBOOTING,
@@ -217,7 +222,8 @@ public class VmLifecycleService {
                     return powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
                 }
                 recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_REBOOT, batchId, ip);
-                enqueueAfterCommit(() -> vmPowerJobs.reboot(id, actorId, true));
+                enqueueAfterCommit("enqueue vm reboot #" + id,
+                () -> vmPowerJobs.reboot(id, actorId, true));
             }
             case FORCE_STOP -> {
                 if (vmRepository.claimPowerAction(id, PowerAction.FORCE_STOP,
@@ -226,7 +232,8 @@ public class VmLifecycleService {
                             "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
                 }
                 recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_FORCE_STOP, batchId, ip);
-                enqueueAfterCommit(() -> vmPowerJobs.forceStop(id, actorId, true));
+                enqueueAfterCommit("enqueue vm forceStop #" + id,
+                () -> vmPowerJobs.forceStop(id, actorId, true));
             }
         }
         return null;
@@ -354,12 +361,7 @@ public class VmLifecycleService {
      * ApprovalService: a crash in the tiny window loses the job; the status
      * poller/reconciler surfaces the drift).
      */
-    private void enqueueAfterCommit(JobLambda job) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                jobScheduler.enqueue(job);
-            }
-        });
+    private void enqueueAfterCommit(String label, JobLambda job) {
+        AfterCommit.run(label, () -> jobScheduler.enqueue(job));
     }
 }

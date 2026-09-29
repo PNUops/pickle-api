@@ -60,9 +60,12 @@ abstract class BulkChangeHandler<T> {
     /**
      * Request-level checks that hold for every target alike (a date before
      * today, a missing reason). Added to {@code errors}; the caller answers
-     * 422 with all of them.
+     * 422 with all of them. {@code now} is the one instant the request is
+     * validated at; an apply judges its targets at a later reading, taken
+     * once the rows are locked.
      */
-    abstract void validate(AdminBulkChangeRequest request, List<FieldValidationError> errors);
+    abstract void validate(AdminBulkChangeRequest request, List<FieldValidationError> errors,
+            Instant now);
 
     /** The targets behind the request's ids, keyed by id; an id nothing answers to is absent. */
     abstract Map<UUID, T> load(AdminBulkChangeRequest request);
