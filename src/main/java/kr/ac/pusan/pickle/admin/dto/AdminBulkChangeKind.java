@@ -16,6 +16,9 @@ public enum AdminBulkChangeKind {
     VM_PERIOD(EnumSet.of(AdminBulkChangeTargetType.VM)),
     VM_POWER(EnumSet.of(AdminBulkChangeTargetType.VM)),
     VM_DELETION(EnumSet.of(AdminBulkChangeTargetType.VM)),
+    DOMAIN_RENEWAL(EnumSet.of(AdminBulkChangeTargetType.DOMAIN)),
+    DOMAIN_FORCE_RELEASE(EnumSet.of(AdminBulkChangeTargetType.DOMAIN)),
+    DOMAIN_VERIFY(EnumSet.of(AdminBulkChangeTargetType.DOMAIN)),
     ACCESS(EnumSet.allOf(AdminBulkChangeTargetType.class));
 
     private final Set<AdminBulkChangeTargetType> targetTypes;

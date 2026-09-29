@@ -720,6 +720,181 @@ class AdminBulkChangeTest {
                 .andExpect(jsonPath("$.errors[0].field").value("change.access.role"));
     }
 
+    // ── domains ────────────────────────────────────────────────────────────
+
+    @Test
+    void domainRenewalBulkMovesExternalDeadlinesAndSkipsTheRest() throws Exception {
+        Instant due = Instant.now().plus(30, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        Instant newDue = Instant.now().plus(90, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        long moving = externalDomain(orgA.getId(), workspaceA, due);
+        long released = externalDomain(orgA.getId(), workspaceA, due);
+        jdbcTemplate.update("update domains set released_at = now() where id = ?", released);
+        long already = externalDomain(orgA.getId(), workspaceA, newDue);
+        long platform = platformDomain(orgA.getId(), workspaceA, false);
+        long foreign = externalDomain(orgB.getId(), workspaceB, due);
+        List<UUID> targets = List.of(pub("domains", moving), pub("domains", released),
+                pub("domains", already), pub("domains", platform), pub("domains", foreign),
+                SeedFixtures.UNKNOWN_ID);
+        Map<String, Object> body = request("DOMAIN", targets, Map.of("kind", "DOMAIN_RENEWAL",
+                "domainRenewal", Map.of("renewDueAt", newDue.toString(), "reason", "학기 연장")));
+
+        JsonNode preview = previewJson(orgManagerToken, body);
+        JsonNode previewed = item(preview, pub("domains", moving));
+        assertThat(previewed.get("applicable").asBoolean()).isTrue();
+        assertThat(previewed.get("fields").get(0).get("field").asString()).isEqualTo("renewDueAt");
+        assertThat(previewed.get("fields").get(0).get("oldValue").asString())
+                .isEqualTo(due.toString());
+        assertThat(previewed.get("fields").get(0).get("newValue").asString())
+                .isEqualTo(newDue.toString());
+        assertThat(item(preview, pub("domains", released)).get("reason").asString())
+                .isEqualTo("INVALID_STATE");
+        assertThat(item(preview, pub("domains", already)).get("fields")).isEmpty();
+        assertThat(item(preview, pub("domains", platform)).get("reason").asString())
+                .isEqualTo("INELIGIBLE");
+        // Another institution's name reads exactly like one that does not exist.
+        JsonNode outside = item(preview, pub("domains", foreign));
+        JsonNode missing = item(preview, SeedFixtures.UNKNOWN_ID);
+        assertThat(outside.get("reason").asString()).isEqualTo("NOT_FOUND");
+        assertThat(outside.get("name").isNull()).isTrue();
+        assertThat(outside.get("fingerprint").asString())
+                .isEqualTo(missing.get("fingerprint").asString());
+        assertThat(renewDueAt(moving)).isEqualTo(due);
+
+        assertThat(item(previewJson(otherOrgAdminToken, body), pub("domains", moving))
+                .get("reason").asString()).isEqualTo("NOT_FOUND");
+        assertThat(item(previewJson(sysManagerToken, body), pub("domains", foreign))
+                .get("applicable").asBoolean()).isTrue();
+
+        JsonNode apply = applyJson(orgManagerToken, body);
+        assertThat(item(apply, pub("domains", moving)).get("result").asString())
+                .isEqualTo("APPLIED");
+        assertThat(item(apply, pub("domains", already)).get("result").asString())
+                .isEqualTo("UNCHANGED");
+        assertThat(item(apply, pub("domains", released)).get("reason").asString())
+                .isEqualTo("INVALID_STATE");
+        assertThat(item(apply, pub("domains", foreign)).get("reason").asString())
+                .isEqualTo("NOT_FOUND");
+        assertThat(renewDueAt(moving)).isEqualTo(newDue);
+        assertThat(renewDueAt(foreign)).isEqualTo(due);
+        Map<String, Object> detail = auditDetail(pub("domains", moving), "domain.admin_renewal");
+        assertThat(((Map<?, ?>) detail.get("old")).get("renewDueAt")).isEqualTo(due.toString());
+        assertThat(((Map<?, ?>) detail.get("new")).get("renewDueAt")).isEqualTo(newDue.toString());
+        assertThat(detail.get("reason")).isEqualTo("학기 연장");
+        assertThat(detail.get("batchId")).isEqualTo(apply.get("batchId").asString());
+        assertThat(auditCount(pub("domains", already), "domain.admin_renewal")).isZero();
+
+        mockMvc.perform(post(PREVIEW).header("Authorization", "Bearer " + orgManagerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request("DOMAIN", targets,
+                                Map.of("kind", "DOMAIN_RENEWAL", "domainRenewal", Map.of(
+                                        "renewDueAt", Instant.now().minus(1, ChronoUnit.HOURS)
+                                                .toString()))))))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("change.domainRenewal.renewDueAt"));
+        refused(request("VM", targets, Map.of("kind", "DOMAIN_VERIFY", "domainVerify", Map.of())),
+                "targetType");
+        refused(request("DOMAIN", targets, Map.of("kind", "DOMAIN_FORCE_RELEASE")),
+                "change.domainForceRelease");
+    }
+
+    @Test
+    void aDomainChangedSinceThePreviewIsStaleAndLeftAlone() throws Exception {
+        Instant due = Instant.now().plus(30, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        Instant moved = Instant.now().plus(40, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        long domain = externalDomain(orgA.getId(), workspaceA, due);
+        Map<String, Object> body = request("DOMAIN", List.of(pub("domains", domain)),
+                Map.of("kind", "DOMAIN_RENEWAL", "domainRenewal", Map.of("renewDueAt",
+                        Instant.now().plus(90, ChronoUnit.DAYS).toString())));
+        Map<String, String> fingerprints = fingerprintsOf(previewJson(orgAdminToken, body));
+        jdbcTemplate.update("update domains set renew_due_at = ? where id = ?",
+                OffsetDateTime.ofInstant(moved, ZoneOffset.UTC), domain);
+
+        JsonNode apply = apply(orgAdminToken, body, fingerprints);
+        assertThat(item(apply, pub("domains", domain)).get("result").asString()).isEqualTo("STALE");
+        assertThat(renewDueAt(domain)).isEqualTo(moved);
+        assertThat(auditCount(pub("domains", domain), "domain.admin_renewal")).isZero();
+    }
+
+    @Test
+    void domainForceReleaseBulkTakesEveryReachableNameAtOnce() throws Exception {
+        long served = platformDomain(orgA.getId(), workspaceA, true);
+        long external = externalDomain(orgA.getId(), workspaceA,
+                Instant.now().plus(30, ChronoUnit.DAYS));
+        long custom = customDomain(orgA.getId(), workspaceA);
+        long foreign = platformDomain(orgB.getId(), workspaceB, true);
+        List<UUID> targets = List.of(pub("domains", served), pub("domains", external),
+                pub("domains", custom), pub("domains", foreign));
+        Map<String, Object> body = request("DOMAIN", targets,
+                Map.of("kind", "DOMAIN_FORCE_RELEASE", "domainForceRelease", Map.of()));
+        long routeJobsBefore = routeApplyJobCount();
+
+        JsonNode preview = previewJson(orgManagerToken, body);
+        JsonNode previewed = item(preview, pub("domains", served));
+        assertThat(previewed.get("applicable").asBoolean()).isTrue();
+        assertThat(previewed.get("fields").get(0).get("newValue").asString()).isEqualTo("REMOVED");
+        assertThat(previewed.get("fields").get(1).get("field").asString()).isEqualTo("routeStatus");
+        assertThat(item(preview, pub("domains", foreign)).get("reason").asString())
+                .isEqualTo("NOT_FOUND");
+        assertThat(domainStatus(served)).isEqualTo("ACTIVE");
+        assertThat(liveRouteCount(served)).isEqualTo(1);
+        assertThat(routeApplyJobCount()).isEqualTo(routeJobsBefore);
+
+        JsonNode apply = apply(orgManagerToken, body, fingerprintsOf(preview));
+        for (long domain : new long[] {served, external, custom}) {
+            assertThat(item(apply, pub("domains", domain)).get("result").asString())
+                    .isEqualTo("APPLIED");
+            assertThat(domainStatus(domain)).isEqualTo("REMOVED");
+        }
+        assertThat(item(apply, pub("domains", foreign)).get("reason").asString())
+                .isEqualTo("NOT_FOUND");
+        assertThat(domainStatus(foreign)).isEqualTo("ACTIVE");
+        assertThat(liveRouteCount(served)).isZero();
+        // The route push is queued after the commit, once for the one name that
+        // was serving, and never by the preview.
+        assertThat(routeApplyJobCount()).isEqualTo(routeJobsBefore + 1);
+        Map<String, Object> detail = auditDetail(pub("domains", served), "domain.force_release");
+        assertThat(((Map<?, ?>) detail.get("old")).get("status")).isEqualTo("ACTIVE");
+        assertThat(((Map<?, ?>) detail.get("new")).get("status")).isEqualTo("REMOVED");
+        assertThat(detail.get("batchId")).isEqualTo(apply.get("batchId").asString());
+
+        // A name already taken away is not found, as the single path answers.
+        assertThat(item(previewJson(orgManagerToken, body), pub("domains", served))
+                .get("reason").asString()).isEqualTo("NOT_FOUND");
+    }
+
+    @Test
+    void domainVerifyBulkQueuesOneCheckPerCustomDomainAfterCommit() throws Exception {
+        long first = customDomain(orgA.getId(), workspaceA);
+        long second = customDomain(orgA.getId(), workspaceA);
+        long platform = platformDomain(orgA.getId(), workspaceA, false);
+        List<UUID> targets = List.of(pub("domains", first), pub("domains", second),
+                pub("domains", platform));
+        Map<String, Object> body = request("DOMAIN", targets,
+                Map.of("kind", "DOMAIN_VERIFY", "domainVerify", Map.of()));
+        long before = verifyJobCount();
+
+        JsonNode preview = previewJson(sysManagerToken, body);
+        assertThat(item(preview, pub("domains", first)).get("applicable").asBoolean()).isTrue();
+        assertThat(item(preview, pub("domains", platform)).get("reason").asString())
+                .isEqualTo("INELIGIBLE");
+        assertThat(item(previewJson(otherOrgAdminToken, body), pub("domains", first))
+                .get("reason").asString()).isEqualTo("NOT_FOUND");
+        assertThat(verifyJobCount()).isEqualTo(before);
+
+        JsonNode apply = apply(sysManagerToken, body, fingerprintsOf(preview));
+        assertThat(item(apply, pub("domains", first)).get("result").asString())
+                .isEqualTo("APPLIED");
+        assertThat(item(apply, pub("domains", second)).get("result").asString())
+                .isEqualTo("APPLIED");
+        assertThat(item(apply, pub("domains", platform)).get("reason").asString())
+                .isEqualTo("INELIGIBLE");
+        assertThat(verifyJobCount()).isEqualTo(before + 2);
+        Map<String, Object> detail = auditDetail(pub("domains", first), "domain.admin_verify");
+        assertThat(((Map<?, ?>) detail.get("new")).get("verification")).isEqualTo("REQUESTED");
+        assertThat(detail.get("batchId")).isEqualTo(apply.get("batchId").asString());
+        assertThat(auditCount(pub("domains", platform), "domain.admin_verify")).isZero();
+    }
+
     // ── the call as a whole ────────────────────────────────────────────────
 
     @Test
@@ -966,6 +1141,74 @@ class AdminBulkChangeTest {
                 returning id
                 """, Long.class, nodeId, vmWorkspaceId, vmOrgId, requestId, hostname, hostname,
                 imageId, status, endDate);
+    }
+
+    private long externalDomain(long domainOrgId, long domainWorkspaceId, Instant renewDueAt) {
+        return jdbcTemplate.queryForObject("""
+                insert into domains (workspace_id, org_id, kind, fqdn, root_domain, status,
+                                     renew_due_at)
+                values (?, ?, 'EXTERNAL'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status, ?)
+                returning id
+                """, Long.class, domainWorkspaceId, domainOrgId,
+                "bulk-ext-" + UUID.randomUUID().toString().substring(0, 8) + ".pusan.dev",
+                OffsetDateTime.ofInstant(renewDueAt, ZoneOffset.UTC));
+    }
+
+    private long platformDomain(long domainOrgId, long domainWorkspaceId, boolean serving) {
+        long vmId = createVm(domainOrgId, domainWorkspaceId, "RUNNING", today.plusDays(10));
+        long domainId = jdbcTemplate.queryForObject("""
+                insert into domains (vm_id, workspace_id, org_id, kind, fqdn, root_domain, status)
+                values (?, ?, ?, 'PLATFORM'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status)
+                returning id
+                """, Long.class, vmId, domainWorkspaceId, domainOrgId,
+                "bulk-plat-" + UUID.randomUUID().toString().substring(0, 8) + ".pusan.dev");
+        if (serving) {
+            jdbcTemplate.update("""
+                    insert into routes (domain_id, target_port, protocol, status, generation)
+                    values (?, 8080, 'HTTP', 'APPLIED', nextval('route_generation_seq'))
+                    """, domainId);
+        }
+        return domainId;
+    }
+
+    private long customDomain(long domainOrgId, long domainWorkspaceId) {
+        long vmId = createVm(domainOrgId, domainWorkspaceId, "RUNNING", today.plusDays(10));
+        return jdbcTemplate.queryForObject("""
+                insert into domains (vm_id, workspace_id, org_id, kind, fqdn,
+                                     verification_token, status)
+                values (?, ?, ?, 'CUSTOM'::domain_kind, ?, 'pv-bulk', 'PENDING'::domain_status)
+                returning id
+                """, Long.class, vmId, domainWorkspaceId, domainOrgId,
+                "bulk-" + UUID.randomUUID().toString().substring(0, 8) + ".example.com");
+    }
+
+    private Instant renewDueAt(long domainId) {
+        return jdbcTemplate.queryForObject("select renew_due_at from domains where id = ?",
+                Instant.class, domainId);
+    }
+
+    private String domainStatus(long domainId) {
+        return jdbcTemplate.queryForObject("select status::text from domains where id = ?",
+                String.class, domainId);
+    }
+
+    private long liveRouteCount(long domainId) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from routes where domain_id = ? and status <> 'REMOVED'",
+                Long.class, domainId);
+    }
+
+    private long routeApplyJobCount() {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from jobrunr_jobs where jobsignature like '%RouteApplyJob.apply(%'",
+                Long.class);
+    }
+
+    private long verifyJobCount() {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from jobrunr_jobs "
+                        + "where jobsignature like '%DomainVerificationJob.verify(%'",
+                Long.class);
     }
 
     private String grantRole(long vmId, long userId) {

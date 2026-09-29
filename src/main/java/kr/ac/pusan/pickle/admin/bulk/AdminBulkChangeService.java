@@ -261,6 +261,9 @@ public class AdminBulkChangeService {
         members.put(AdminBulkChangeKind.VM_PERIOD, change.vmPeriod());
         members.put(AdminBulkChangeKind.VM_POWER, change.vmPower());
         members.put(AdminBulkChangeKind.VM_DELETION, change.vmDeletion());
+        members.put(AdminBulkChangeKind.DOMAIN_RENEWAL, change.domainRenewal());
+        members.put(AdminBulkChangeKind.DOMAIN_FORCE_RELEASE, change.domainForceRelease());
+        members.put(AdminBulkChangeKind.DOMAIN_VERIFY, change.domainVerify());
         members.put(AdminBulkChangeKind.ACCESS, change.access());
         for (AdminBulkChangeKind kind : AdminBulkChangeKind.values()) {
             Object member = members.get(kind);
@@ -281,6 +284,9 @@ public class AdminBulkChangeService {
             case VM_PERIOD -> "vmPeriod";
             case VM_POWER -> "vmPower";
             case VM_DELETION -> "vmDeletion";
+            case DOMAIN_RENEWAL -> "domainRenewal";
+            case DOMAIN_FORCE_RELEASE -> "domainForceRelease";
+            case DOMAIN_VERIFY -> "domainVerify";
             case ACCESS -> "access";
         };
     }
