@@ -31,7 +31,9 @@ import kr.ac.pusan.pickle.gpu.GpuStore;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.publishing.Domain;
+import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.DomainRepository;
+import kr.ac.pusan.pickle.publishing.DomainStatus;
 import kr.ac.pusan.pickle.resource.ResourceIdentity;
 import kr.ac.pusan.pickle.resource.ResourceTypeAdapter;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -65,8 +67,13 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
 
-    /** One resource as the access machinery sees it, plus the institution it belongs to. */
-    record Target(ResourceIdentity identity, ResourceTypeAdapter adapter, @Nullable Long orgId) {
+    /**
+     * One resource as the access machinery sees it, plus the institution it
+     * belongs to. {@code listed} is false for a row the actor may have picked
+     * from an admin listing but that has no access list at all.
+     */
+    record Target(ResourceIdentity identity, ResourceTypeAdapter adapter, @Nullable Long orgId,
+            boolean listed) {
     }
 
     private final Map<ResourceType, ResourceTypeAdapter> adapters;
@@ -129,10 +136,38 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
         }
         Map<UUID, Target> targets = new LinkedHashMap<>();
         for (UUID id : request.targetIds()) {
+            if (type == ResourceType.DOMAIN) {
+                domainTarget(id, adapter).ifPresent(target -> targets.put(id, target));
+                continue;
+            }
             adapter.identifyByPublicId(id).ifPresent(identity -> targets.put(id,
-                    new Target(identity, adapter, orgIdOf(type, identity.id()).orElse(null))));
+                    new Target(identity, adapter, orgIdOf(type, identity.id()).orElse(null),
+                            true)));
         }
         return targets;
+    }
+
+    /**
+     * A domain as this change sees it. Only an external name has an access
+     * list, but the admin domain listing shows every kind, so a platform
+     * subdomain or a custom domain the actor can reach is loaded rather than
+     * missed, and answered INELIGIBLE with its name: it was in front of the
+     * administrator, and pretending it does not exist would say something
+     * false. A REMOVED row is missing, as it is to every other domain change;
+     * out of the actor's scope, reach answers NOT_FOUND before this matters.
+     */
+    private Optional<Target> domainTarget(UUID id, ResourceTypeAdapter adapter) {
+        Domain domain = domainRepository.findByPublicId(id).orElse(null);
+        if (domain == null || domain.getStatus() == DomainStatus.REMOVED) {
+            return Optional.empty();
+        }
+        if (domain.getKind() != DomainKind.EXTERNAL) {
+            ResourceIdentity identity = new ResourceIdentity(domain.getId(), domain.getPublicId(),
+                    domain.getWorkspaceId(), domain.getFqdn(), null, domain.getStatus().name());
+            return Optional.of(new Target(identity, adapter, domain.getOrgId(), false));
+        }
+        return adapter.identifyByPublicId(id)
+                .map(identity -> new Target(identity, adapter, domain.getOrgId(), true));
     }
 
     /**
@@ -178,6 +213,12 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
     @Override
     Map<String, Object> fingerprintValues(Target target, AdminBulkChangeSpec change) {
         Map<String, Object> values = new LinkedHashMap<>();
+        if (!target.listed()) {
+            // Nothing about an unlisted row can change: the fingerprint only
+            // has to say so.
+            values.put("listed", false);
+            return values;
+        }
         User grantee = activeUser(change.access().userId());
         values.put("granteeRole", grantee == null ? null
                 : grantOf(target, grantee).map(grant -> grant.getRole().name()).orElse(null));
@@ -187,6 +228,9 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
     @Override
     Judgement judge(AuthenticatedUser actor, Target target, AdminBulkChangeSpec change,
             Instant now) {
+        if (!target.listed()) {
+            return Judgement.refused(AdminBulkChangeReason.INELIGIBLE);
+        }
         AdminBulkAccessChange access = change.access();
         User grantee = activeUser(access.userId());
         if (grantee == null) {

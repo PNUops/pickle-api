@@ -1081,6 +1081,59 @@ class AdminBulkChangeTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void accessOnDomainsAnswersEveryKindTheListingShows() throws Exception {
+        long external = externalDomain(orgA.getId(), workspaceA,
+                Instant.now().plus(30, ChronoUnit.DAYS));
+        long platform = platformDomain(orgA.getId(), workspaceA, false);
+        long custom = customDomain(orgA.getId(), workspaceA);
+        long removed = externalDomain(orgA.getId(), workspaceA,
+                Instant.now().plus(30, ChronoUnit.DAYS));
+        jdbcTemplate.update("update domains set status = 'REMOVED' where id = ?", removed);
+        long foreign = externalDomain(orgB.getId(), workspaceB,
+                Instant.now().plus(30, ChronoUnit.DAYS));
+        List<UUID> targets = List.of(pub("domains", external), pub("domains", platform),
+                pub("domains", custom), pub("domains", removed), pub("domains", foreign),
+                SeedFixtures.UNKNOWN_ID);
+        Map<String, Object> body = request("DOMAIN", targets, access("GRANT", requester, "MEMBER"));
+
+        JsonNode preview = previewJson(orgAdminToken, body);
+        assertThat(item(preview, pub("domains", external)).get("applicable").asBoolean()).isTrue();
+        // A platform subdomain and a custom domain have no access list, and
+        // they were in front of the administrator: named, and refused.
+        for (long domain : new long[] {platform, custom}) {
+            JsonNode previewed = item(preview, pub("domains", domain));
+            assertThat(previewed.get("reason").asString()).isEqualTo("INELIGIBLE");
+            assertThat(previewed.get("name").asString()).isEqualTo(jdbcTemplate.queryForObject(
+                    "select fqdn from domains where id = ?", String.class, domain));
+        }
+        String constant = item(preview, SeedFixtures.UNKNOWN_ID).get("fingerprint").asString();
+        for (long domain : new long[] {removed, foreign}) {
+            JsonNode previewed = item(preview, pub("domains", domain));
+            assertThat(previewed.get("reason").asString()).isEqualTo("NOT_FOUND");
+            assertThat(previewed.get("name").isNull()).isTrue();
+            assertThat(previewed.get("fingerprint").asString()).isEqualTo(constant);
+        }
+        // Out of scope stays out of scope whatever the kind.
+        assertThat(item(previewJson(otherOrgAdminToken, body), pub("domains", platform))
+                .get("reason").asString()).isEqualTo("NOT_FOUND");
+
+        JsonNode apply = apply(orgAdminToken, body, fingerprintsOf(preview));
+        assertThat(item(apply, pub("domains", external)).get("result").asString())
+                .isEqualTo("APPLIED");
+        assertThat(item(apply, pub("domains", platform)).get("result").asString())
+                .isEqualTo("SKIPPED");
+        assertThat(item(apply, pub("domains", platform)).get("reason").asString())
+                .isEqualTo("INELIGIBLE");
+        assertThat(item(apply, pub("domains", removed)).get("reason").asString())
+                .isEqualTo("NOT_FOUND");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from resource_access_grants
+                 where resource_type = 'DOMAIN' and user_id = ? and resource_id in (?, ?, ?, ?)
+                """, Long.class, requester.getId(), platform, custom, removed, foreign)).isZero();
+        assertThat(auditCount(pub("domains", external), "dns_domain.access_grant_add")).isEqualTo(1);
+    }
+
     // ── the call as a whole ────────────────────────────────────────────────
 
     @Test
