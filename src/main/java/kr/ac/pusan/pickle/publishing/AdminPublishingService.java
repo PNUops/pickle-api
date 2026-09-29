@@ -1,6 +1,8 @@
 package kr.ac.pusan.pickle.publishing;
 
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import java.util.Collection;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -76,6 +78,7 @@ public class AdminPublishingService {
     private final VmEventRepository vmEventRepository;
     private final NotificationService notificationService;
     private final PublicSourcePolicyService sourcePolicies;
+    private final Clock clock;
 
     public AdminPublishingService(RouteRepository routeRepository, DomainRecordRepository recordRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
@@ -84,7 +87,8 @@ public class AdminPublishingService {
             ResyncRoutesJob resyncRoutesJob, PublishingService publishingService,
             DomainVerificationJob domainVerificationJob, RouteGenerations routeGenerations,
             RouteApplyJob routeApplyJob, VmEventRepository vmEventRepository,
-            NotificationService notificationService, PublicSourcePolicyService sourcePolicies) {
+            NotificationService notificationService, PublicSourcePolicyService sourcePolicies,
+            Clock clock) {
         this.routeRepository = routeRepository;
         this.recordRepository = recordRepository;
         this.domainRepository = domainRepository;
@@ -103,6 +107,7 @@ public class AdminPublishingService {
         this.vmEventRepository = vmEventRepository;
         this.notificationService = notificationService;
         this.sourcePolicies = sourcePolicies;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -272,7 +277,7 @@ public class AdminPublishingService {
             UpdateDomainRenewalRequest form, String ip) {
         Domain domain = requireScopedDomain(actor, domainId);
         ApiException refusal = changeRenewal(actor, domain, form.renewDueAt(), form.reason(),
-                null, ip);
+                clock.instant(), null, ip);
         if (refusal != null) {
             throw refusal;
         }
@@ -291,11 +296,14 @@ public class AdminPublishingService {
      * many domains in one transaction can report the refusal without the
      * transaction being marked for rollback.
      *
-     * <p>{@code batchId} is the bulk change this write belongs to, and null on
-     * the single path.</p>
+     * <p>{@code now} is the instant the deadline is judged against: the single
+     * path's clock reading, or the one a bulk change validated its request at,
+     * so both judge the same moment. {@code batchId} is the bulk change this
+     * write belongs to, and null on the single path.</p>
      */
     public @Nullable ApiException changeRenewal(AuthenticatedUser actor, Domain domain,
-            Instant renewDueAt, @Nullable String reason, @Nullable UUID batchId, String ip) {
+            Instant renewDueAt, @Nullable String reason, Instant now, @Nullable UUID batchId,
+            String ip) {
         if (!hasRenewalDeadline(domain)) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
                     "사용 기한이 없는 도메인입니다",
@@ -310,7 +318,7 @@ public class AdminPublishingService {
         // owner is never told because the renewal notices only fire ahead of a
         // deadline that is still ahead. Taking a name away is what force-release
         // is for, and that path at least announces itself.
-        FieldValidationError tooEarly = renewalInPast(renewDueAt, Instant.now());
+        FieldValidationError tooEarly = renewalInPast(renewDueAt, now);
         if (tooEarly != null) {
             return ApiException.validationFailed(List.of(tooEarly));
         }
@@ -601,12 +609,7 @@ public class AdminPublishingService {
     }
 
     private void runAfterCommit(Runnable action) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                action.run();
-            }
-        });
+        AfterCommit.run(action);
     }
 
     private static ApiException domainNotFound() {

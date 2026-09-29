@@ -23,6 +23,7 @@ import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeSpec;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import kr.ac.pusan.pickle.llm.LlmGatewayGenerations;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.stereotype.Service;
@@ -71,16 +72,27 @@ public class AdminBulkChangeService {
     @Transactional(readOnly = true)
     public AdminBulkChangePreviewResponse preview(AuthenticatedUser actor,
             AdminBulkChangeRequest request) {
-        BulkChangeHandler<?> handler = validate(request, false);
-        return new AdminBulkChangePreviewResponse(preview(handler, actor, request));
+        Instant now = clock.instant();
+        BulkChangeHandler<?> handler = validate(request, false, now);
+        return new AdminBulkChangePreviewResponse(preview(handler, actor, request, now));
     }
 
     @Transactional
     public AdminBulkChangeApplyResponse apply(AuthenticatedUser actor,
             AdminBulkChangeRequest request, String ip) {
-        BulkChangeHandler<?> handler = validate(request, true);
+        Instant now = clock.instant();
+        BulkChangeHandler<?> handler = validate(request, true, now);
         UUID batchId = UUID.randomUUID();
-        List<AdminBulkChangeApplyItem> items = apply(handler, actor, request, batchId, ip);
+        // The summary is registered before any target's work, and filled in
+        // after it: after-commit callbacks run in registration order, so no
+        // target's callback, however it fails, can come before it.
+        Map<String, Object> summary = new LinkedHashMap<>();
+        auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                AuditService.ADMIN_BULK_CHANGE, "bulk_change", batchId, summary, ip);
+        // Every target's after-commit work is isolated from the others', so
+        // one failed enqueue or push does not drop the rest.
+        List<AdminBulkChangeApplyItem> items = AfterCommit.isolating(
+                () -> apply(handler, actor, request, batchId, ip, now));
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (AdminBulkChangeResult result : AdminBulkChangeResult.values()) {
             counts.put(result.name(), 0);
@@ -88,21 +100,17 @@ public class AdminBulkChangeService {
         for (AdminBulkChangeApplyItem item : items) {
             counts.merge(item.result().name(), 1, Integer::sum);
         }
-        Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("batchId", batchId);
         summary.put("targetType", request.targetType().name());
         summary.put("kind", request.change().kind().name());
         summary.put("targets", items.size());
         summary.put("counts", counts);
-        auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.ADMIN_BULK_CHANGE, "bulk_change", batchId, summary, ip);
         return new AdminBulkChangeApplyResponse(batchId, items);
     }
 
     private <T> List<AdminBulkChangePreviewItem> preview(BulkChangeHandler<T> handler,
-            AuthenticatedUser actor, AdminBulkChangeRequest request) {
+            AuthenticatedUser actor, AdminBulkChangeRequest request, Instant now) {
         AdminBulkChangeSpec change = request.change();
-        Instant now = clock.instant();
         Map<UUID, T> targets = handler.load(request);
         List<AdminBulkChangePreviewItem> items = new ArrayList<>();
         for (UUID targetId : request.targetIds()) {
@@ -128,7 +136,8 @@ public class AdminBulkChangeService {
     }
 
     private <T> List<AdminBulkChangeApplyItem> apply(BulkChangeHandler<T> handler,
-            AuthenticatedUser actor, AdminBulkChangeRequest request, UUID batchId, String ip) {
+            AuthenticatedUser actor, AdminBulkChangeRequest request, UUID batchId, String ip,
+            Instant now) {
         AdminBulkChangeSpec change = request.change();
         Map<UUID, String> fingerprints = request.fingerprints();
         Map<UUID, T> targets = handler.load(request);
@@ -155,7 +164,7 @@ public class AdminBulkChangeService {
                         handler.fingerprintValues(target, change)))) {
                     continue;
                 }
-                if (handler.judge(actor, target, change, clock.instant()).writes()) {
+                if (handler.judge(actor, target, change, now).writes()) {
                     anyWrite = true;
                     break;
                 }
@@ -167,7 +176,6 @@ public class AdminBulkChangeService {
         for (UUID targetId : reachable) {
             handler.lock(targets.get(targetId));
         }
-        Instant now = clock.instant();
         Map<UUID, AdminBulkChangeApplyItem> results = new LinkedHashMap<>();
         for (UUID targetId : order) {
             T target = targets.get(targetId);
@@ -219,7 +227,8 @@ public class AdminBulkChangeService {
      * one 422: the kind and target type agree, exactly the kind's member is
      * present, no id repeats, and (on apply) every target has a fingerprint.
      */
-    private BulkChangeHandler<?> validate(AdminBulkChangeRequest request, boolean applying) {
+    private BulkChangeHandler<?> validate(AdminBulkChangeRequest request, boolean applying,
+            Instant now) {
         List<FieldValidationError> errors = new ArrayList<>();
         AdminBulkChangeSpec change = request.change();
         AdminBulkChangeKind kind = change.kind();
@@ -245,7 +254,7 @@ public class AdminBulkChangeService {
             throw new IllegalStateException("no handler for bulk change kind " + kind);
         }
         if (errors.isEmpty()) {
-            handler.validate(request, errors);
+            handler.validate(request, errors, now);
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);

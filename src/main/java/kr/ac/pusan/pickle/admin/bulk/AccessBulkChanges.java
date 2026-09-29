@@ -112,7 +112,8 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
     }
 
     @Override
-    void validate(AdminBulkChangeRequest request, List<FieldValidationError> errors) {
+    void validate(AdminBulkChangeRequest request, List<FieldValidationError> errors,
+            Instant now) {
         AdminBulkAccessChange access = request.change().access();
         if (access.action() != AdminBulkAccessAction.REVOKE && access.role() == null) {
             errors.add(new FieldValidationError("change.access.role", "부여할 등급을 지정해 주세요."));

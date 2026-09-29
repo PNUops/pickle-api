@@ -72,7 +72,8 @@ class VmBulkChanges extends BulkChangeHandler<Vm> {
     }
 
     @Override
-    void validate(AdminBulkChangeRequest request, List<FieldValidationError> errors) {
+    void validate(AdminBulkChangeRequest request, List<FieldValidationError> errors,
+            Instant now) {
         AdminBulkChangeSpec change = request.change();
         switch (change.kind()) {
             case VM_PERIOD -> {
@@ -101,7 +102,7 @@ class VmBulkChanges extends BulkChangeHandler<Vm> {
                 if (deletion.scheduledFor() == null) {
                     errors.add(new FieldValidationError("change.vmDeletion.scheduledFor",
                             "삭제 예정 시각을 지정해 주세요."));
-                } else if (!deletion.scheduledFor().isAfter(clock.instant())) {
+                } else if (!deletion.scheduledFor().isAfter(now)) {
                     errors.add(new FieldValidationError("change.vmDeletion.scheduledFor",
                             "삭제 예정일은 미래 시각이어야 합니다."));
                 }
