@@ -38,6 +38,7 @@ import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import org.jobrunr.scheduling.JobScheduler;
+import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -270,13 +271,38 @@ public class AdminPublishingService {
     public AdminDomainView updateRenewal(AuthenticatedUser actor, UUID domainId,
             UpdateDomainRenewalRequest form, String ip) {
         Domain domain = requireScopedDomain(actor, domainId);
-        if (domain.getKind() != DomainKind.EXTERNAL) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
+        ApiException refusal = changeRenewal(actor, domain, form.renewDueAt(), form.reason(),
+                null, ip);
+        if (refusal != null) {
+            throw refusal;
+        }
+        return view(domain, context(List.of(domain)));
+    }
+
+    /** Whether the name has a renewal deadline to move at all: only an external name does. */
+    public static boolean hasRenewalDeadline(Domain domain) {
+        return domain.getKind() == DomainKind.EXTERNAL;
+    }
+
+    /**
+     * The renewal change on a domain the caller has already resolved and
+     * scoped, as a value: null when it went through, otherwise the refusal
+     * the single path throws. Returned rather than thrown so a caller running
+     * many domains in one transaction can report the refusal without the
+     * transaction being marked for rollback.
+     *
+     * <p>{@code batchId} is the bulk change this write belongs to, and null on
+     * the single path.</p>
+     */
+    public @Nullable ApiException changeRenewal(AuthenticatedUser actor, Domain domain,
+            Instant renewDueAt, @Nullable String reason, @Nullable UUID batchId, String ip) {
+        if (!hasRenewalDeadline(domain)) {
+            return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
                     "사용 기한이 없는 도메인입니다",
                     "외부 도메인만 사용 기한을 갖습니다. 다른 종류는 가상머신이나 소유자의 DNS가 수명을 정합니다.");
         }
         if (domain.getReleasedAt() != null) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
+            return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
                     "이미 해제한 도메인입니다", "해제한 이름에는 사용 기한이 없습니다.");
         }
         // A deadline in the past is a forced release with a day's delay and no
@@ -284,34 +310,50 @@ public class AdminPublishingService {
         // owner is never told because the renewal notices only fire ahead of a
         // deadline that is still ahead. Taking a name away is what force-release
         // is for, and that path at least announces itself.
-        if (!form.renewDueAt().isAfter(Instant.now())) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("renewDueAt",
-                    "지난 시각으로는 옮길 수 없습니다. 지금 회수하려면 강제 해제를 쓰세요.")));
+        FieldValidationError tooEarly = renewalInPast(renewDueAt, Instant.now());
+        if (tooEarly != null) {
+            return ApiException.validationFailed(List.of(tooEarly));
         }
         Instant before = domain.getRenewDueAt();
-        domain.setRenewDueAt(form.renewDueAt());
+        domain.setRenewDueAt(renewDueAt);
         // The owner hears about it. A deadline is the one lever that decides
         // whether they keep the name, so moving it without saying so leaves
         // them planning against a date that is no longer real.
         notificationService.publish(DomainRecipients.of(notificationService, domain),
                 NotificationEvent.DOMAIN_RENEWAL_DUE,
                 Map.of("fqdn", domain.getFqdn(), "domainId", domain.getPublicId(),
-                        "renewDueAt", form.renewDueAt(), "adminAdjusted", true),
+                        "renewDueAt", renewDueAt, "adminAdjusted", true),
                 null);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.DOMAIN_ADMIN_RENEWAL, "domain", domain.getPublicId(),
-                reasonedArgs(domain, before, form), ip);
-        return view(domain, context(List.of(domain)));
+                renewalArgs(domain, before, renewDueAt, reason, batchId), ip);
+        return null;
     }
 
-    private static Map<String, Object> reasonedArgs(Domain domain, Instant before,
-            UpdateDomainRenewalRequest form) {
+    /** The deadline rule both paths share, against the field name the single path reports. */
+    public static @Nullable FieldValidationError renewalInPast(Instant renewDueAt, Instant now) {
+        if (renewDueAt.isAfter(now)) {
+            return null;
+        }
+        return new FieldValidationError("renewDueAt",
+                "지난 시각으로는 옮길 수 없습니다. 지금 회수하려면 강제 해제를 쓰세요.");
+    }
+
+    private static Map<String, Object> renewalArgs(Domain domain, @Nullable Instant before,
+            Instant renewDueAt, @Nullable String reason, @Nullable UUID batchId) {
         Map<String, Object> args = new java.util.LinkedHashMap<>();
         args.put("fqdn", domain.getFqdn());
         args.put("previous", before);
-        args.put("renewDueAt", form.renewDueAt());
-        if (form.reason() != null && !form.reason().isBlank()) {
-            args.put("reason", form.reason().strip());
+        args.put("renewDueAt", renewDueAt);
+        if (reason != null && !reason.isBlank()) {
+            args.put("reason", reason.strip());
+        }
+        Map<String, Object> old = new java.util.LinkedHashMap<>();
+        old.put("renewDueAt", before == null ? null : before.toString());
+        args.put("old", old);
+        args.put("new", Map.of("renewDueAt", renewDueAt.toString()));
+        if (batchId != null) {
+            args.put("batchId", batchId);
         }
         return args;
     }
@@ -329,7 +371,27 @@ public class AdminPublishingService {
     @Transactional
     public MessageResponse forceRelease(AuthenticatedUser actor, UUID domainId, String ip) {
         Domain domain = requireScopedDomain(actor, domainId);
+        releaseByAdmin(actor, domain, null, ip);
+        return new MessageResponse("도메인을 강제 해제했습니다. 라우트 제거가 곧 적용되며, 이름은 즉시 회수됩니다.");
+    }
+
+    /**
+     * The force release on a domain the caller has already resolved and
+     * scoped. It has no refusal: every name that is still there may be taken
+     * away, a reserved one included, and a name already REMOVED is not found
+     * before this is reached. Everything that leaves the process (the route
+     * push, the record removal, the mail) is queued for after the commit by
+     * the teardown and the notice outbox, so many of these in one transaction
+     * make no remote call.
+     *
+     * <p>{@code batchId} is the bulk change this write belongs to, and null on
+     * the single path.</p>
+     */
+    public void releaseByAdmin(AuthenticatedUser actor, Domain domain, @Nullable UUID batchId,
+            String ip) {
         boolean served = assembler.hasLiveRoute(domain);
+        DomainStatus statusBefore = domain.getStatus();
+        Instant releasedBefore = domain.getReleasedAt();
         publishingService.forceTeardown(domain);
         // The VM's event log is where an admin release is announced for a
         // domain that serves one, and a domain that serves no VM has none.
@@ -359,10 +421,19 @@ public class AdminPublishingService {
                     Map.of("domainId", domain.getPublicId(), "fqdn", domain.getFqdn()),
                     null);
         }
+        Map<String, Object> args = new java.util.LinkedHashMap<>();
+        args.put("fqdn", domain.getFqdn());
+        Map<String, Object> old = new java.util.LinkedHashMap<>();
+        old.put("status", statusBefore.name());
+        old.put("releasedAt", releasedBefore == null ? null : releasedBefore.toString());
+        old.put("served", served);
+        args.put("old", old);
+        args.put("new", Map.of("status", domain.getStatus().name()));
+        if (batchId != null) {
+            args.put("batchId", batchId);
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.DOMAIN_FORCE_RELEASE, "domain", domain.getPublicId(),
-                Map.of("fqdn", domain.getFqdn()), ip);
-        return new MessageResponse("도메인을 강제 해제했습니다. 라우트 제거가 곧 적용되며, 이름은 즉시 회수됩니다.");
+                AuditService.DOMAIN_FORCE_RELEASE, "domain", domain.getPublicId(), args, ip);
     }
 
     /**
@@ -373,16 +444,50 @@ public class AdminPublishingService {
     @Transactional
     public MessageResponse verify(AuthenticatedUser actor, UUID publicDomainId, String ip) {
         Domain domain = requireScopedDomain(actor, publicDomainId);
-        long domainId = domain.getId();
-        if (domain.getKind() != DomainKind.CUSTOM) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
+        ApiException refusal = requestVerification(actor, domain, null, ip);
+        if (refusal != null) {
+            throw refusal;
+        }
+        return new MessageResponse("소유권 재검증을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+    }
+
+    /** Whether the name is one whose ownership this platform verifies: only a custom domain. */
+    public static boolean isVerifiable(Domain domain) {
+        return domain.getKind() == DomainKind.CUSTOM;
+    }
+
+    /**
+     * The re-verification on a domain the caller has already resolved and
+     * scoped, as a value: null when it was queued, otherwise the refusal the
+     * single path throws. Nothing is looked up in DNS here: the check is
+     * queued for after the commit, one per domain, and a check already in
+     * flight for the same domain absorbs the new request silently, exactly as
+     * on the single path.
+     *
+     * <p>{@code batchId} is the bulk change this request belongs to, and null
+     * on the single path.</p>
+     */
+    public @Nullable ApiException requestVerification(AuthenticatedUser actor, Domain domain,
+            @Nullable UUID batchId, String ip) {
+        if (!isVerifiable(domain)) {
+            return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
                     "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
         }
+        long domainId = domain.getId();
         runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
+        Map<String, Object> args = new java.util.LinkedHashMap<>();
+        args.put("fqdn", domain.getFqdn());
+        Map<String, Object> old = new java.util.LinkedHashMap<>();
+        old.put("status", domain.getStatus().name());
+        old.put("verification", null);
+        args.put("old", old);
+        args.put("new", Map.of("status", domain.getStatus().name(), "verification", "REQUESTED"));
+        if (batchId != null) {
+            args.put("batchId", batchId);
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.DOMAIN_ADMIN_VERIFY, "domain", domain.getPublicId(),
-                Map.of("fqdn", domain.getFqdn()), ip);
-        return new MessageResponse("소유권 재검증을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+                AuditService.DOMAIN_ADMIN_VERIFY, "domain", domain.getPublicId(), args, ip);
+        return null;
     }
 
     /**
@@ -472,6 +577,16 @@ public class AdminPublishingService {
      */
     private void requireScope(AuthenticatedUser actor, Domain domain) {
         requireScope(actor, domain, false);
+    }
+
+    /**
+     * Whether the actor may intervene in this domain: the system tier on
+     * every one, the organisation tier on those of an institution it
+     * operates. The single paths answer anything else with the same 404 as a
+     * missing domain.
+     */
+    public static boolean mayIntervene(AuthenticatedUser actor, Domain domain) {
+        return !actor.role().isOrgTier() || actor.operates(domain.getOrgId());
     }
 
     private void requireScope(AuthenticatedUser actor, Domain domain, boolean forRead) {
