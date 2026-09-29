@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.request;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,7 +63,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * goes there, and one that only a node at the limit could take stays QUEUED
  * for a later run rather than failing. GPU nodes are still placement's last
  * choice, but once the nodes ahead of them are at the limit a VM goes to a GPU
- * node rather than waiting. Only this path's VMs are counted: a
+ * node rather than waiting. Within one run, a request whose recipient had to
+ * wait has its other recipients skipped, since they would wait on the same
+ * nodes. What remains is head-of-line blocking at the scan cap: a run looks at
+ * the oldest {@code SCAN_LIMIT} queued recipients only, so while that many
+ * are waiting on busy nodes, a newer request that another node could take
+ * waits for them to drain. Only this path's VMs are counted: a
  * single-person approval clones on its own and neither counts nor waits.
  * Keys cost only a database write each, so they are capped per run
  * instead.</p>
@@ -166,7 +172,7 @@ public class RequestRecipientMaterializer {
     @Job(name = JOB_ID, retries = 0)
     public void run() {
         List<Map<String, Object>> queued = jdbcTemplate.queryForList("""
-                select rr.id, r.resource_type
+                select rr.id, rr.request_id, r.resource_type
                   from request_recipients rr
                   join requests r on r.id = rr.request_id
                  where rr.status = 'QUEUED' and r.status = 'APPROVED'
@@ -174,16 +180,25 @@ public class RequestRecipientMaterializer {
                  limit ?
                 """, SCAN_LIMIT);
         boolean vmFull = false;
+        // Requests whose recipient had to wait for a node. Every recipient of a
+        // request asks for the same image, size and forced node, and the nodes
+        // at the limit only grow within a run, so the rest of that request
+        // would wait too: they are not tried again until the next run.
+        Set<Long> waitingRequests = new HashSet<>();
         int keys = 0;
         for (Map<String, Object> row : queued) {
             long id = ((Number) row.get("id")).longValue();
+            long requestId = ((Number) row.get("request_id")).longValue();
             ResourceType type = ResourceType.valueOf(String.valueOf(row.get("resource_type")));
             if (type == ResourceType.VM) {
-                if (vmFull) {
+                if (vmFull || waitingRequests.contains(requestId)) {
                     continue;
                 }
-                if (processOne(id) == Outcome.AT_CAPACITY) {
+                Outcome outcome = processOne(id);
+                if (outcome == Outcome.AT_CAPACITY) {
                     vmFull = true;
+                } else if (outcome == Outcome.WAITING) {
+                    waitingRequests.add(requestId);
                 }
             } else if (type == ResourceType.LLM_API_KEY) {
                 if (keys >= LLM_KEYS_PER_RUN) {

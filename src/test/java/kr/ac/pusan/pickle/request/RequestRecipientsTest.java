@@ -1,6 +1,11 @@
 package kr.ac.pusan.pickle.request;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -20,6 +25,7 @@ import kr.ac.pusan.pickle.inventory.OsImage;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.provisioning.VmCloneReservationService;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
@@ -38,6 +44,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
@@ -79,6 +86,9 @@ class RequestRecipientsTest {
 
     @Autowired
     private RequestRecipientMaterializer materializer;
+
+    @MockitoSpyBean
+    private VmCloneReservationService cloneReservations;
 
     @Autowired
     private InvitationClaimService invitationClaimService;
@@ -443,6 +453,31 @@ class RequestRecipientsTest {
                     requestId, nodes[0]);
             materializer.run();
             assertThat(vmNodes(requestId)).containsExactlyInAnyOrder(nodes[0], nodes[0], nodes[1]);
+        } finally {
+            retireTwoNodeImage(nodes);
+        }
+    }
+
+    @Test
+    void oneWaitingRecipientStopsItsRequestForTheRestOfTheRun() throws Exception {
+        long[] nodes = twoNodeImage();
+        try {
+            UUID workspace = createWorkspace(ownerToken);
+            List<User> recipients = List.of(addMember(workspace, "wait-1"), addMember(workspace, "wait-2"),
+                    addMember(workspace, "wait-3"), addMember(workspace, "wait-4"));
+            long requestId = approvedVmRequest(workspace, recipients, 1024);
+            jdbcTemplate.update("""
+                    insert into settings (key, value, description) values ('bulk_provision_concurrency', '1'::jsonb, 'test')
+                    """);
+            clearInvocations(cloneReservations);
+
+            materializer.run();
+            // One VM per node, then the third recipient waits and the fourth,
+            // which would wait on the same nodes, is not placed at all.
+            assertThat(vmCount(requestId)).isEqualTo(2);
+            verify(cloneReservations, times(3)).reserve(eq(image.getPublicId()), any(), any(), any());
+            assertThat(recipients.subList(2, 4).stream().map(user -> recipientStatus(requestId, user.getId())))
+                    .containsExactly("QUEUED", "QUEUED");
         } finally {
             retireTwoNodeImage(nodes);
         }
