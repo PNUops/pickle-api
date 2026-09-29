@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.publishing;
 
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -48,8 +49,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * User HTTP publishing (contract tag {@code publishing}): attach domains to a
@@ -749,12 +748,7 @@ public class PublishingService {
     }
 
     private void runAfterCommit(Runnable action) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                action.run();
-            }
-        });
+        AfterCommit.run(action);
     }
 
     private static ApiException domainNotServing() {

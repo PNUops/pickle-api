@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.llm;
 
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,8 +21,6 @@ import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * The writes on an LLM API key: minting its secret, replacing it, revoking it,
@@ -115,13 +114,7 @@ public class LlmApiKeyService {
         // are the reconciler's to catch.
         String openrouterKeyHash = key.getOpenrouterKeyHash();
         if (openrouterKeyHash != null) {
-            TransactionSynchronizationManager.registerSynchronization(
-                    new TransactionSynchronization() {
-                        @Override
-                        public void afterCommit() {
-                            provisioner.deleteAfterRevoke(key.getId(), openrouterKeyHash);
-                        }
-                    });
+            AfterCommit.run(() -> provisioner.deleteAfterRevoke(key.getId(), openrouterKeyHash));
         }
     }
 

@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -40,8 +41,6 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * The three deletion flows (contract v0.3.1):
@@ -536,11 +535,6 @@ public class VmDeletionService {
 
     /** Same after-commit trade-off as ApprovalService/VmLifecycleService. */
     private void enqueueAfterCommit(JobLambda job) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                jobScheduler.enqueue(job);
-            }
-        });
+        AfterCommit.run(() -> jobScheduler.enqueue(job));
     }
 }

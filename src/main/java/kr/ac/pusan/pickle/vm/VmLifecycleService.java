@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Collection;
@@ -24,8 +25,6 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * User-facing VM power control (contract ops startVm/shutdownVm/rebootVm/
@@ -355,11 +354,6 @@ public class VmLifecycleService {
      * poller/reconciler surfaces the drift).
      */
     private void enqueueAfterCommit(JobLambda job) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                jobScheduler.enqueue(job);
-            }
-        });
+        AfterCommit.run(() -> jobScheduler.enqueue(job));
     }
 }

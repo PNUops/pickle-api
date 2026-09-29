@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.audit;
 
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
@@ -7,7 +8,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
 
@@ -311,11 +311,7 @@ public class AuditService {
             record(actorId, actorRole, action, targetType, targetId, detail, ip);
             return;
         }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                self.getObject().record(actorId, actorRole, action, targetType, targetId, detail, ip);
-            }
-        });
+        AfterCommit.run(() -> self.getObject().record(actorId, actorRole, action, targetType,
+                targetId, detail, ip));
     }
 }

@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.publishing;
 
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,8 +12,6 @@ import org.jobrunr.jobs.lambdas.JobLambda;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * The record sets a domain holds, edited as a whole.
@@ -211,11 +210,6 @@ public class DomainRecordsService {
     }
 
     private static void afterCommit(Runnable action) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                action.run();
-            }
-        });
+        AfterCommit.run(action);
     }
 }
