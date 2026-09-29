@@ -53,10 +53,14 @@ public class SettingsService {
     public static final String PROFANITY_SUBDOMAINS = "profanity_subdomains";
     public static final String VCPU_OVERCOMMIT_WARN = "vcpu_overcommit_warn";
     /**
-     * How many VMs of many-person requests may be in creation at once. Read
-     * with a code default of 4 when the key is absent; editable once seeded.
+     * How many VMs of many-person requests may be in creation at once on each
+     * node. The limit is per node, not across all of them: a node at the limit
+     * takes no more of these VMs while another node may still take them. VMs
+     * of single-person approvals are not counted. Read with a code default of
+     * 4 when the key is absent; editable once seeded.
      *
-     * <p>Capped at 8: every VM is a full clone, so the disk is the bottleneck.
+     * <p>Capped at 8: every VM is a full clone, so the node's disk is the
+     * bottleneck.
      * Measured on the test node, eight at once took about 75% longer per VM
      * than four (median 151 s against 86 s) for about 14% more throughput, and
      * pushed iowait to 77%, load that lands on the disks of VMs already

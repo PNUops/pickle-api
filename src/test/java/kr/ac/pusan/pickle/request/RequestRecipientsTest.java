@@ -1,6 +1,11 @@
 package kr.ac.pusan.pickle.request;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -20,6 +25,7 @@ import kr.ac.pusan.pickle.inventory.OsImage;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.provisioning.VmCloneReservationService;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
@@ -38,6 +44,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
@@ -79,6 +86,9 @@ class RequestRecipientsTest {
 
     @Autowired
     private RequestRecipientMaterializer materializer;
+
+    @MockitoSpyBean
+    private VmCloneReservationService cloneReservations;
 
     @Autowired
     private InvitationClaimService invitationClaimService;
@@ -395,6 +405,8 @@ class RequestRecipientsTest {
         assertThat(vmCount(requestId)).isEqualTo(1);
         materializer.run();
         assertThat(vmCount(requestId)).isEqualTo(1);
+        // Held back by the limit, not failed.
+        assertThat(recipientStatus(requestId, second.getId())).isEqualTo("QUEUED");
 
         // Once the first leaves creation, the next one starts.
         jdbcTemplate.update("update vms set status = 'RUNNING' where request_id = ?", requestId);
@@ -403,6 +415,98 @@ class RequestRecipientsTest {
         assertThat(ownerOf("VM", jdbcTemplate.queryForObject(
                 "select resource_id from request_recipients where request_id = ? and user_id = ?",
                 Long.class, requestId, second.getId()))).isEqualTo(second.getId());
+    }
+
+    /**
+     * Also pins the intended spill onto a GPU node: GPU nodes rank last, but
+     * one is used as soon as the node ahead of it is at the limit.
+     */
+    @Test
+    void theConcurrencyLimitAppliesToEachNodeAndSpillsOntoAGpuNode() throws Exception {
+        long[] nodes = twoNodeImage();
+        try {
+            UUID workspace = createWorkspace(ownerToken);
+            List<User> recipients = List.of(addMember(workspace, "node-1"), addMember(workspace, "node-2"),
+                    addMember(workspace, "node-3"));
+            long requestId = approvedVmRequest(workspace, recipients, 1024);
+            jdbcTemplate.update("""
+                    insert into settings (key, value, description) values ('bulk_provision_concurrency', '1'::jsonb, 'test')
+                    """);
+
+            // The CPU node is preferred, so the first VM lands there; with
+            // that node at the limit the second still starts, on the GPU node.
+            materializer.run();
+            assertThat(vmNodes(requestId)).containsExactlyInAnyOrder(nodes[0], nodes[1]);
+
+            // Both nodes at the limit: the third recipient waits, it does not fail.
+            materializer.run();
+            assertThat(vmCount(requestId)).isEqualTo(2);
+            Map<String, Object> waiting = jdbcTemplate.queryForMap("""
+                    select status, reason from request_recipients
+                     where request_id = ? and resource_id is null
+                    """, requestId);
+            assertThat(waiting.get("status")).isEqualTo("QUEUED");
+            assertThat(waiting.get("reason")).isNull();
+
+            // The first node's VM leaves creation, and the third starts there.
+            jdbcTemplate.update("update vms set status = 'RUNNING' where request_id = ? and node_id = ?",
+                    requestId, nodes[0]);
+            materializer.run();
+            assertThat(vmNodes(requestId)).containsExactlyInAnyOrder(nodes[0], nodes[0], nodes[1]);
+        } finally {
+            retireTwoNodeImage(nodes);
+        }
+    }
+
+    @Test
+    void oneWaitingRecipientStopsItsRequestForTheRestOfTheRun() throws Exception {
+        long[] nodes = twoNodeImage();
+        try {
+            UUID workspace = createWorkspace(ownerToken);
+            List<User> recipients = List.of(addMember(workspace, "wait-1"), addMember(workspace, "wait-2"),
+                    addMember(workspace, "wait-3"), addMember(workspace, "wait-4"));
+            long requestId = approvedVmRequest(workspace, recipients, 1024);
+            jdbcTemplate.update("""
+                    insert into settings (key, value, description) values ('bulk_provision_concurrency', '1'::jsonb, 'test')
+                    """);
+            clearInvocations(cloneReservations);
+
+            materializer.run();
+            // One VM per node, then the third recipient waits and the fourth,
+            // which would wait on the same nodes, is not placed at all.
+            assertThat(vmCount(requestId)).isEqualTo(2);
+            verify(cloneReservations, times(3)).reserve(eq(image.getPublicId()), any(), any(), any());
+            assertThat(recipients.subList(2, 4).stream().map(user -> recipientStatus(requestId, user.getId())))
+                    .containsExactly("QUEUED", "QUEUED");
+        } finally {
+            retireTwoNodeImage(nodes);
+        }
+    }
+
+    @Test
+    void aVmStillInCreationDoesNotHoldRecipientsWhenNoNodeIsActive() throws Exception {
+        UUID workspace = createWorkspace(ownerToken);
+        User first = addMember(workspace, "inactive-1");
+        User second = addMember(workspace, "inactive-2");
+        long requestId = approvedVmRequest(workspace, List.of(first, second), 2048);
+        jdbcTemplate.update("""
+                insert into settings (key, value, description) values ('bulk_provision_concurrency', '1'::jsonb, 'test')
+                """);
+        materializer.run();
+        assertThat(vmCount(requestId)).isEqualTo(1);
+
+        List<Long> active = jdbcTemplate.queryForList("select id from nodes where status = 'ACTIVE'", Long.class);
+        try {
+            jdbcTemplate.update("update nodes set status = 'MAINTENANCE' where status = 'ACTIVE'");
+            materializer.run();
+            // The leftover CREATING VM's node is at the limit, but no node can
+            // take anything, so the recipient fails as it would with none.
+            assertThat(recipientStatus(requestId, second.getId())).isEqualTo("FAILED");
+        } finally {
+            for (Long nodeId : active) {
+                jdbcTemplate.update("update nodes set status = 'ACTIVE' where id = ?", nodeId);
+            }
+        }
     }
 
     @Test
@@ -750,6 +854,57 @@ class RequestRecipientsTest {
         List<String> out = new ArrayList<>();
         detail.get("recipients").forEach(node -> out.add(node.get("status").asString()));
         return out;
+    }
+
+    /**
+     * Two fresh nodes, each holding a copy of a fresh image that becomes this
+     * test's {@link #image}. The second is labelled a GPU node, which
+     * placement ranks last, so a VM goes there only when the first is ruled out.
+     */
+    private long[] twoNodeImage() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        long poolId = jdbcTemplate.queryForObject("select min(id) from ip_pools", Long.class);
+        long first = insertNode("bulk-a-" + suffix, "{}", poolId);
+        long second = insertNode("bulk-b-" + suffix, "{\"gpu\":true}", poolId);
+        String name = "bulk-os-" + suffix;
+        int vmid = 991000 + (int) Math.floorMod(suffix.hashCode(), 8000);
+        image = imageRepository.saveAndFlush(new OsImage(name, "Bulk OS", "ubuntu", "24.04", "ubuntu",
+                vmid, first, 1, 10, CatalogStatus.ACTIVE, null));
+        imageRepository.saveAndFlush(new OsImage(name, "Bulk OS", "ubuntu", "24.04", "ubuntu",
+                vmid + 1, second, 1, 10, CatalogStatus.ACTIVE, null));
+        return new long[] {first, second};
+    }
+
+    /**
+     * Takes what {@link #twoNodeImage} added out of every listing another test
+     * could read: the nodes leave ACTIVE, their image copies are disabled, and
+     * any VM still CREATING on them stops holding a slot of the limit.
+     */
+    private void retireTwoNodeImage(long[] nodes) {
+        jdbcTemplate.update("update os_images set status = 'DISABLED' where node_id in (?, ?)", nodes[0], nodes[1]);
+        jdbcTemplate.update("update vms set status = 'RUNNING' where status = 'CREATING' and node_id in (?, ?)",
+                nodes[0], nodes[1]);
+        jdbcTemplate.update("update nodes set status = 'MAINTENANCE' where id in (?, ?)", nodes[0], nodes[1]);
+    }
+
+    private long insertNode(String name, String extraLabels, long poolId) {
+        return jdbcTemplate.queryForObject("""
+                insert into nodes (name, api_host, status, cpu_threads, memory_mb, labels,
+                                   vm_bridge, storage, ip_pool_id, disk_capacity_gb)
+                values (?, 'https://127.0.0.1:8006', 'ACTIVE', 32, 57344,
+                        cast(? as jsonb) || cast(? as jsonb), 'vmbr2', 'local-lvm', ?, 1000)
+                returning id
+                """, Long.class, name, """
+                {"placement_capacity":{"schema_version":1,"measured_at":"2026-09-18T00:00:00Z",
+                "physical":{"cpu_threads":32,"memory_mb":65536,"disk_gb":1000},
+                "reserved":{"cpu_threads":4,"memory_mb":8192,"disk_gb":200},
+                "allocatable":{"cpu_threads":28,"memory_mb":57344,"disk_gb":800}},
+                "vm_nic_requirements":{"schema_version":1,"mtu":1370,"firewall":true}}
+                """, extraLabels, poolId);
+    }
+
+    private List<Long> vmNodes(long requestId) {
+        return jdbcTemplate.queryForList("select node_id from vms where request_id = ?", Long.class, requestId);
     }
 
     private long vmCount(long requestId) {
