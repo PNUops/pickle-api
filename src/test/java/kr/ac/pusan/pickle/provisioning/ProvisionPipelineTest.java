@@ -15,17 +15,27 @@ import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.fixture;
 import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.jsonFixture;
 import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.okFixture;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.inventory.CloneImagePin;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
@@ -43,6 +53,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 /**
  * Fault-injection tests of the provision pipeline
@@ -79,8 +90,11 @@ class ProvisionPipelineTest {
     @Autowired
     private ProvisionVmJob job;
 
-    @Autowired
+    @MockitoSpyBean
     private ProvisioningTaskRepository taskRepository;
+
+    @MockitoSpyBean
+    private NotificationService notificationService;
 
     @Autowired
     private VmRepository vmRepository;
@@ -443,6 +457,161 @@ class ProvisionPipelineTest {
                 .contains("플랫폼은 VM 데이터를 백업하지 않습니다");
     }
 
+    @Test
+    void completionEventWriteFailureRollsBackAndRetryCompletes() {
+        long vmId = pendingAtFinalize(VmStatus.CREATING, ProvisioningTaskStatus.PENDING);
+        String constraint = "reject_completion_event_" + vmId;
+        jdbc.execute("alter table vm_events add constraint " + constraint
+                + " check (vm_id <> " + vmId + " or type <> 'CREATE')");
+        try {
+            job.provisionVm(vmId);
+
+            assertThat(latestTask(vmId).getStatus()).isEqualTo(ProvisioningTaskStatus.RETRYING);
+            assertThat(latestTask(vmId).getCurrentStep()).isEqualTo(ProvisioningStep.FINALIZE.index());
+            assertThat(vmRepository.findById(vmId).orElseThrow().getStatus()).isEqualTo(VmStatus.CREATING);
+            assertCreateEventCount(vmId, 0);
+            assertCreateNoticeCount(vmId, "vm.create.done", 0);
+            assertCreateNoticeCount(vmId, "vm.create.failed", 0);
+        } finally {
+            jdbc.execute("alter table vm_events drop constraint " + constraint);
+        }
+
+        job.provisionVm(vmId);
+        assertFinalized(vmId);
+    }
+
+    @Test
+    void taskCompletionWriteFailureRollsBackStatusAndEvent() {
+        long vmId = pendingAtFinalize(VmStatus.CREATING, ProvisioningTaskStatus.PENDING);
+        String constraint = "reject_task_completion_" + vmId;
+        jdbc.execute("alter table provisioning_tasks add constraint " + constraint
+                + " check (vm_id <> " + vmId + " or status <> 'DONE')");
+        try {
+            job.provisionVm(vmId);
+
+            assertThat(latestTask(vmId).getStatus()).isEqualTo(ProvisioningTaskStatus.RETRYING);
+            assertThat(vmRepository.findById(vmId).orElseThrow().getStatus()).isEqualTo(VmStatus.CREATING);
+            assertCreateEventCount(vmId, 0);
+            assertCreateNoticeCount(vmId, "vm.create.done", 0);
+        } finally {
+            jdbc.execute("alter table provisioning_tasks drop constraint " + constraint);
+        }
+
+        job.provisionVm(vmId);
+        assertFinalized(vmId);
+    }
+
+    @Test
+    void legacyRunningVmRepairsMissingCompletionEventOnAdminRetry() {
+        long vmId = pendingAtFinalize(VmStatus.RUNNING, ProvisioningTaskStatus.NEEDS_ADMIN);
+        assertThat(taskRepository.requeueForAdminRetry(latestTask(vmId).getId(), java.time.Instant.now()))
+                .isEqualTo(1);
+
+        job.provisionVm(vmId);
+        assertFinalized(vmId);
+
+        job.provisionVm(vmId);
+        assertFinalized(vmId);
+    }
+
+    @Test
+    void legacyRunningVmDoesNotDuplicateExistingCompletionEvent() {
+        long vmId = pendingAtFinalize(VmStatus.RUNNING, ProvisioningTaskStatus.RETRYING);
+        jdbc.update("""
+                insert into vm_events (vm_id, type, actor_kind, detail)
+                values (?, 'CREATE', 'SYSTEM', 'Existing completion')
+                """, vmId);
+
+        job.provisionVm(vmId);
+
+        assertFinalized(vmId);
+        assertThat(jdbc.queryForObject("select detail from vm_events where vm_id = ? and type = 'CREATE'",
+                String.class, vmId)).isEqualTo("Existing completion");
+    }
+
+    @Test
+    void legacyCompletionRecordingFailureParksWithoutCreationFailureNotice() {
+        long vmId = pendingAtFinalize(VmStatus.RUNNING, ProvisioningTaskStatus.RETRYING);
+        jdbc.update("update provisioning_tasks set attempts = ? where vm_id = ?",
+                ProvisionVmJob.MAX_STEP_ATTEMPTS, vmId);
+        String constraint = "reject_legacy_event_" + vmId;
+        jdbc.execute("alter table vm_events add constraint " + constraint
+                + " check (vm_id <> " + vmId + " or type <> 'CREATE')");
+        try {
+            job.provisionVm(vmId);
+
+            assertThat(latestTask(vmId).getStatus()).isEqualTo(ProvisioningTaskStatus.NEEDS_ADMIN);
+            assertThat(latestTask(vmId).getLastError()).contains("완료 기록");
+            assertThat(vmRepository.findById(vmId).orElseThrow().getStatus()).isEqualTo(VmStatus.RUNNING);
+            assertCreateEventCount(vmId, 0);
+            assertCreateNoticeCount(vmId, "vm.create.failed", 0);
+        } finally {
+            jdbc.execute("alter table vm_events drop constraint " + constraint);
+        }
+
+        assertThat(taskRepository.requeueForAdminRetry(latestTask(vmId).getId(), java.time.Instant.now()))
+                .isEqualTo(1);
+        job.provisionVm(vmId);
+        assertFinalized(vmId);
+    }
+
+    @Test
+    void finalizeRefusesDeletingVmAndRunningVmBeforeCompletionStep() {
+        long deletingVmId = pendingAtFinalize(VmStatus.DELETING, ProvisioningTaskStatus.RETRYING);
+        long earlyRunningVmId = pendingAtFinalize(VmStatus.RUNNING, ProvisioningTaskStatus.RETRYING);
+        jdbc.update("update provisioning_tasks set current_step = ? where vm_id = ?",
+                ProvisioningStep.HOSTKEY.index(), earlyRunningVmId);
+
+        job.provisionVm(deletingVmId);
+        job.provisionVm(earlyRunningVmId);
+
+        assertThat(latestTask(deletingVmId).getStatus()).isEqualTo(ProvisioningTaskStatus.FAILED);
+        assertThat(latestTask(earlyRunningVmId).getStatus()).isEqualTo(ProvisioningTaskStatus.FAILED);
+        assertThat(vmRepository.findById(deletingVmId).orElseThrow().getStatus()).isEqualTo(VmStatus.DELETING);
+        assertThat(vmRepository.findById(earlyRunningVmId).orElseThrow().getStatus()).isEqualTo(VmStatus.RUNNING);
+        assertCreateEventCount(deletingVmId, 0);
+        assertCreateEventCount(earlyRunningVmId, 0);
+        assertThat(wm.server().getAllServeEvents()).isEmpty();
+    }
+
+    @Test
+    void lostTaskCompletionClaimRollsBackVmAndEvent() {
+        long vmId = pendingAtFinalize(VmStatus.CREATING, ProvisioningTaskStatus.PENDING);
+        long taskId = latestTask(vmId).getId();
+        doAnswer(invocation -> {
+            // Another connection commits the recovery claim while finalization
+            // owns only the VM row. The actual DONE CAS must then return zero.
+            CompletableFuture.runAsync(() -> jdbc.update("""
+                    update provisioning_tasks set status = 'RETRYING' where id = ?
+                    """, taskId)).get(10, TimeUnit.SECONDS);
+            return invocation.callRealMethod();
+        }).when(taskRepository).complete(eq(taskId), any(java.time.Instant.class));
+
+        job.provisionVm(vmId);
+
+        assertThat(latestTask(vmId).getStatus()).isEqualTo(ProvisioningTaskStatus.RETRYING);
+        assertThat(vmRepository.findById(vmId).orElseThrow().getStatus()).isEqualTo(VmStatus.CREATING);
+        assertCreateEventCount(vmId, 0);
+        assertCreateNoticeCount(vmId, "vm.create.done", 0);
+        assertCreateNoticeCount(vmId, "vm.create.failed", 0);
+    }
+
+    @Test
+    void completionNotificationFailurePreservesCommittedCompletion() {
+        long vmId = pendingAtFinalize(VmStatus.CREATING, ProvisioningTaskStatus.PENDING);
+        doThrow(new IllegalStateException("Notification store unavailable"))
+                .when(notificationService).publish(anyCollection(), eq(NotificationEvent.VM_CREATE_DONE),
+                        anyMap(), eq("vm_create_done:" + vmId));
+
+        job.provisionVm(vmId);
+
+        assertThat(latestTask(vmId).getStatus()).isEqualTo(ProvisioningTaskStatus.DONE);
+        assertThat(vmRepository.findById(vmId).orElseThrow().getStatus()).isEqualTo(VmStatus.RUNNING);
+        assertCreateEventCount(vmId, 1);
+        assertCreateNoticeCount(vmId, "vm.create.done", 0);
+        assertCreateNoticeCount(vmId, "vm.create.failed", 0);
+    }
+
     // ── ⑥ force delete mid-pipeline → resumed run halts before any call ──
 
     @Test
@@ -762,6 +931,39 @@ class ProvisionPipelineTest {
 
     private ProvisioningTask latestTask(long vmId) {
         return taskRepository.findByVmIdOrderByIdDesc(vmId).getFirst();
+    }
+
+    private long pendingAtFinalize(VmStatus vmStatus, ProvisioningTaskStatus taskStatus) {
+        long vmId = createVm();
+        preallocateIp(vmId);
+        preassignVmid(vmId, Math.toIntExact(20000 + vmId));
+        jdbc.update("update vms set status = cast(? as vm_status) where id = ?", vmStatus.name(), vmId);
+        jdbc.update("""
+                insert into provisioning_tasks (vm_id, kind, current_step, status, attempts)
+                values (?, 'PROVISION', ?, cast(? as provisioning_task_status), 1)
+                """, vmId, ProvisioningStep.FINALIZE.index(), taskStatus.name());
+        return vmId;
+    }
+
+    private void assertFinalized(long vmId) {
+        assertThat(latestTask(vmId).getStatus()).isEqualTo(ProvisioningTaskStatus.DONE);
+        assertThat(latestTask(vmId).getLastError()).isNull();
+        assertThat(vmRepository.findById(vmId).orElseThrow().getStatus()).isEqualTo(VmStatus.RUNNING);
+        assertCreateEventCount(vmId, 1);
+        assertCreateNoticeCount(vmId, "vm.create.done", 1);
+        assertCreateNoticeCount(vmId, "vm.create.failed", 0);
+        assertThat(wm.server().getAllServeEvents()).isEmpty();
+    }
+
+    private void assertCreateEventCount(long vmId, long expected) {
+        assertThat(jdbc.queryForObject("select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
+                Long.class, vmId)).isEqualTo(expected);
+    }
+
+    private void assertCreateNoticeCount(long vmId, String event, long expected) {
+        assertThat(jdbc.queryForObject("select count(*) from notifications where dedup_key = ? and event = ?",
+                Long.class, "vm_create_" + ("vm.create.done".equals(event) ? "done:" : "failed:") + vmId,
+                event)).isEqualTo(expected);
     }
 
     private void pendingAtClone(long vmId) {

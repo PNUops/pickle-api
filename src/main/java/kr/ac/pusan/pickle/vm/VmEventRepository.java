@@ -12,5 +12,8 @@ public interface VmEventRepository extends JpaRepository<VmEvent, Long> {
     /** Resolution of the identifier this row wears outside the API boundary. */
     Optional<VmEvent> findByPublicId(UUID publicId);
 
+    /** Used under the VM row lock when repairing interrupted creation completion. */
+    boolean existsByVmIdAndType(Long vmId, VmEventType type);
+
     Page<VmEvent> findByVmIdOrderByIdDesc(Long vmId, Pageable pageable);
 }
