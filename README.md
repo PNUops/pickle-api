@@ -134,6 +134,11 @@ NEEDS_ADMIN 상태로 두고 관리자 콘솔에 띄웁니다. clone pin 누락�
 prepared NIC 조건 불일치처럼 자동 정리가 안전하지 않은 경우에는 VMID와 IP, 기존 guest와
 pin을 그대로 보존하고 NEEDS_ADMIN에서 멈춥니다.
 
+완료 단계는 VM의 RUNNING 상태와 생성 이벤트, 작업 DONE을 한 트랜잭션으로 저장한 뒤
+완료 알림을 발행합니다. 완료 기록 저장 실패는 생성 실패와 구분해 재시도하거나 관리자
+확인을 기다립니다. 이전 실행이 RUNNING 상태만 남겼다면 완료 단계 재실행으로 누락 이벤트와
+작업 결과를 복구하고, 이미 있는 생성 이벤트는 유지합니다.
+
 승인 트랜잭션은 이미지 revision과 후보 노드를 잠근 뒤 CPU, 메모리, 디스크 여유를 함께
 확인합니다. 선택한 노드와 clone 원본 행, template VMID, revision metadata hash는 VM에
 고정됩니다. 워커 재시도도 이 좌표만 사용하며 이미지 metadata나 위치가 바뀌면 관리자

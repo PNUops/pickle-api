@@ -47,6 +47,7 @@ import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.scheduling.JobScheduler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -240,7 +241,7 @@ public class ProvisionVmJob implements ProvisioningService {
                 taskRepository.fail(task.getId(), "VM 행이 존재하지 않습니다", Instant.now());
                 throw new PipelineHalted("vm row missing");
             }
-            if (step > ProvisioningStep.GUARD.index()) {
+            if (step > ProvisioningStep.GUARD.index() && step != ProvisioningStep.FINALIZE.index()) {
                 vm = requireStillCreating(task, vm);
             }
             switch (ProvisioningStep.of(step)) {
@@ -668,26 +669,50 @@ public class ProvisionVmJob implements ProvisioningService {
         return Optional.of(fields[0] + " " + fields[1]);
     }
 
-    /** Step 10: CREATING → RUNNING, task DONE, CREATE event, owner mail. */
+    /** Step 10: atomically record RUNNING, CREATE and DONE, then notify the owner. */
     private void finalizeVm(ProvisioningTask task, Vm vm) {
-        Instant now = Instant.now();
-        int transitioned = vmRepository.transitionStatus(vm.getId(), VmStatus.CREATING,
-                VmStatus.RUNNING, COMPLETED_DETAIL, now);
-        if (transitioned == 1) {
-            // event + mail only on the run that actually flipped the status,
-            // so a crashed-and-resumed finalize cannot duplicate them
-            String ip = Optional.ofNullable(vm.getIpAllocationId())
+        FinalizedVm finalized = transactionTemplate.execute(tx -> {
+            // Serialize with deletion and other VM mutations, and re-read the
+            // status inside the transaction rather than trusting the step guard.
+            Vm current = vmRepository.findByIdForUpdate(vm.getId()).orElse(null);
+            Instant now = Instant.now();
+            if (current == null || (current.getStatus() != VmStatus.CREATING
+                    && current.getStatus() != VmStatus.NEEDS_ADMIN
+                    && current.getStatus() != VmStatus.RUNNING)) {
+                taskRepository.fail(task.getId(), "VM 상태가 바뀌어 완료 기록을 중단했습니다", now);
+                return null;
+            }
+            // RUNNING at this step can be a partial completion written by an
+            // older worker. Repair its missing history without changing power state.
+            if (current.getStatus() != VmStatus.RUNNING
+                    && vmRepository.transitionStatus(current.getId(), current.getStatus(),
+                            VmStatus.RUNNING, COMPLETED_DETAIL, now) == 0) {
+                throw new PipelineHalted("lost completion status transition");
+            }
+            String ip = Optional.ofNullable(current.getIpAllocationId())
                     .flatMap(allocationRepository::findById)
                     .map(a -> hostAddress(a.getIp())).orElse(null);
-            String imageName = imageRepository.findById(vm.getImageId())
+            String imageName = imageRepository.findById(current.getImageId())
                     .map(OsImage::getDisplayName).orElse(null);
-            vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.CREATE, null, VmActorKind.SYSTEM,
-                    completedDetail(imageName, ip)));
-            publishCreated(vm, ip);
+            if (!vmEventRepository.existsByVmIdAndType(current.getId(), VmEventType.CREATE)) {
+                vmEventRepository.saveAndFlush(new VmEvent(current.getId(), VmEventType.CREATE,
+                        null, VmActorKind.SYSTEM, completedDetail(imageName, ip)));
+            }
+            if (taskRepository.complete(task.getId(), now) == 0) {
+                // A task that is no longer RUNNING cannot commit completion.
+                throw new PipelineHalted("lost task completion claim");
+            }
+            return new FinalizedVm(current, ip);
+        });
+        if (finalized != null) {
+            // Notification delivery remains best effort and deduplicated. It
+            // cannot announce completion before the completion records commit.
+            publishCreated(finalized.vm(), finalized.ip());
+            log.info("provision vm {} finished (vmid {})", vm.getId(), vm.getProxmoxVmid());
         }
-        taskRepository.complete(task.getId(), now);
-        log.info("provision vm {} finished (vmid {})", vm.getId(), vm.getProxmoxVmid());
     }
+
+    private record FinalizedVm(Vm vm, String ip) {}
 
     /**
      * The owner's timeline entry for a finished provision: the OS the VM runs
@@ -728,8 +753,9 @@ public class ProvisionVmJob implements ProvisioningService {
             return;
         }
         int step = task.getCurrentStep();
-        String error = "단계 " + step + "(" + ProvisioningStep.of(step).label() + ") 실패: "
-                + summarize(e);
+        String error = step == ProvisioningStep.FINALIZE.index()
+                ? "VM 완료 기록 저장 실패: " + summarize(e)
+                : "단계 " + step + "(" + ProvisioningStep.of(step).label() + ") 실패: " + summarize(e);
         log.warn("provision vm {} failed at step {} (attempt {}): {}", vmId, step,
                 task.getAttempts(), summarize(e), e);
 
@@ -741,7 +767,9 @@ public class ProvisionVmJob implements ProvisioningService {
             return;
         }
 
-        if (isRetryable(e) && task.getAttempts() <= MAX_STEP_ATTEMPTS
+        boolean retryable = isRetryable(e)
+                || (step == ProvisioningStep.FINALIZE.index() && e instanceof DataAccessException);
+        if (retryable && task.getAttempts() <= MAX_STEP_ATTEMPTS
                 && taskRepository.markRetrying(taskId, error, now) == 1) {
             Duration backoff = RETRY_BACKOFF.get(Math.min(task.getAttempts(), MAX_STEP_ATTEMPTS) - 1);
             var jobId = jobScheduler.schedule(now.plus(backoff), () -> provisionVm(vmId));
@@ -751,7 +779,14 @@ public class ProvisionVmJob implements ProvisioningService {
             return;
         }
 
-        if (e instanceof VmidConflict) {
+        if (step == ProvisioningStep.FINALIZE.index()) {
+            // The guest has already passed start, network and host-key checks.
+            // A completion-recording failure must not report a creation failure.
+            if (taskRepository.park(taskId, error, now) == 1) {
+                vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
+                        "VM 완료 기록을 저장하지 못해 관리자 확인이 필요합니다", now);
+            }
+        } else if (e instanceof VmidConflict) {
             // Neither compensation nor retry is safe: the resident may carry
             // the pickle tag (orphan of a lost row), so no tag-trusting
             // destroy guard may ever see it. Drop OUR claim on the number
