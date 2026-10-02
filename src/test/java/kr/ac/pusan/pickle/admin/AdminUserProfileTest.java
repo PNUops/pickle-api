@@ -118,6 +118,7 @@ class AdminUserProfileTest {
         assertThat(userRepository.findByEmail(TARGET).orElseThrow().getStudentNo())
                 .isEqualTo("322012345");
 
+        other = userRepository.findById(other.getId()).orElseThrow();
         other.setProfile(UserPosition.STUDENT_UNDERGRAD, "329900021", "COMPUTER_SCIENCE", null);
         userRepository.saveAndFlush(other);
     }

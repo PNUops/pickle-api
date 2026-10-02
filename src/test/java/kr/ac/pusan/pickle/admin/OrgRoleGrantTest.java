@@ -128,7 +128,9 @@ class OrgRoleGrantTest {
                 .containsExactlyInAnyOrder(orgA.getId(), orgB.getId());
 
         // revoking one leaves the other, and the effective role follows
-        mockMvc.perform(delete(orgRolePath(target, orgB))
+        grant(ensureUser("ogr.backup.admin.b@pusan.ac.kr", "B기관 별도 관리자", UserRole.ORG_ADMIN),
+                orgB, UserRole.ORG_ADMIN);
+        mockMvc.perform(delete(orgRolePath(target, orgB)).param("expectedRevision", String.valueOf(revision(orgB)))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("ORG_MANAGER"));
@@ -142,7 +144,7 @@ class OrgRoleGrantTest {
         User promoted = userRepository.findById(target.getId()).orElseThrow();
         String promotedToken = jwtService.createAccessToken(promoted);
 
-        mockMvc.perform(delete(orgRolePath(target, orgA))
+        mockMvc.perform(delete(orgRolePath(target, orgA)).param("expectedRevision", String.valueOf(revision(orgA)))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("USER"));
@@ -163,7 +165,7 @@ class OrgRoleGrantTest {
         putRole(target, orgB, adminOfAToken, UserRole.ORG_ADMIN)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        mockMvc.perform(delete(orgRolePath(target, orgB))
+        mockMvc.perform(delete(orgRolePath(target, orgB)).param("expectedRevision", String.valueOf(revision(orgB)))
                         .header("Authorization", "Bearer " + adminOfAToken))
                 .andExpect(status().isNotFound());
     }
@@ -328,7 +330,7 @@ class OrgRoleGrantTest {
                         .header("Authorization", "Bearer " + viewerOfAToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("role", UserRole.ORG_VIEWER.name()))))
+                                Map.of("role", UserRole.ORG_VIEWER.name(), "expectedRevision", revision(orgA)))))
                 .andExpect(status().isForbidden());
     }
 
@@ -347,11 +349,15 @@ class OrgRoleGrantTest {
         return mockMvc.perform(put(orgRolePath(user, org))
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("role", role.name()))));
+                .content(objectMapper.writeValueAsString(Map.of("role", role.name(), "expectedRevision", revision(org)))));
     }
 
     private String orgRolePath(User user, Org org) {
         return "/api/v1/admin/users/" + user.getPublicId() + "/org-roles/" + org.getPublicId();
+    }
+
+    private long revision(Org org) {
+        return jdbcTemplate.queryForObject("select admin_revision from orgs where id = ?", Long.class, org.getId());
     }
 
     private Org ensureOrg(String name) {

@@ -57,6 +57,9 @@ public final class ErrorCodes {
     public static final String ACCOUNT_NOT_DISABLED = "ACCOUNT_NOT_DISABLED";
     /** Disable target is not in a disable-able state (already DISABLED, or WITHDRAWN). */
     public static final String ACCOUNT_INVALID_STATE = "ACCOUNT_INVALID_STATE";
+    public static final String ACCOUNT_CONCURRENT_MODIFICATION = "ACCOUNT_CONCURRENT_MODIFICATION";
+    public static final String ORG_OPERATIONS_CONFLICT = "ORG_OPERATIONS_CONFLICT";
+    public static final String ORG_STAFF_VACANCY = "ORG_STAFF_VACANCY";
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
     public static final String RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND";
     public static final String WORKSPACE_MEMBER_MANAGE_FORBIDDEN = "WORKSPACE_MEMBER_MANAGE_FORBIDDEN";

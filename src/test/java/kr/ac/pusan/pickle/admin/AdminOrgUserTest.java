@@ -239,7 +239,7 @@ class AdminOrgUserTest {
                         + "/org-roles/" + org.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("role", "ORG_MANAGER"))))
+                        .content(objectMapper.writeValueAsString(Map.of("role", "ORG_MANAGER", "expectedRevision", jdbcTemplate.queryForObject("select admin_revision from orgs where id = ?", Long.class, org.getId())))))
                 .andExpect(status().isOk());
         patchJson("/api/v1/admin/users/" + orgTarget.getPublicId(), sysAdminToken,
                 Map.of("role", "USER"))
@@ -249,7 +249,7 @@ class AdminOrgUserTest {
                 .containsExactly(org.getId());
 
         mockMvc.perform(delete("/api/v1/admin/users/" + orgTarget.getPublicId()
-                        + "/org-roles/" + org.getPublicId())
+                        + "/org-roles/" + org.getPublicId()).param("expectedRevision", String.valueOf(jdbcTemplate.queryForObject("select admin_revision from orgs where id = ?", Long.class, org.getId())))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("USER"));

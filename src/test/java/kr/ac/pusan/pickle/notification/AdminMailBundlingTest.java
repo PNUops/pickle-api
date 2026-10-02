@@ -211,7 +211,7 @@ class AdminMailBundlingTest {
                         + org.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"role\":\"ORG_VIEWER\"}"))
+                        .content("{\"role\":\"ORG_VIEWER\",\"expectedRevision\":" + jdbcTemplate.queryForObject("select admin_revision from orgs where id = ?", Long.class, org.getId()) + "}"))
                 .andExpect(status().isOk());
 
         assertThat(jdbcTemplate.queryForObject(
@@ -405,7 +405,7 @@ class AdminMailBundlingTest {
                         + target.getPublicId() + "/request-mail")
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"enabled\":" + enabled + "}"));
+                .content("{\"enabled\":" + enabled + ",\"expectedRevision\":" + jdbcTemplate.queryForObject("select admin_revision from orgs where id = ?", Long.class, target.getId()) + "}"));
     }
 
     private String token(User user) {

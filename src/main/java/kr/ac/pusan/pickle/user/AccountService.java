@@ -37,6 +37,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AccountService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.orgs.OrgAdministrationLock orgAdministrationLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.orgs.OrgAccountStatusChanges orgAccountStatusChanges;
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -77,6 +82,7 @@ public class AccountService {
     @Transactional
     public MessageResponse withdraw(long userId, String password, String totpCode, String recoveryCode,
             String ip) {
+        orgAdministrationLock.acquire();
         User user = userRepository.findById(userId).orElseThrow(AccountService::sessionUserGone);
         // Password-only oracle for a hijacked session (the mismatch below throws
         // before the 2FA check): same dual-key window and shared lockout as login.
@@ -109,6 +115,7 @@ public class AccountService {
                 .filter(member -> member.getWorkspace().getDeletedAt() == null)
                 .toList();
         checkWithdrawBlockers(liveMemberships);
+        orgAccountStatusChanges.requireMayWithdraw(user.getId());
 
         Instant now = Instant.now();
         UserStatus fromStatus = user.getStatus();
@@ -130,6 +137,9 @@ public class AccountService {
         grantRepository.deleteByUserId(user.getId());
         userStatusChangeRepository.save(new UserStatusChange(user.getId(), fromStatus,
                 UserStatus.WITHDRAWN, user.getId(), null));
+        userRepository.flush();
+        orgAccountStatusChanges.record(user.getId(), user.getPublicId(), fromStatus, UserStatus.WITHDRAWN,
+                user.getId(), user.getRole().name(), null, ip);
 
         auditService.recordAfterCommit(user.getId(), user.getRole().name(), AuditService.ACCOUNT_WITHDRAW,
                 "user", user.getPublicId(), Map.of("email", user.getEmail()), ip);

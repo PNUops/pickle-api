@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Min;
 import kr.ac.pusan.pickle.user.UserRole;
 
 /**
@@ -11,5 +12,6 @@ import kr.ac.pusan.pickle.user.UserRole;
  */
 public record GrantOrgRoleRequest(
         @Schema(description = "이 기관에서 부여할 역할 (ORG_ADMIN, ORG_MANAGER, ORG_VIEWER)")
-        @NotNull UserRole role) {
+        @NotNull UserRole role,
+        @NotNull @Min(0) Long expectedRevision) {
 }

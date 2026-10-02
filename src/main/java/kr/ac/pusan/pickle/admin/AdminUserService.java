@@ -41,6 +41,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AdminUserService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.orgs.OrgAdministrationLock orgAdministrationLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.orgs.OrgAccountStatusChanges orgAccountStatusChanges;
+
     private final UserRepository userRepository;
     private final UserStatusChangeRepository userStatusChangeRepository;
     private final AuditService auditService;
@@ -177,6 +182,7 @@ public class AdminUserService {
 
     @Transactional
     public UserAdminDetailResponse disable(AuthenticatedUser actor, UUID userId, String reason, String ip) {
+        orgAdministrationLock.acquire();
         User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         if (actor.id().equals(user.getId())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_SELF_DISABLE_FORBIDDEN,
@@ -200,6 +206,9 @@ public class AdminUserService {
         refreshTokenService.revokeAllForUser(user.getId());
         userStatusChangeRepository.save(new UserStatusChange(user.getId(), fromStatus,
                 UserStatus.DISABLED, actor.id(), reason));
+        userRepository.flush();
+        orgAccountStatusChanges.record(user.getId(), user.getPublicId(), fromStatus, UserStatus.DISABLED,
+                actor.id(), actor.role().name(), reason, ip);
 
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_DISABLE,
                 "user", user.getPublicId(), Map.of("reason", reason, "fromStatus", fromStatus.name()), ip);
@@ -220,6 +229,7 @@ public class AdminUserService {
 
     @Transactional
     public UserAdminDetailResponse enable(AuthenticatedUser actor, UUID userId, String ip) {
+        orgAdministrationLock.acquire();
         User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         if (user.getStatus() != UserStatus.DISABLED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_NOT_DISABLED,
@@ -244,6 +254,8 @@ public class AdminUserService {
         // good. A restored PENDING_VERIFICATION account claims later, at
         // verification, like any other.
         userRepository.flush();
+        orgAccountStatusChanges.record(user.getId(), user.getPublicId(), UserStatus.DISABLED, restored,
+                actor.id(), actor.role().name(), null, ip);
         invitationClaimService.claimByEmail(user, actor.id(), actor.role().name());
         invitationClaimService.claimByStudentNo(user, actor.id(), actor.role().name());
 

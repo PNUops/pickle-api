@@ -28,6 +28,14 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    @ExceptionHandler({org.springframework.dao.OptimisticLockingFailureException.class,
+            jakarta.persistence.OptimisticLockException.class})
+    public ResponseEntity<ProblemDetail> handleConcurrentAccountChange(Exception ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem(HttpStatus.CONFLICT,
+                "계정 정보가 변경됐습니다", "다른 변경과 겹쳤습니다. 최신 정보를 다시 불러와 확인해 주세요.",
+                kr.ac.pusan.pickle.common.error.ErrorCodes.ACCOUNT_CONCURRENT_MODIFICATION, request));
+    }
+
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ProblemDetail> handleApiException(ApiException ex, HttpServletRequest request) {
         ProblemDetail problem = problem(ex.getStatus(), ex.getTitle(), ex.getDetail(), ex.getCode(), request);

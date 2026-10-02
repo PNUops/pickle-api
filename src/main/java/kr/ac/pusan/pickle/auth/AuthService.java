@@ -5,6 +5,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import kr.ac.pusan.pickle.orgs.OrgAdministrationLock;
+import kr.ac.pusan.pickle.orgs.OrgAccountStatusChanges;
 import kr.ac.pusan.pickle.profile.ProfileValidator;
 import kr.ac.pusan.pickle.profile.StudentNoUniqueness;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -84,6 +86,8 @@ public class AuthService {
     private final MfaService mfaService;
     private final TermsService termsService;
     private final TransactionTemplate transactionTemplate;
+    private final OrgAdministrationLock administrationLock;
+    private final OrgAccountStatusChanges accountStatusChanges;
 
     public AuthService(UserRepository userRepository,
             EmailVerificationRepository emailVerificationRepository,
@@ -102,7 +106,8 @@ public class AuthService {
             AuthProperties authProperties,
             MfaService mfaService,
             TermsService termsService,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            OrgAdministrationLock administrationLock, OrgAccountStatusChanges accountStatusChanges) {
         this.userRepository = userRepository;
         this.emailVerificationRepository = emailVerificationRepository;
         this.refreshTokenService = refreshTokenService;
@@ -122,6 +127,8 @@ public class AuthService {
         this.mfaService = mfaService;
         this.termsService = termsService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.administrationLock = administrationLock;
+        this.accountStatusChanges = accountStatusChanges;
     }
 
     /**
@@ -217,6 +224,7 @@ public class AuthService {
         if (verification.isExpired(now)) {
             throw verificationTokenGone();
         }
+        administrationLock.acquire();
         // Conditional consume: a concurrent (or repeated) use of the same
         // token loses the UPDATE and gets 410, so activation runs only once.
         if (emailVerificationRepository.consume(verification.getId(), now) == 0) {
@@ -244,13 +252,19 @@ public class AuthService {
      * <p>The same reasoning puts the invitation claim here: an owner who
      * invited this address, or a 학번 the signup carried, is waiting on the
      * account becoming usable, and all three paths are that moment. The claim
-     * reads only the user's id, email and 학번, so it works on the instance
-     * the Google path has already detached.</p>
+     * reads only the user's id, email and 학번. Callers load the user after
+     * acquiring the administration lock and reload after context clearing.</p>
      */
+    @Transactional
     public void activateAccount(User user, Instant when) {
+        administrationLock.acquire();
+        UserStatus previous = user.getStatus();
         if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(when);
+            userRepository.flush();
+            accountStatusChanges.record(user.getId(), user.getPublicId(), previous, user.getStatus(),
+                    user.getId(), user.getRole().name(), "email_verified", null);
         }
         personalWorkspaceService.ensurePersonalWorkspace(user);
         invitationClaimService.claimByEmail(user);

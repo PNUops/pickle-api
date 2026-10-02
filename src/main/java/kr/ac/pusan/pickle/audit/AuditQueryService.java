@@ -98,7 +98,7 @@ public class AuditQueryService {
     @Transactional(readOnly = true)
     public PageResponse<AuditLogViewResponse> adminAudit(AuthenticatedUser actor,
             String actorEmail, String action, String targetType, String targetId,
-            LocalDate from, LocalDate to, UUID orgId, int page, int size) {
+            LocalDate from, LocalDate to, UUID orgId, UUID targetOrgId, int page, int size) {
         OrgScope scope = scopeOrgId(actor, orgId);
         StringBuilder where = new StringBuilder(" where 1 = 1");
         List<Object> params = new ArrayList<>();
@@ -106,12 +106,15 @@ public class AuditQueryService {
             // actor-org scoping in SQL (never post-filtered): the orgs' own
             // administrators plus derived members; system rows (null actor) and
             // out-of-scope actors drop out
-            where.append(" and (exists (select 1 from user_org_roles uor")
+            where.append(" and ((a.target_org_id is not null and ")
+                    .append(scope.inList("a.target_org_id"))
+                    .append(") or (a.target_org_id is null and (exists (select 1 from user_org_roles uor")
                     .append(" where uor.user_id = u.id and ")
                     .append(scope.inList("uor.org_id"))
                     .append(") or (u.status = 'ACTIVE' and ")
                     .append(OrgMembershipSql.memberOfOrgLinkedWorkspace("a.actor_id", scope))
-                    .append("))");
+                    .append("))))");
+            params.addAll(scope.orgIds());
             params.addAll(scope.orgIds());
             params.addAll(scope.orgIds());
             params.addAll(scope.orgIds());
@@ -119,6 +122,10 @@ public class AuditQueryService {
         if (actorEmail != null && !actorEmail.isBlank()) {
             where.append(" and u.email = ?"); // citext — case-insensitive
             params.add(actorEmail.strip());
+        }
+        if (targetOrgId != null) {
+            where.append(" and a.target_org_id = (select id from orgs where public_id = ?)");
+            params.add(targetOrgId);
         }
         if (targetType != null && !targetType.isBlank()) {
             where.append(" and a.target_type = ?");
@@ -142,7 +149,9 @@ public class AuditQueryService {
                 + "u.public_id as actor_public_id, "
                 + "a.actor_role, a.action, a.target_type, a.target_id, a.detail, a.ip, "
                 + "a.created_at, u.email as actor_email, u.name as actor_name, "
-                + ACTOR_ORG_NAME + " as org_name"
+                + ACTOR_ORG_NAME + " as org_name, "
+                + "(select o.public_id from orgs o where o.id = a.target_org_id) as target_org_public_id, "
+                + "a.target_org_name"
                 + base + where + " order by a.created_at desc, a.id desc limit ? offset ?",
                 (rs, rowNum) -> new AuditLogViewResponse(rs.getObject("public_id", UUID.class),
                         rs.getObject("actor_public_id", UUID.class), rs.getString("actor_email"),
@@ -151,6 +160,7 @@ public class AuditQueryService {
                         rs.getString("target_id"),
                         detailOf(rs.getString("detail")), rs.getString("ip"),
                         rs.getString("org_name"),
+                        rs.getObject("target_org_public_id", UUID.class), rs.getString("target_org_name"),
                         rs.getObject("created_at", OffsetDateTime.class).toInstant()),
                 params.toArray());
         return pageOf(content, page, size, total);

@@ -194,6 +194,7 @@ class NoticeTest {
                 .andExpect(listOmits(boardNotice))
                 .andExpect(listOmits(orgAdminNotice));
         publicGet(userToken, boardNotice).andExpect(status().isNotFound());
+        member = userRepository.findById(member.getId()).orElseThrow();
         member.setStatus(UserStatus.ACTIVE);
         userRepository.save(member);
     }

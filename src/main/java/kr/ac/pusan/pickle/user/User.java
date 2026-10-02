@@ -8,6 +8,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import org.hibernate.annotations.DynamicUpdate;
 import java.time.Instant;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -18,7 +20,12 @@ import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "users")
+@DynamicUpdate
 public class User {
+
+    @Version
+    @Column(name = "row_revision", nullable = false)
+    private long rowRevision;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

@@ -47,9 +47,10 @@ public class AdminAuditController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate to,
             @RequestParam(required = false) UUID orgId,
+            @RequestParam(required = false) UUID targetOrgId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return auditQueryService.adminAudit(principal, actorEmail, action, targetType, targetId,
-                from, to, orgId, page, size);
+                from, to, orgId, targetOrgId, page, size);
     }
 }

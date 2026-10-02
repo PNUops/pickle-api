@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.92.0, 263 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.93.0, 266 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -430,3 +430,39 @@ operations:
   - { id: updateAdminRouteSourcePolicy, method: PUT, path: "/admin/routes/{routeId}/source-policy", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: getAdminPortMappingSourcePolicy, method: GET, path: "/admin/port-mappings/{mappingId}/source-policy", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateAdminPortMappingSourcePolicy, method: PUT, path: "/admin/port-mappings/{mappingId}/source-policy", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  - id: getAdminOrgOperations
+    method: GET
+    path: /admin/orgs/{orgId}/operations
+    roles:
+      USER: deny
+      ORG_VIEWER: allow_org_scoped
+      ORG_MANAGER: allow_org_scoped
+      ORG_ADMIN: allow_org_scoped
+      SYS_VIEWER: allow
+      SYS_MANAGER: allow
+      SYS_ADMIN: allow
+
+  - id: previewAdminOrgOperations
+    method: POST
+    path: /admin/orgs/{orgId}/operations/preview
+    roles:
+      USER: deny
+      ORG_VIEWER: deny
+      ORG_MANAGER: deny
+      ORG_ADMIN: allow_org_scoped
+      SYS_VIEWER: deny
+      SYS_MANAGER: deny
+      SYS_ADMIN: allow
+
+  - id: saveAdminOrgOperations
+    method: PUT
+    path: /admin/orgs/{orgId}/operations
+    roles:
+      USER: deny
+      ORG_VIEWER: deny
+      ORG_MANAGER: deny
+      ORG_ADMIN: allow_org_scoped
+      SYS_VIEWER: deny
+      SYS_MANAGER: deny
+      SYS_ADMIN: allow

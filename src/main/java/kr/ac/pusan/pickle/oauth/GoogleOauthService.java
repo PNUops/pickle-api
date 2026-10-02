@@ -26,6 +26,7 @@ import kr.ac.pusan.pickle.oauth.dto.OauthLinkedResponse;
 import kr.ac.pusan.pickle.oauth.dto.OauthRegistrationResponse;
 import kr.ac.pusan.pickle.oauth.dto.OauthStartRequest;
 import kr.ac.pusan.pickle.oauth.dto.OauthStartResponse;
+import kr.ac.pusan.pickle.orgs.OrgAdministrationLock;
 import kr.ac.pusan.pickle.profile.ProfileValidator;
 import kr.ac.pusan.pickle.profile.StudentNoUniqueness;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -74,6 +75,7 @@ public class GoogleOauthService {
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    private final OrgAdministrationLock administrationLock;
 
     public GoogleOauthService(GoogleOauthProperties properties, GoogleOidcClient client,
             OauthFlowRepository flowRepository, OauthRegistrationRepository registrationRepository,
@@ -82,7 +84,7 @@ public class GoogleOauthService {
             TermsService termsService, ProfileValidator profileValidator,
             StudentNoUniqueness studentNoUniqueness,
             RateLimitService rateLimitService, AuditService auditService,
-            NotificationService notificationService) {
+            NotificationService notificationService, OrgAdministrationLock administrationLock) {
         this.properties = properties;
         this.client = client;
         this.flowRepository = flowRepository;
@@ -97,6 +99,7 @@ public class GoogleOauthService {
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
         this.notificationService = notificationService;
+        this.administrationLock = administrationLock;
     }
 
     // ---------------------------------------------------------------- start
@@ -157,6 +160,8 @@ public class GoogleOauthService {
 
     private Object login(GoogleOidcClient.GoogleIdentity identity, String email, String ip,
             String userAgent) {
+        // The external code exchange has completed before this short DB lock.
+        administrationLock.acquire();
         // sub first, then address, then new. sub is the stable key: a Workspace
         // rename changes the address but not the subject, and matching on the
         // address first would strand the renamed account.
@@ -207,9 +212,10 @@ public class GoogleOauthService {
             // persistence context — including this user. Activating first and
             // invalidating second silently threw the activation away (the row
             // stayed PENDING_VERIFICATION while the response said success).
-            // Invalidate first, then activate, then merge the now-detached
-            // instance back with save().
+            // Invalidate first, then reload the current user under the lock.
+            // Activation and credential cleanup use this managed instance.
             authService.invalidateOpenSignupVerifications(user.getId());
+            user = userRepository.findById(user.getId()).orElseThrow(GoogleOauthService::stateGone);
             authService.activateAccount(user, Instant.now());
             // The password on a pending account came from whoever filled the
             // signup form, and that is not necessarily the person standing here

@@ -25,5 +25,7 @@ public record AuditLogViewResponse(
         @Nullable JsonNode detail,
         @Nullable String ip,
         @Nullable String orgName,
+        @Nullable UUID targetOrgId,
+        @Nullable String targetOrgName,
         Instant createdAt) {
 }

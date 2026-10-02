@@ -46,6 +46,11 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class NotificationService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.orgs.OrgAdministrationLock orgAdministrationLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.admin.AdminOrgOperationsQueryService orgOperationsQuery;
+
     private static final String INSERT_SQL = """
             insert into notifications
                 (user_id, event, title, body, link_path, importance, payload, dedup_key, status,
@@ -109,6 +114,58 @@ public class NotificationService {
     public void publishToAdmins(Collection<Long> recipientUserIds, NotificationEvent event,
             Map<String, Object> args, String dedupKey) {
         insert(recipientUserIds, event, args, dedupKey, true);
+    }
+
+    /** Freezes request recipients in the request transaction; delivery does not reselect them. */
+    @org.springframework.transaction.annotation.Transactional(
+            propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void publishRequestSubmitted(long requestId, java.util.UUID requestPublicId,
+            java.util.UUID orgPublicId, long requesterId, Map<String, Object> args) {
+        orgAdministrationLock.acquire();
+        Map<String, Object> requester = jdbcTemplate.queryForMap(
+                "select public_id, email, name, status::text from users where id = ?", requesterId);
+        java.util.UUID requesterPublicId = (java.util.UUID) requester.get("public_id");
+        var snapshot = orgOperationsQuery.forSelection(orgPublicId, requesterPublicId);
+        List<Long> inserted = jdbcTemplate.query("""
+                insert into request_notification_selections (request_id, org_id, policy_revision, mail_mode, recipients)
+                values (?, (select id from orgs where public_id = ?), ?, ?, ?::jsonb)
+                on conflict (request_id) do nothing returning id
+                """, (rs, index) -> rs.getLong("id"), requestId, orgPublicId, snapshot.revision(),
+                snapshot.mailMode() == null ? "LEGACY" : snapshot.mailMode().name(),
+                objectMapper.writeValueAsString(Map.of("staff", snapshot.members(), "requester",
+                        Map.of("userId", requesterPublicId, "email", requester.get("email").toString(),
+                                "name", requester.get("name").toString(), "status", requester.get("status").toString()))));
+        if (inserted.isEmpty()) return;
+        long selectionId = inserted.getFirst();
+        insertFrozen(requesterId, NotificationEvent.REQUEST_SUBMITTED, args,
+                "request_submitted:" + requestPublicId + ":requester", false, selectionId,
+                requester.get("email").toString(), "ACTIVE".equals(requester.get("status")), "ACCOUNT_INACTIVE");
+        Map<String, Object> adminArgs = new java.util.LinkedHashMap<>(args);
+        adminArgs.put("admin", true);
+        for (var member : snapshot.members()) {
+            if (!member.inAppRecipient()) continue;
+            long userId = jdbcTemplate.queryForObject("select id from users where public_id = ?",
+                    Long.class, member.userId());
+            insertFrozen(userId, NotificationEvent.REQUEST_SUBMITTED, adminArgs,
+                    "request_submitted:" + requestPublicId + ":admin", true, selectionId,
+                    member.email(), member.currentMailRecipient(), "NOT_SELECTED");
+        }
+    }
+
+    private void insertFrozen(long userId, NotificationEvent event, Map<String, Object> args,
+            String dedupKey, boolean admin, long selectionId, String address, boolean mailSelected,
+            String skipReason) {
+        var composed = composer.compose(event, args);
+        jdbcTemplate.update("""
+                insert into notifications (user_id, event, title, body, link_path, importance, payload,
+                    dedup_key, status, bundle, request_selection_id, recipient_email, skip_reason)
+                values (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::notification_status, ?, ?, ?, ?)
+                on conflict (user_id, dedup_key) where dedup_key is not null do nothing
+                """, userId, composed.eventId(), composed.title(), composed.body(), composed.linkPath(),
+                composed.importance().name(), composed.payload() == null ? null
+                        : objectMapper.writeValueAsString(composed.payload()), dedupKey,
+                mailSelected ? "PENDING" : "SKIPPED", admin && mailSelected, selectionId, address,
+                mailSelected ? null : skipReason);
     }
 
     private void insert(Collection<Long> recipientUserIds, NotificationEvent event,
