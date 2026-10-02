@@ -56,7 +56,7 @@ public class NotificationDispatchJob {
     private static final String MAIL_FOOTER = "\n\n" + MailHtmlLayout.TEXT_SIGNATURE + "\n";
 
     record PendingMail(long id, int attempts, String event, String title, String body,
-                               String linkPath, String email, String userStatus) {
+                               String linkPath, String email, String userStatus, boolean frozenRecipient) {
     }
 
     /**
@@ -85,7 +85,8 @@ public class NotificationDispatchJob {
 
     private static final String PENDING_MAIL_COLUMNS = """
             select n.id, n.attempts, n.event, n.title, n.body, n.link_path,
-                   u.email, u.status as user_status
+                   coalesce(n.recipient_email, u.email) as email, u.status as user_status,
+                   (n.request_selection_id is not null) as frozen_recipient
               from notifications n
               join users u on u.id = n.user_id
             """;
@@ -156,22 +157,22 @@ public class NotificationDispatchJob {
             if (waiting.isEmpty()) {
                 continue;
             }
-            if (!"ACTIVE".equals(waiting.getFirst().userStatus())) {
-                waiting.forEach(this::skipIfInactive);
-                continue;
-            }
-            List<PendingMail> claimed = claim(waiting);
-            if (claimed.isEmpty()) {
-                continue;
-            }
-            String email = claimed.getFirst().email();
-            if (claimed.size() == 1) {
-                PendingMail mail = claimed.getFirst();
-                send(claimed, email, "[Pickle] " + mail.title(), textPart(mail), htmlPart(mail));
-            } else {
-                Bundle bundle = bundle(claimed);
-                send(claimed, email, "[Pickle] " + bundle.title(), bundleText(bundle),
-                        bundleHtml(bundle, claimed));
+            List<PendingMail> eligible = waiting.stream().filter(mail -> !skipIfInactive(mail)).toList();
+            var addresses = eligible.stream().collect(java.util.stream.Collectors.groupingBy(PendingMail::email));
+            for (List<PendingMail> addressRows : addresses.values()) {
+                List<PendingMail> claimed = claim(addressRows);
+                if (claimed.isEmpty()) {
+                    continue;
+                }
+                String email = claimed.getFirst().email();
+                if (claimed.size() == 1) {
+                    PendingMail mail = claimed.getFirst();
+                    send(claimed, email, "[Pickle] " + mail.title(), textPart(mail), htmlPart(mail));
+                } else {
+                    Bundle bundle = bundle(claimed);
+                    send(claimed, email, "[Pickle] " + bundle.title(), bundleText(bundle),
+                            bundleHtml(bundle, claimed));
+                }
             }
         }
     }
@@ -181,16 +182,15 @@ public class NotificationDispatchJob {
         return new PendingMail(rs.getLong("id"), rs.getInt("attempts"),
                 rs.getString("event"), rs.getString("title"), rs.getString("body"),
                 rs.getString("link_path"), rs.getString("email"),
-                rs.getString("user_status"));
+                rs.getString("user_status"), rs.getBoolean("frozen_recipient"));
     }
 
     /**
-     * Recipient deactivated between enqueue and send (publish resolves ACTIVE
-     * at insert time) — never mail a closed account; SKIPPED keeps the
-     * delivery log honest instead of an eternal PENDING.
+     * Legacy recipients are checked for activation. Request snapshots preserve
+     * the enqueue-time decision and address, including later account changes.
      */
     private boolean skipIfInactive(PendingMail mail) {
-        if ("ACTIVE".equals(mail.userStatus())) {
+        if (mail.frozenRecipient() || "ACTIVE".equals(mail.userStatus())) {
             return false;
         }
         jdbcTemplate.update("""
@@ -210,6 +210,7 @@ public class NotificationDispatchJob {
      * first keeps it.
      */
     private List<PendingMail> claim(List<PendingMail> rows) {
+        if (rows.isEmpty()) return List.of();
         String placeholders = "(?, ?), ".repeat(rows.size() - 1) + "(?, ?)";
         Object[] args = rows.stream()
                 .flatMap(row -> java.util.stream.Stream.of(row.id(), row.attempts()))

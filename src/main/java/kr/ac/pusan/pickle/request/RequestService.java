@@ -235,14 +235,10 @@ public class RequestService {
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
                 "request", saved.getPublicId(), auditArgs, ip);
         // In-tx inserts: the notices exist iff the request row committed.
-        notificationService.publish(actor.id(), NotificationEvent.REQUEST_SUBMITTED,
+        notificationService.publishRequestSubmitted(saved.getId(), saved.getPublicId(),
+                org.getPublicId(), actor.id(),
                 Map.of("requestId", saved.getPublicId(), "workspaceName", workspace.getName(),
-                        "purpose", saved.getPurpose(), "type", form.type().name()), null);
-        notificationService.publishToAdmins(
-                notificationService.requestMailRecipientIds(org.getId(), actor.id()),
-                NotificationEvent.REQUEST_SUBMITTED,
-                Map.of("requestId", saved.getPublicId(), "workspaceName", workspace.getName(),
-                        "purpose", saved.getPurpose(), "type", form.type().name(), "admin", true), null);
+                        "purpose", saved.getPurpose(), "type", form.type().name()));
         return assembler.toDetail(saved, actor);
     }
 

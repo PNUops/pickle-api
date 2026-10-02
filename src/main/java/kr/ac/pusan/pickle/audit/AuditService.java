@@ -314,4 +314,28 @@ public class AuditService {
         AfterCommit.run("audit " + action + " " + targetId, () -> self.getObject().record(actorId, actorRole, action, targetType,
                 targetId, detail, ip));
     }
+
+    /** Institution changes and their audit commit or roll back together. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordOrgChange(Long actorId, String actorRole, String action, UUID orgId,
+            String orgName, Map<String, Object> detail, String ip) {
+        recordOrgTarget(actorId, actorRole, action, orgId, orgName, detail, ip, null);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordOrgUserChange(Long actorId, String actorRole, UUID orgId, String orgName,
+            UUID userId, Map<String, Object> detail, String ip) {
+        recordOrgTarget(actorId, actorRole, USER_ROLE_UPDATE, orgId, orgName, detail, ip, userId);
+    }
+
+    private void recordOrgTarget(Long actorId, String actorRole, String action, UUID orgId,
+            String orgName, Map<String, Object> detail, String ip, UUID userId) {
+        jdbcTemplate.update("""
+                insert into audit_logs (actor_id, actor_role, action, target_type, target_id,
+                                        target_org_id, target_org_name, detail, ip)
+                values (?, ?, ?, ?, ?, (select id from orgs where public_id = ?), ?, ?::jsonb, ?)
+                """, actorId, actorRole, action, userId == null ? "org" : "user",
+                (userId == null ? orgId : userId).toString(), orgId, orgName,
+                objectMapper.writeValueAsString(detail), ip);
+    }
 }

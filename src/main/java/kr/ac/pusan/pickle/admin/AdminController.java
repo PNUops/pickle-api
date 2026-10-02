@@ -28,6 +28,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
+import jakarta.validation.constraints.Min;
 
 /**
  * Contract tag {@code admin}, org/user management subset. Organisation writes
@@ -113,7 +115,7 @@ public class AdminController {
             @Valid @RequestBody UpdateOrgRequestMailRequest request,
             HttpServletRequest httpRequest) {
         return adminService.updateOrgRequestMail(principal, userId, orgId, request.enabled(),
-                clientIp(httpRequest));
+                request.expectedRevision(), clientIp(httpRequest));
     }
 
     /** Takes an account's role in one organisation away, leaving the others. */
@@ -121,7 +123,8 @@ public class AdminController {
     @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
     public UserSummaryResponse revokeOrgRole(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID userId, @PathVariable UUID orgId,
+            @RequestParam @Min(0) long expectedRevision,
             HttpServletRequest httpRequest) {
-        return adminService.revokeOrgRole(principal, userId, orgId, clientIp(httpRequest));
+        return adminService.revokeOrgRole(principal, userId, orgId, expectedRevision, clientIp(httpRequest));
     }
 }
