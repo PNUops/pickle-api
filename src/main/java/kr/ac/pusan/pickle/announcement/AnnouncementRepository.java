@@ -10,6 +10,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface AnnouncementRepository extends JpaRepository<Announcement, Long> {
+    String ORG_VISIBILITY = """
+            (a.scope = :allScope or exists (select 1 from UserOrgRole r
+                where r.userId = a.authorId and r.orgId in :orgIds))
+            """;
 
     /** Resolution of the identifier this row wears outside the API boundary. */
     Optional<Announcement> findByPublicId(UUID publicId);
@@ -24,13 +28,11 @@ public interface AnnouncementRepository extends JpaRepository<Announcement, Long
      * even when the workspace has members of those organisations — the
      * recipients see it in their own inboxes instead.
      */
-    @Query("""
-            select a from Announcement a
-             where a.scope = :allScope
-                or exists (select 1 from UserOrgRole r
-                            where r.userId = a.authorId and r.orgId in :orgIds)
-             order by a.id desc
-            """)
+    @Query("select a from Announcement a where " + ORG_VISIBILITY + " order by a.id desc")
     Page<Announcement> findVisibleToOrgAdmin(@Param("allScope") AnnouncementScope allScope,
             @Param("orgIds") Collection<Long> orgIds, Pageable pageable);
+
+    @Query("select a from Announcement a where a.publicId = :publicId and " + ORG_VISIBILITY)
+    Optional<Announcement> findVisibleByPublicId(@Param("publicId") UUID publicId,
+            @Param("allScope") AnnouncementScope allScope, @Param("orgIds") Collection<Long> orgIds);
 }

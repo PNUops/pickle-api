@@ -57,8 +57,8 @@ import org.springframework.web.multipart.MultipartFile;
  * <p>Each write carries its own {@code @PreAuthorize}, which fully replaces
  * this class-level one, so widening the read gate cannot reach them.</p>
  *
- * <p>There is no admin detail read on purpose — {@link AdminNoticeView} rows
- * carry the body, so the list is already the editor's source.</p>
+ * <p>The detail read uses the same gate and view as the list. An editor stays
+ * attached to its public id when publication changes move it off a page.</p>
  */
 @RestController
 @RequestMapping("/api/v1/admin/notices")
@@ -79,6 +79,11 @@ public class AdminNoticeController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return noticeQueryService.listForAdmin(page, size);
+    }
+
+    @GetMapping("/{noticeId}")
+    public AdminNoticeView getAdminNotice(@PathVariable UUID noticeId) {
+        return noticeQueryService.getForAdmin(noticeId);
     }
 
     @PostMapping

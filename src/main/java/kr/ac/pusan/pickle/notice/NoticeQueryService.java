@@ -55,12 +55,12 @@ public class NoticeQueryService {
 
     /** Contract {@code listNotices}: the active window, pinned first, newest first. */
     @Transactional(readOnly = true)
-    public PageResponse<NoticeView> list(@Nullable AuthenticatedUser reader, int page, int size) {
+    public PageResponse<NoticeView> list(@Nullable AuthenticatedUser reader, boolean popupOnly, int page, int size) {
         Instant now = Instant.now();
         PageRequest pageRequest = PageRequest.of(page, size);
         Page<Notice> result = reader == null
                 ? noticeRepository.findVisibleToAnonymous(now, pageRequest)
-                : noticeRepository.findVisibleToSignedIn(now, pageRequest);
+                : noticeRepository.findVisibleToSignedIn(now, popupOnly, pageRequest);
         Map<Long, List<NoticeImageMeta>> images = imagesOf(result.getContent());
         return PageResponse.of(result.getContent().stream()
                 .map(notice -> NoticeView.from(notice,
@@ -137,6 +137,16 @@ public class NoticeQueryService {
                 .map(notice -> AdminNoticeView.from(notice, authors.get(notice.getCreatedBy()),
                         images.getOrDefault(notice.getId(), List.of()), now))
                 .toList(), result);
+    }
+
+    /** The management detail has the list's gate and includes every publication window. */
+    @Transactional(readOnly = true)
+    public AdminNoticeView getForAdmin(UUID noticeId) {
+        Notice notice = noticeRepository.findByPublicId(noticeId)
+                .orElseThrow(() -> notFound("해당 공지가 존재하지 않습니다."));
+        List<Notice> selected = List.of(notice);
+        return AdminNoticeView.from(notice, authorNamesOf(selected).get(notice.getCreatedBy()),
+                imagesOf(selected).getOrDefault(notice.getId(), List.of()), Instant.now());
     }
 
     /** The notice behind a public id, or 404 when this reader may not see it. */

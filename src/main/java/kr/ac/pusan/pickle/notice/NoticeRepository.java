@@ -42,9 +42,11 @@ public interface NoticeRepository extends JpaRepository<Notice, Long> {
             select n from Notice n
              where n.startsAt <= :now
                and (n.endsAt is null or n.endsAt > :now)
+               and (:popupOnly = false or n.popup = true)
              order by n.pinned desc, n.startsAt desc, n.id desc
             """)
-    Page<Notice> findVisibleToSignedIn(@Param("now") Instant now, Pageable pageable);
+    Page<Notice> findVisibleToSignedIn(@Param("now") Instant now,
+            @Param("popupOnly") boolean popupOnly, Pageable pageable);
 
     /**
      * Contract {@code listAdminNotices}: every notice, window or not, for every

@@ -165,6 +165,67 @@ class NoticeTest {
     }
 
     @Test
+    void popupFilterNarrowsSignedInReadsWhileFalsePreservesTheOriginalFeed() throws Exception {
+        mockMvc.perform(authorize(get("/api/v1/notices?popup=true&size=100"), userToken))
+                .andExpect(status().isOk())
+                .andExpect(listHas(popupNotice))
+                .andExpect(listOmits(boardNotice))
+                .andExpect(listOmits(orgAdminNotice))
+                .andExpect(jsonPath("$.totalElements").value(1));
+        mockMvc.perform(authorize(get("/api/v1/notices?popup=false&size=100"), userToken))
+                .andExpect(status().isOk())
+                .andExpect(listHas(popupNotice))
+                .andExpect(listHas(boardNotice))
+                .andExpect(listHas(orgAdminNotice));
+    }
+
+    @Test
+    void popupPaginationCountsOnlyItsVisibleRowsAndPreservesPinnedOrdering() throws Exception {
+        long author = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow().getId();
+        jdbcTemplate.update("""
+                insert into notices(created_by, title, body, popup, starts_at)
+                select ?, 'ordinary ' || item, 'synthetic body', false, now()
+                  from generate_series(1, 120) item
+                """, author);
+        jdbcTemplate.update("""
+                insert into notices(created_by, title, body, popup, pinned, starts_at)
+                select ?, 'popup ' || item, 'synthetic body', true, item = 1, now() - interval '1 minute'
+                  from generate_series(1, 105) item
+                """, author);
+        mockMvc.perform(authorize(get("/api/v1/notices?popup=true&size=100"), userToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(106))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.content.length()").value(100))
+                .andExpect(jsonPath("$.content[0].title").value("popup 1"))
+                .andExpect(jsonPath("$.content[?(@.popup==false)]").isEmpty());
+        mockMvc.perform(authorize(get("/api/v1/notices?popup=true&size=100&page=1"), userToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(6))
+                .andExpect(jsonPath("$.content[?(@.popup==false)]").isEmpty());
+    }
+
+    @Test
+    void popupFilterDoesNotWidenAnonymousOrPublicationWindowVisibility() throws Exception {
+        UUID scheduled = createdId(create(sysAdminToken, body(Map.of("title", "scheduled popup", "popup", true,
+                "startsAt", Instant.now().plusSeconds(3600).toString()))));
+        UUID expired = createdId(create(sysAdminToken, body(Map.of("title", "expired popup", "popup", true,
+                "startsAt", Instant.now().minusSeconds(7200).toString(),
+                "endsAt", Instant.now().minusSeconds(3600).toString()))));
+        for (String query : new String[] {"popup=true", "popup=false"}) {
+            mockMvc.perform(get("/api/v1/notices?" + query + "&size=100"))
+                    .andExpect(status().isOk())
+                    .andExpect(listHas(popupNotice))
+                    .andExpect(listOmits(boardNotice))
+                    .andExpect(listOmits(scheduled))
+                    .andExpect(listOmits(expired))
+                    .andExpect(jsonPath("$.totalElements").value(1));
+        }
+        mockMvc.perform(authorize(get("/api/v1/notices?popup=true&size=100"), userToken))
+                .andExpect(listOmits(scheduled)).andExpect(listOmits(expired));
+    }
+
+    @Test
     void everySignedInReaderSeesEveryNoticeInItsWindow() throws Exception {
         // Being signed in is the entire widening. A regular account carrying no
         // organisation role and belonging to no workspace sees exactly what the
