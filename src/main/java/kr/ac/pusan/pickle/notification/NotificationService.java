@@ -41,7 +41,7 @@ import tools.jackson.databind.ObjectMapper;
  * {@code ON CONFLICT DO NOTHING} — a duplicate publish is a per-recipient
  * no-op. Email delivery is asynchronous: rows start {@code PENDING} and
  * {@link NotificationDispatchJob} drains them ({@code SKIPPED} is written by
- * the dispatcher for recipients deactivated after enqueue).</p>
+ * the dispatcher only for legacy recipients without an address snapshot).</p>
  */
 @Service
 public class NotificationService {
@@ -50,13 +50,15 @@ public class NotificationService {
     private kr.ac.pusan.pickle.orgs.OrgAdministrationLock orgAdministrationLock;
     @org.springframework.beans.factory.annotation.Autowired
     private kr.ac.pusan.pickle.admin.AdminOrgOperationsQueryService orgOperationsQuery;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.mail.MailDeliveryJournal deliveryJournal;
 
     private static final String INSERT_SQL = """
             insert into notifications
                 (user_id, event, title, body, link_path, importance, payload, dedup_key, status,
-                 bundle)
-            values (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::notification_status, ?)
-            on conflict (user_id, dedup_key) where dedup_key is not null do nothing
+                 bundle, recipient_email)
+            values (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::notification_status, ?, (select email from users where id = ?))
+            on conflict (user_id, dedup_key) where dedup_key is not null do nothing returning id
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -86,6 +88,7 @@ public class NotificationService {
     // ── publishing ─────────────────────────────────────────────────────────
 
     /** Single-recipient convenience for {@link #publish(Collection, NotificationEvent, Map, String)}. */
+    @Transactional
     public void publish(long recipientUserId, NotificationEvent event, Map<String, Object> args,
             String dedupKey) {
         publish(List.of(recipientUserId), event, args, dedupKey);
@@ -96,6 +99,7 @@ public class NotificationService {
      * transaction. {@code dedupKey} (nullable) makes the publish idempotent
      * per recipient.
      */
+    @Transactional
     public void publish(Collection<Long> recipientUserIds, NotificationEvent event,
             Map<String, Object> args, String dedupKey) {
         insert(recipientUserIds, event, args, dedupKey, false);
@@ -111,6 +115,7 @@ public class NotificationService {
      * requester too, and the requester's mail must not wait. A HIGH notice is
      * never held — what it reports is something to act on now.</p>
      */
+    @Transactional
     public void publishToAdmins(Collection<Long> recipientUserIds, NotificationEvent event,
             Map<String, Object> args, String dedupKey) {
         insert(recipientUserIds, event, args, dedupKey, true);
@@ -156,16 +161,17 @@ public class NotificationService {
             String dedupKey, boolean admin, long selectionId, String address, boolean mailSelected,
             String skipReason) {
         var composed = composer.compose(event, args);
-        jdbcTemplate.update("""
+        List<Long> inserted = jdbcTemplate.queryForList("""
                 insert into notifications (user_id, event, title, body, link_path, importance, payload,
                     dedup_key, status, bundle, request_selection_id, recipient_email, skip_reason)
                 values (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::notification_status, ?, ?, ?, ?)
-                on conflict (user_id, dedup_key) where dedup_key is not null do nothing
-                """, userId, composed.eventId(), composed.title(), composed.body(), composed.linkPath(),
+                on conflict (user_id, dedup_key) where dedup_key is not null do nothing returning id
+                """, Long.class, userId, composed.eventId(), composed.title(), composed.body(), composed.linkPath(),
                 composed.importance().name(), composed.payload() == null ? null
                         : objectMapper.writeValueAsString(composed.payload()), dedupKey,
                 mailSelected ? "PENDING" : "SKIPPED", admin && mailSelected, selectionId, address,
                 mailSelected ? null : skipReason);
+        deliveryJournal.importNotifications(inserted);
     }
 
     private void insert(Collection<Long> recipientUserIds, NotificationEvent event,
@@ -179,9 +185,10 @@ public class NotificationService {
         String status = NotificationStatus.PENDING.name();
         boolean bundle = toAdmins && composed.importance() == NotificationImportance.NORMAL;
         for (Long userId : recipientUserIds) {
-            jdbcTemplate.update(INSERT_SQL, userId, composed.eventId(), composed.title(),
+            List<Long> inserted = jdbcTemplate.queryForList(INSERT_SQL, Long.class, userId, composed.eventId(), composed.title(),
                     composed.body(), composed.linkPath(), composed.importance().name(),
-                    payloadJson, dedupKey, status, bundle);
+                    payloadJson, dedupKey, status, bundle, userId);
+            deliveryJournal.importNotifications(inserted);
         }
     }
 

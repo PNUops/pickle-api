@@ -230,6 +230,10 @@ class ContractDriftTest {
             "POST /admin/vms/{vmId}/shutdown",
             "POST /admin/vms/{vmId}/reboot",
             "POST /admin/vms/{vmId}/force-stop",
+            "GET /admin/mail-deliveries",
+            "GET /admin/mail-deliveries/{deliveryId}",
+            "POST /admin/mail-deliveries/{deliveryId}/resend",
+            "GET /admin/requests/{requestId}/notification-selection",
             "GET /admin/notifications",
             "POST /admin/notifications/{notificationId}/resend",
             // Per-VM SSH keys (contract v0.42.0) and VM settings.

@@ -20,7 +20,7 @@ public record NoticeView(
         String body,
         @Schema(description = "목록 상단 고정 여부")
         boolean pinned,
-        @Schema(description = "콘솔이 모달로 띄울 공지인지. 이 공지가 로그인 없이도 보이는지도 같은 값이 정합니다.")
+        @Schema(description = "콘솔이 화면을 막지 않는 카드로 띄울 공지인지. 이 공지가 로그인 없이도 보이는지도 같은 값이 정합니다.")
         boolean popup,
         Instant startsAt,
         @Schema(description = "게시 종료 시각. 비어 있으면 만료되지 않습니다.")

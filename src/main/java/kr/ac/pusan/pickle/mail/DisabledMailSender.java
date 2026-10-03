@@ -10,6 +10,6 @@ public class DisabledMailSender implements MailSender {
 
     @Override
     public void send(MailMessage message) {
-        throw new IllegalStateException("격리 검증 환경에서는 메일 발송이 비활성화되어 있습니다.");
+        throw MailDeliveryFailure.disabled();
     }
 }

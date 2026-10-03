@@ -58,6 +58,8 @@ public class AnnouncementService {
     private final JdbcTemplate jdbcTemplate;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.mail.MailDeliveryJournal journal;
 
     public AnnouncementService(AnnouncementRepository announcementRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
@@ -178,6 +180,8 @@ public class AnnouncementService {
                 actor.id(), scope, orgId, workspaceId, request.title().strip(), request.body().strip()));
         int recipients = fanOut(announcement);
         announcement.setRecipientCount(recipients);
+        journal.importNotifications(jdbcTemplate.queryForList(
+                "select id from notifications where announcement_id = ?", Long.class, announcement.getId()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.ANNOUNCEMENT_CREATE, "announcement", announcement.getPublicId(),
                 Map.of("scope", scope.name(), "recipientCount", recipients), ip);
@@ -205,8 +209,8 @@ public class AnnouncementService {
         String importance = NotificationEvent.ANNOUNCEMENT.defaultImportance().name();
         String base = """
                 insert into notifications
-                    (user_id, event, title, body, importance, announcement_id, status)
-                select u.id, ?, ?, ?, ?, ?, 'PENDING'
+                    (user_id, event, title, body, importance, announcement_id, status, recipient_email)
+                select u.id, ?, ?, ?, ?, ?, 'PENDING', u.email
                   from users u
                 """;
         return switch (announcement.getScope()) {

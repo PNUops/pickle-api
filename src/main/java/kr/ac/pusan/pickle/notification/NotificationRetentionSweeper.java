@@ -15,8 +15,8 @@ import org.springframework.stereotype.Component;
  * Daily retention sweep (04:30 KST) that deletes notifications older than
  * {@code settings.notification_retention_days}. Deletes are batched in a
  * bounded LIMIT loop so a large backlog never holds a long lock. This touches
- * ONLY the {@code notifications} table — never {@code audit_logs}/
- * {@code vm_events}, which are permanent records.
+ * Only terminal inbox rows are removed, after preserving their permanent
+ * delivery metadata. Pending/in-flight execution, audit and VM events remain.
  */
 @Component
 public class NotificationRetentionSweeper {
@@ -29,10 +29,15 @@ public class NotificationRetentionSweeper {
 
     private final JdbcTemplate jdbcTemplate;
     private final SettingsService settingsService;
+    private final kr.ac.pusan.pickle.mail.MailDeliveryJournal journal;
+    private final org.springframework.transaction.support.TransactionTemplate transactions;
 
-    public NotificationRetentionSweeper(JdbcTemplate jdbcTemplate, SettingsService settingsService) {
+    public NotificationRetentionSweeper(JdbcTemplate jdbcTemplate, SettingsService settingsService, kr.ac.pusan.pickle.mail.MailDeliveryJournal journal,
+            org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.jdbcTemplate = jdbcTemplate;
         this.settingsService = settingsService;
+        this.journal = journal;
+        this.transactions = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
     }
 
     /** One sweep. Public and argument-free for JobRunr; tests call it directly. */
@@ -45,13 +50,18 @@ public class NotificationRetentionSweeper {
         int deleted = 0;
         int affected;
         do {
-            // ONLY notifications — audit_logs / vm_events are permanent and must
-            // never be swept here.
-            affected = jdbcTemplate.update("""
-                    delete from notifications
-                     where id in (select id from notifications
-                                   where created_at < ? order by id limit ?)
-                    """, cutoff, BATCH_SIZE);
+            affected = transactions.execute(tx -> {
+                var ids = jdbcTemplate.queryForList("""
+                        select id from notifications where created_at < ?
+                          and status in ('SENT', 'FAILED', 'SKIPPED', 'UNKNOWN')
+                         order by id limit ? for update skip locked
+                        """, Long.class, cutoff, BATCH_SIZE);
+                if (ids.isEmpty()) return 0;
+                journal.importNotifications(ids);
+                String marks = "?,".repeat(ids.size());
+                return jdbcTemplate.update("delete from notifications where id in ("
+                        + marks.substring(0, marks.length() - 1) + ")", ids.toArray());
+            });
             deleted += affected;
         } while (affected == BATCH_SIZE);
         if (deleted > 0) {

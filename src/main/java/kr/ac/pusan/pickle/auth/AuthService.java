@@ -591,9 +591,11 @@ public class AuthService {
 
     private void sendVerificationMail(User user) {
         String rawToken = TokenHasher.newToken();
+        Instant expiresAt = Instant.now().plus(authProperties.verificationTokenTtl());
         emailVerificationRepository.save(new EmailVerification(user.getId(), TokenHasher.sha256Hex(rawToken),
-                VerificationPurpose.SIGNUP, Instant.now().plus(authProperties.verificationTokenTtl())));
-        mailDispatcher.dispatch(verificationMailComposer.compose(user.getEmail(), user.getName(), rawToken));
+                VerificationPurpose.SIGNUP, expiresAt));
+        mailDispatcher.dispatch(verificationMailComposer.compose(user.getEmail(), user.getName(), rawToken),
+                "account.signup_verification", user.getPublicId(), expiresAt);
     }
 
     /**
@@ -612,7 +614,8 @@ public class AuthService {
         } catch (ApiException suppressed) {
             return;
         }
-        mailDispatcher.dispatch(verificationMailComposer.composeAlreadyRegistered(email));
+        mailDispatcher.dispatch(verificationMailComposer.composeAlreadyRegistered(email),
+                "account.already_registered", null, null);
     }
 
     private void sendPasswordResetMail(User user) {
@@ -624,7 +627,8 @@ public class AuthService {
                 VerificationPurpose.PASSWORD_RESET,
                 now.plus(authProperties.passwordResetTokenTtl())));
         mailDispatcher.dispatch(
-                verificationMailComposer.composePasswordReset(user.getEmail(), user.getName(), rawToken));
+                verificationMailComposer.composePasswordReset(user.getEmail(), user.getName(), rawToken),
+                "account.password_reset", user.getPublicId(), now.plus(authProperties.passwordResetTokenTtl()));
     }
 
     private static String normalize(String email) {

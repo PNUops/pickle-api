@@ -2,9 +2,16 @@ package kr.ac.pusan.pickle.mail;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
+import jakarta.mail.Address;
+import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
+import jakarta.mail.Session;
+import jakarta.mail.Transport;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -137,6 +144,113 @@ class SmtpMailSenderTest {
         assertThat(sent.getHeader("From")[0]).contains("=?UTF-8?");
         assertThat(((jakarta.mail.internet.InternetAddress) sent.getFrom()[0]).getPersonal())
                 .isEqualTo("피클");
+    }
+
+    @Test
+    void aNormalProviderHandoffReturnsAndClosesItsTransport() {
+        var provider = new ControlledProvider(false, false);
+        new SmtpMailSender(provider, "sender@example.test")
+                .send(MailMessage.text("recipient@example.test", "subject", "body"));
+
+        assertThat(provider.transport.handedOff).isTrue();
+        assertThat(provider.transport.closed).isTrue();
+    }
+
+    @Test
+    void aProviderCloseFailureAfterHandoffIsUnknownInsteadOfRetryable() {
+        var provider = new ControlledProvider(true, false);
+        RuntimeException failure = catchThrowableOfType(RuntimeException.class,
+                () -> new SmtpMailSender(provider, "sender@example.test")
+                        .send(MailMessage.text("recipient@example.test", "subject", "body")));
+
+        // Exercise Spring's actual sendMessage-success/close-failure wrapping path.
+        assertThat(provider.transport.handedOff).isTrue();
+        assertThat(provider.transport.closed).isTrue();
+        assertThat(MailDeliveryFailure.classify(failure))
+                .isEqualTo(new MailDeliveryFailure("MAIL_DELIVERY_UNKNOWN", false));
+        assertThat(failure.getMessage()).doesNotContain("private-provider-response", "token=", "recipient@");
+        assertThat(failure.getCause()).isNull();
+    }
+
+    @Test
+    void aProviderTimeoutWaitingForTheDataResultIsUnknown() {
+        var provider = new ControlledProvider(false, true);
+        RuntimeException failure = catchThrowableOfType(RuntimeException.class,
+                () -> new SmtpMailSender(provider, "sender@example.test")
+                        .send(MailMessage.text("recipient@example.test", "subject", "body")));
+
+        assertThat(provider.transport.dataSubmitted).isTrue();
+        assertThat(provider.transport.handedOff).isFalse();
+        assertThat(MailDeliveryFailure.classify(failure).definiteFailure()).isFalse();
+        assertThat(failure.getCause()).isNull();
+    }
+
+    @Test
+    void recipientPreparationFailureNeverReachesTheProviderOrCopiesTheAddress() {
+        var provider = new ControlledProvider(false, false);
+        RuntimeException failure = catchThrowableOfType(RuntimeException.class,
+                () -> new SmtpMailSender(provider, "sender@example.test")
+                        .send(MailMessage.text("private-address<bad", "subject", "body")));
+
+        assertThat(provider.transport).isNull();
+        assertThat(MailDeliveryFailure.classify(failure))
+                .isEqualTo(new MailDeliveryFailure("MAIL_PREPARATION_FAILED", true));
+        assertThat(failure.getMessage()).doesNotContain("private-address", "bad");
+        assertThat(failure.getCause()).isNull();
+    }
+
+    /** Uses the real Spring wrapping flow with an in-memory transport; no SMTP socket opens. */
+    private static final class ControlledProvider extends JavaMailSenderImpl {
+        private final boolean closeFails;
+        private final boolean dataResultTimesOut;
+        private ControlledTransport transport;
+
+        private ControlledProvider(boolean closeFails, boolean dataResultTimesOut) {
+            this.closeFails = closeFails;
+            this.dataResultTimesOut = dataResultTimesOut;
+        }
+
+        @Override
+        protected Transport getTransport(Session session) {
+            transport = new ControlledTransport(session, closeFails, dataResultTimesOut);
+            return transport;
+        }
+    }
+
+    private static final class ControlledTransport extends Transport {
+        private final boolean closeFails;
+        private final boolean dataResultTimesOut;
+        private boolean dataSubmitted;
+        private boolean handedOff;
+        private boolean closed;
+
+        private ControlledTransport(Session session, boolean closeFails, boolean dataResultTimesOut) {
+            super(session, null);
+            this.closeFails = closeFails;
+            this.dataResultTimesOut = dataResultTimesOut;
+        }
+
+        @Override
+        protected boolean protocolConnect(String host, int port, String user, String password) {
+            return true;
+        }
+
+        @Override
+        public void sendMessage(Message message, Address[] addresses) throws MessagingException {
+            dataSubmitted = true;
+            if (dataResultTimesOut) {
+                throw new MessagingException("private-provider-response token=private-value",
+                        new SocketTimeoutException("waiting for final DATA response"));
+            }
+            handedOff = true;
+        }
+
+        @Override
+        public void close() throws MessagingException {
+            closed = true;
+            if (closeFails) throw new MessagingException("private-provider-response token=private-value");
+            super.close();
+        }
     }
 
     /** One leaf part: its content type and the body that came with it. */

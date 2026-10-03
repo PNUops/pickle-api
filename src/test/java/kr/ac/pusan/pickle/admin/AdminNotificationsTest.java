@@ -112,7 +112,8 @@ class AdminNotificationsTest {
 
     @Test
     void resendIsCasFromFailedOnlyAndAudited() throws Exception {
-        long failed = insertNotification(recipientId, "vm.create.done", "FAILED", "SMTP 오류");
+        long failed = insertNotification(recipientId, "vm.create.done", "FAILED", "SMTP_REJECTED");
+        jdbcTemplate.update("update notifications set recipient_email = ? where id = ?", recipientEmail, failed);
         long sent = insertNotification(recipientId, "vm.create.done", "SENT", null);
         // due far in the future so the immediate re-queue is observable
         jdbcTemplate.update(
