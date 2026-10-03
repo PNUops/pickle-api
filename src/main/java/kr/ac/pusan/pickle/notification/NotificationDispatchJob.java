@@ -6,6 +6,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.time.Instant;
+import kr.ac.pusan.pickle.mail.MailDeliveryJournal;
+import kr.ac.pusan.pickle.mail.MailDeliveryFailure;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.mail.MailHtmlLayout;
 import kr.ac.pusan.pickle.mail.MailMessage;
@@ -19,13 +25,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * Self-recovering email dispatcher: every minute it drains due {@code PENDING}
- * notifications (batch 100, oldest due first). Each row is claimed with a CAS
- * ({@code attempts++} guarded on {@code status='PENDING'}) so concurrent runs
- * never double-send; a send failure backs off 1m/5m and parks the row
- * {@code FAILED} after {@value #MAX_ATTEMPTS} attempts (the SYS_ADMIN delivery
- * log resends from there). Per-row errors are swallowed — one bad recipient
- * never stalls the batch.
+ * Every minute, due notifications are claimed as SENDING before SMTP. A
+ * known rejection backs off 1m/5m and parks FAILED after three attempts.
+ * Ambiguous outcomes and interrupted claims become UNKNOWN, never an automatic
+ * resend. Attempt evidence is separate from the expiring console inbox.
  *
  * <p>Rows marked {@code bundle} (mail to an administrator, V133) are sent per
  * recipient instead: when the recipient's last such mail is older than the
@@ -86,7 +89,7 @@ public class NotificationDispatchJob {
     private static final String PENDING_MAIL_COLUMNS = """
             select n.id, n.attempts, n.event, n.title, n.body, n.link_path,
                    coalesce(n.recipient_email, u.email) as email, u.status as user_status,
-                   (n.request_selection_id is not null) as frozen_recipient
+                   (n.recipient_email is not null) as frozen_recipient
               from notifications n
               join users u on u.id = n.user_id
             """;
@@ -95,21 +98,28 @@ public class NotificationDispatchJob {
     private final MailSender mailSender;
     private final String consoleBaseUrl;
     private final Duration bundleWindow;
+    private final MailDeliveryJournal journal;
+    private final TransactionTemplate transactions;
 
     public NotificationDispatchJob(JdbcTemplate jdbcTemplate, MailSender mailSender,
             @Value("${pickle.console.base-url:https://pickle.pusan.ac.kr}") String consoleBaseUrl,
-            @Value("${pickle.notification.admin-bundle-window:PT60M}") Duration bundleWindow) {
+            @Value("${pickle.notification.admin-bundle-window:PT60M}") Duration bundleWindow,
+            MailDeliveryJournal journal, PlatformTransactionManager transactionManager) {
         this.jdbcTemplate = jdbcTemplate;
         this.mailSender = mailSender;
         String base = consoleBaseUrl == null || consoleBaseUrl.isBlank()
                 ? "https://pickle.pusan.ac.kr" : consoleBaseUrl;
         this.consoleBaseUrl = base.replaceAll("/+$", ""); // link paths start with '/'
         this.bundleWindow = bundleWindow;
+        this.journal = journal;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
     @Recurring(id = JOB_ID, interval = "PT1M")
     @Job(name = JOB_ID, retries = 0)
     public void dispatch() {
+        journal.importLegacyBatch(1000);
+        reconcileExpiredClaims();
         List<PendingMail> due = jdbcTemplate.query(PENDING_MAIL_COLUMNS + """
                  where n.status = 'PENDING' and not n.bundle and n.next_attempt_at <= now()
                  order by n.next_attempt_at
@@ -120,10 +130,11 @@ public class NotificationDispatchJob {
                 continue;
             }
             // CAS claim — a concurrent run (or a resend) that got here first wins.
-            if (claim(List.of(mail)).isEmpty()) {
+            UUID owner = UUID.randomUUID();
+            if (claim(List.of(mail), owner).isEmpty()) {
                 continue;
             }
-            send(List.of(mail), mail.email(), "[Pickle] " + mail.title(), textPart(mail),
+            send(List.of(mail), owner, mail.email(), "[Pickle] " + mail.title(), textPart(mail),
                     htmlPart(mail));
         }
         dispatchBundles();
@@ -139,10 +150,12 @@ public class NotificationDispatchJob {
                 select n.user_id
                   from notifications n
                  where n.status = 'PENDING' and n.bundle and n.next_attempt_at <= now()
-                   and not exists (
+                   and (n.attempts > 0 or not exists (
                        select 1 from notifications s
                         where s.user_id = n.user_id and s.bundle
-                          and s.sent_at > now() - ?::interval)
+                          and (s.recipient_email is null or s.recipient_email = coalesce(n.recipient_email,
+                            (select email from users where id = n.user_id)))
+                          and s.sent_at > now() - ?::interval))
                  group by n.user_id
                  order by min(n.next_attempt_at)
                  limit %d
@@ -160,17 +173,18 @@ public class NotificationDispatchJob {
             List<PendingMail> eligible = waiting.stream().filter(mail -> !skipIfInactive(mail)).toList();
             var addresses = eligible.stream().collect(java.util.stream.Collectors.groupingBy(PendingMail::email));
             for (List<PendingMail> addressRows : addresses.values()) {
-                List<PendingMail> claimed = claim(addressRows);
+                UUID owner = UUID.randomUUID();
+                List<PendingMail> claimed = claim(addressRows, owner);
                 if (claimed.isEmpty()) {
                     continue;
                 }
                 String email = claimed.getFirst().email();
                 if (claimed.size() == 1) {
                     PendingMail mail = claimed.getFirst();
-                    send(claimed, email, "[Pickle] " + mail.title(), textPart(mail), htmlPart(mail));
+                    send(claimed, owner, email, "[Pickle] " + mail.title(), textPart(mail), htmlPart(mail));
                 } else {
                     Bundle bundle = bundle(claimed);
-                    send(claimed, email, "[Pickle] " + bundle.title(), bundleText(bundle),
+                    send(claimed, owner, email, "[Pickle] " + bundle.title(), bundleText(bundle),
                             bundleHtml(bundle, claimed));
                 }
             }
@@ -193,74 +207,122 @@ public class NotificationDispatchJob {
         if (mail.frozenRecipient() || "ACTIVE".equals(mail.userStatus())) {
             return false;
         }
-        jdbcTemplate.update("""
-                update notifications
-                   set status = 'SKIPPED', last_error = '수신자 계정 비활성(발송 생략)'
-                 where id = ? and status = 'PENDING'
-                """, mail.id());
+        transactions.executeWithoutResult(tx -> {
+            int changed = jdbcTemplate.update("""
+                    update notifications set status = 'SKIPPED', skip_reason = 'ACCOUNT_INACTIVE',
+                        last_error = 'ACCOUNT_INACTIVE'
+                     where id = ? and status = 'PENDING'
+                    """, mail.id());
+            if (changed > 0) journal.recordNotificationSkip(mail.id(), "ACCOUNT_INACTIVE");
+        });
         return true;
     }
 
-    /**
-     * CAS claim of the given rows: {@code attempts++} guarded on PENDING and on
-     * the attempt count this run read. The status alone is not a guard — a
-     * claim leaves it PENDING, so an overlapping run would re-match the row
-     * after the first commits and send it again. Returns the rows this run
-     * won, in the order given; a concurrent run or a resend that got to one
-     * first keeps it.
-     */
-    private List<PendingMail> claim(List<PendingMail> rows) {
+    /** Claims one outbound message in a short transaction; SMTP runs after commit. */
+    private List<PendingMail> claim(List<PendingMail> rows, UUID owner) {
         if (rows.isEmpty()) return List.of();
-        String placeholders = "(?, ?), ".repeat(rows.size() - 1) + "(?, ?)";
-        Object[] args = rows.stream()
-                .flatMap(row -> java.util.stream.Stream.of(row.id(), row.attempts()))
-                .toArray();
-        Set<Long> won = Set.copyOf(jdbcTemplate.queryForList("""
-                update notifications set attempts = attempts + 1
-                 where (id, attempts) in (%s) and status = 'PENDING'
-                returning id
-                """.formatted(placeholders), Long.class, args));
-        return rows.stream().filter(row -> won.contains(row.id())).toList();
+        return transactions.execute(tx -> {
+            long userId = jdbcTemplate.queryForObject("select user_id from notifications where id = ?",
+                    Long.class, rows.getFirst().id());
+            jdbcTemplate.queryForObject("select pg_advisory_xact_lock(1129074512, ?::integer)::text",
+                    String.class, userId % Integer.MAX_VALUE);
+            int active = jdbcTemplate.queryForObject("""
+                    select count(*) from notifications where user_id = ? and bundle
+                      and status = 'SENDING'
+                    """, Integer.class, userId);
+            boolean bundled = Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                    "select bundle from notifications where id = ?", Boolean.class, rows.getFirst().id()));
+            if (bundled && active > 0) return List.of();
+            String placeholders = "(?, ?, ?::text), ".repeat(rows.size() - 1) + "(?, ?, ?::text)";
+            List<Object> args = new ArrayList<>();
+            args.add(owner);
+            for (PendingMail row : rows) { args.add(row.id()); args.add(row.attempts()); args.add(row.email()); }
+            args.add(bundleWindow.toSeconds() + " seconds");
+            List<Long> won = jdbcTemplate.queryForList("""
+                    update notifications n set attempts = n.attempts + 1, status = 'SENDING',
+                        delivery_claim_id = ?, delivery_claimed_at = now(),
+                        recipient_email = coalesce(n.recipient_email, picked.email)
+                      from (values %s) as picked(id, attempts, email)
+                     where n.id = picked.id and n.attempts = picked.attempts and n.status = 'PENDING'
+                       and (not n.bundle or n.attempts > 0 or not exists (
+                         select 1 from notifications prior where prior.user_id = n.user_id and prior.bundle
+                           and (prior.recipient_email is null or prior.recipient_email = picked.email)
+                           and prior.sent_at > now() - ?::interval))
+                    returning n.id
+                    """.formatted(placeholders), Long.class, args.toArray());
+            journal.beginNotificationAttempt(won, owner);
+            Set<Long> ids = Set.copyOf(won);
+            return rows.stream().filter(row -> ids.contains(row.id())).toList();
+        });
     }
 
-    /**
-     * Sends one mail on behalf of the given claimed rows and records the
-     * outcome on every one of them: all SENT together, or each backed off (or
-     * parked FAILED) by its own attempt count.
-     */
-    private void send(List<PendingMail> rows, String email, String subject, String text,
+    private void reconcileExpiredClaims() {
+        transactions.executeWithoutResult(tx -> {
+            var expired = jdbcTemplate.queryForList("""
+                    select id, delivery_claim_id from notifications
+                     where status = 'SENDING' and delivery_claimed_at < now() - interval '10 minutes'
+                     order by delivery_claimed_at limit 100 for update skip locked
+                    """);
+            for (var row : expired) {
+                long id = ((Number) row.get("id")).longValue();
+                UUID owner = (UUID) row.get("delivery_claim_id");
+                if (owner == null) continue;
+                int changed = jdbcTemplate.update("""
+                        update notifications set status = 'UNKNOWN', last_error = 'ATTEMPT_INTERRUPTED'
+                         where id = ? and delivery_claim_id = ? and status = 'SENDING'
+                           and delivery_claimed_at < now() - interval '10 minutes'
+                        """, id, owner);
+                if (changed > 0) journal.finishNotificationAttempt(List.of(id), owner, "UNKNOWN", "ATTEMPT_INTERRUPTED", null);
+            }
+        });
+    }
+
+    private void send(List<PendingMail> rows, UUID owner, String email, String subject, String text,
             String html) {
         try {
             mailSender.send(new MailMessage(email, subject, text, html));
-            for (PendingMail row : rows) {
-                jdbcTemplate.update("""
-                        update notifications set status = 'SENT', sent_at = now(), last_error = null
-                         where id = ?
-                        """, row.id());
+        } catch (RuntimeException failure) {
+            var result = MailDeliveryFailure.classify(failure);
+            if (!result.definiteFailure()) {
+                complete(rows, owner, "UNKNOWN", result.code(), null);
+                return;
             }
-        } catch (RuntimeException e) {
-            String error = summarize(e);
             for (PendingMail row : rows) {
                 int attempt = row.attempts() + 1;
-                if (attempt >= MAX_ATTEMPTS) {
-                    jdbcTemplate.update("""
-                            update notifications set status = 'FAILED', last_error = ?
-                             where id = ?
-                            """, error, row.id());
-                    log.warn("notification {} failed permanently after {} attempts: {}",
-                            row.id(), attempt, error);
-                } else {
-                    Duration backoff = BACKOFFS.get(Math.min(attempt, BACKOFFS.size()) - 1);
-                    jdbcTemplate.update("""
-                            update notifications
-                               set next_attempt_at = now() + ?::interval, last_error = ?
-                             where id = ?
-                            """, backoff.toSeconds() + " seconds", error, row.id());
-                    log.info("notification {} send failed (attempt {}), retrying in {}: {}",
-                            row.id(), attempt, backoff, error);
-                }
+                boolean exhausted = attempt >= MAX_ATTEMPTS;
+                Instant next = exhausted ? null : Instant.now().plus(BACKOFFS.get(attempt - 1));
+                complete(List.of(row), owner, exhausted ? "FAILED" : "PENDING", result.code(), next);
+            }
+            return;
+        }
+        try {
+            complete(rows, owner, "SENT", null, null);
+        } catch (RuntimeException resultFailure) {
+            // A successful SMTP handoff must never become an automatic retry.
+            log.warn("mail dispatch {} result persistence failed; delivery is unconfirmed", owner);
+            try {
+                complete(rows, owner, "UNKNOWN", "RESULT_NOT_RECORDED", null);
+            } catch (RuntimeException unavailableDatabase) {
+                // SENDING remains claimed until reconciliation marks it UNKNOWN.
+                log.warn("mail dispatch {} remains claimed until reconciliation", owner);
             }
         }
+    }
+
+    private void complete(List<PendingMail> rows, UUID owner, String state, String code, Instant next) {
+        transactions.executeWithoutResult(tx -> {
+            List<Long> updated = new ArrayList<>();
+            for (PendingMail row : rows) {
+                int changed = jdbcTemplate.update("""
+                        update notifications set status = ?::notification_status, last_error = ?,
+                            next_attempt_at = coalesce(?::timestamptz, next_attempt_at),
+                            sent_at = case when ? = 'SENT' then now() else sent_at end
+                         where id = ? and delivery_claim_id = ? and status in ('SENDING', 'UNKNOWN')
+                        """, state, code, next == null ? null : java.sql.Timestamp.from(next), state, row.id(), owner);
+                if (changed > 0) updated.add(row.id());
+            }
+            journal.finishNotificationAttempt(updated, owner, state, code, next);
+        });
     }
 
     /** A summary mail's content: its title, its lines and where its button goes. */
@@ -395,8 +457,5 @@ public class NotificationDispatchJob {
         return CTA_LABELS.getOrDefault(mail.event(), DEFAULT_CTA_LABEL);
     }
 
-    private static String summarize(RuntimeException e) {
-        String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-        return message.length() > 500 ? message.substring(0, 500) : message;
-    }
+
 }

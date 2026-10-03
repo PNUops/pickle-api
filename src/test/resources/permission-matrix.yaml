@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.93.0, 266 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.94.0, 270 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -466,3 +466,11 @@ operations:
       SYS_VIEWER: deny
       SYS_MANAGER: deny
       SYS_ADMIN: allow
+
+  - { id: listAdminMailDeliveries, method: GET, path: "/admin/mail-deliveries", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  - { id: getAdminMailDelivery, method: GET, path: "/admin/mail-deliveries/{deliveryId}", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  - { id: resendAdminMailDelivery, method: POST, path: "/admin/mail-deliveries/{deliveryId}/resend", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  - { id: getAdminRequestNotificationSelection, method: GET, path: "/admin/requests/{requestId}/notification-selection", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }

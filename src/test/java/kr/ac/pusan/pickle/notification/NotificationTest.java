@@ -280,7 +280,7 @@ class NotificationTest {
         assertThat(row).containsEntry("status", "PENDING").containsEntry("attempts", 1);
         assertThat(((java.sql.Timestamp) row.get("next_attempt_at")).toInstant())
                 .isAfter(java.time.Instant.now());
-        assertThat((String) row.get("last_error")).contains("모의 SMTP 실패");
+        assertThat((String) row.get("last_error")).isEqualTo("SMTP_REJECTED");
 
         // attempt 2: due again → still PENDING
         forceDue(failing.getId());
@@ -310,7 +310,7 @@ class NotificationTest {
         dispatchJob.dispatch();
         row = failingRow(failing.getId());
         assertThat(row).containsEntry("status", "FAILED").containsEntry("attempts", 4);
-        assertThat((String) row.get("last_error")).contains("모의 SMTP 실패");
+        assertThat((String) row.get("last_error")).isEqualTo("SMTP_REJECTED");
         // and the re-parked row stays parked
         forceDue(failing.getId());
         dispatchJob.dispatch();
@@ -319,10 +319,11 @@ class NotificationTest {
     }
 
     @Test
-    void dispatcherSkipsRecipientDeactivatedAfterEnqueue() {
+    void dispatcherSkipsLegacyRecipientDeactivatedAfterEnqueue() {
         User leaver = ensureUser("notif.leaver@pusan.ac.kr", "탈퇴자");
         jdbcTemplate.update("delete from notifications where user_id = ?", leaver.getId());
         publishAnnouncement(leaver.getId(), "지연 발송 알림", null);
+        jdbcTemplate.update("update notifications set recipient_email = null where user_id = ?", leaver.getId());
         // deactivated between enqueue and dispatch (비활성 계정 차단)
         jdbcTemplate.update("update users set status = 'DISABLED' where id = ?", leaver.getId());
 
@@ -331,7 +332,7 @@ class NotificationTest {
         assertThat(mockMailSender.lastMessageTo(leaver.getEmail())).isNull();
         Map<String, Object> row = failingRow(leaver.getId());
         assertThat(row).containsEntry("status", "SKIPPED").containsEntry("attempts", 0);
-        assertThat((String) row.get("last_error")).contains("비활성");
+        assertThat((String) row.get("last_error")).isEqualTo("ACCOUNT_INACTIVE");
 
         // SKIPPED rows are terminal — never picked up again
         forceDue(leaver.getId());

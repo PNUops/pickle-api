@@ -7,7 +7,6 @@ import jakarta.mail.internet.MimeMessage;
 import java.nio.charset.StandardCharsets;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
-import org.springframework.mail.MailPreparationException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
@@ -76,8 +75,9 @@ public class SmtpMailSender implements MailSender {
 
     @Override
     public void send(MailMessage message) {
-        MimeMessage mime = javaMailSender.createMimeMessage();
+        MimeMessage mime;
         try {
+            mime = javaMailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mime,
                     MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED,
                     StandardCharsets.UTF_8.name());
@@ -92,11 +92,16 @@ public class SmtpMailSender implements MailSender {
             } else {
                 helper.setText(message.textBody(), false);
             }
-        } catch (MessagingException e) {
-            // MailException so the notification dispatcher's retry path sees it
-            // the same as a send failure.
-            throw new MailPreparationException("메일 구성 실패", e);
+        } catch (MessagingException | RuntimeException e) {
+            // Nothing has been handed to SMTP; do not retain an address or body in the cause.
+            throw MailDeliveryFailure.preparationFailed();
         }
-        javaMailSender.send(mime);
+        try {
+            javaMailSender.send(mime);
+        } catch (RuntimeException e) {
+            // Spring also throws on close after send, so a generic MailSendException
+            // is not proof of non-delivery and must not initiate another send.
+            throw MailDeliveryFailure.classify(e).exception();
+        }
     }
 }

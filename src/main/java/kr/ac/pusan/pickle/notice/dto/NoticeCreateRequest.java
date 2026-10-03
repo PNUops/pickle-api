@@ -9,7 +9,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * Contract {@code NoticeCreateRequest}. Every notice is platform-wide, so the
  * only visibility choice the author makes is {@code popup}: a popup notice is
- * raised as a modal and is readable without a session, and anything else sits
+ * shown as a non-blocking card and is readable without a session, and anything else sits
  * on the board for signed-in readers. Omitting it means neither, which is the
  * closed default. The one cross-field rule the service adds is that a
  * publication window must end after it starts.
@@ -23,7 +23,7 @@ public record NoticeCreateRequest(
         String body,
         @Schema(description = "목록 상단 고정 여부. 생략하면 고정하지 않습니다.")
         Boolean pinned,
-        @Schema(description = "콘솔이 모달로 띄울지. 켜면 로그인하지 않은 방문자에게도 보입니다."
+        @Schema(description = "콘솔이 화면을 막지 않는 카드로 띄울지. 켜면 로그인하지 않은 방문자에게도 보입니다."
                 + " 생략하면 둘 다 하지 않습니다.")
         Boolean popup,
         @Schema(description = "게시 시작 시각. 생략하면 즉시 게시합니다.")

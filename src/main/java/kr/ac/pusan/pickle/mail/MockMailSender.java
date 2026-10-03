@@ -45,7 +45,7 @@ public class MockMailSender implements MailSender {
     public void send(MailMessage message) {
         String localPart = message.to().split("@", 2)[0];
         if (localPart.contains(FAILING_RECIPIENT_TAG)) {
-            throw new IllegalStateException("모의 SMTP 실패 (수신자 " + message.to() + ")");
+            throw MailDeliveryFailure.mockRejected();
         }
         messages.add(message);
         log.info("[mock-mail] to={} subject={} (body withheld from journal{})",

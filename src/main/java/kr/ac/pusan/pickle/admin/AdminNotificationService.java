@@ -81,7 +81,9 @@ public class AdminNotificationService {
         int updated = jdbcTemplate.update("""
                 update notifications
                    set status = 'PENDING', next_attempt_at = now(), bundle = false
-                 where public_id = ? and status = 'FAILED'
+                 where public_id = ? and status = 'FAILED' and recipient_email is not null
+                   and last_error in ('SMTP_REJECTED', 'MAIL_PREPARATION_FAILED',
+                     'MAIL_AUTHENTICATION_FAILED', 'MAIL_CONNECTION_FAILED', 'MAIL_DELIVERY_DISABLED')
                 """, notificationId);
         if (updated == 0) {
             Long found = jdbcTemplate.queryForObject(
@@ -94,6 +96,10 @@ public class AdminNotificationService {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.NOTIFICATION_NOT_RESENDABLE,
                     "재발송할 수 없는 알림입니다", "발송에 실패한(FAILED) 알림만 재발송할 수 있습니다.");
         }
+        jdbcTemplate.update("""
+                update mail_deliveries set state = 'PENDING', next_attempt_at = now(), bundle = false,
+                    failure_code = null where notification_public_id = ?
+                """, notificationId);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.NOTIFICATION_RESEND, "notification", notificationId, Map.of(), ip);
         return new MessageResponse("알림 재발송을 접수했습니다. 잠시 후 발송 상태가 갱신됩니다.");

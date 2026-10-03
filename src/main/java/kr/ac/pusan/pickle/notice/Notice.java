@@ -124,7 +124,7 @@ public class Notice {
     }
 
     /**
-     * The single visibility flag: a popup notice is raised as a modal and is
+     * The single visibility flag: a popup notice is shown as a non-blocking card and is
      * readable without a session; anything else needs one. {@code
      * NoticeQueryService.visibleTo} is where that is stated.
      */

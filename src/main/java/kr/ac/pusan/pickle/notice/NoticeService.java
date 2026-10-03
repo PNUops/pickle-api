@@ -49,7 +49,7 @@ import org.springframework.web.multipart.MultipartFile;
  *       Turning it on after the fact is an ordinary edit, and the consequence —
  *       text and images in front of anonymous visitors — is the same one the
  *       create path carries. It is also a coupling worth knowing about: there
- *       is no way to raise a modal for signed-in readers alone, because the
+ *       is no way to show a popup card for signed-in readers alone, because the
  *       flag that interrupts them is the flag that opens the notice up.</li>
  * </ul>
  *
