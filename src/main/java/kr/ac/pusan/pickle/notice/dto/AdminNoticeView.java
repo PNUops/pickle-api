@@ -10,8 +10,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Contract {@code AdminNoticeView}: a notice as its author manages it. The
- * admin list is the whole surface — scheduled and expired rows included, and
- * every row carries its body, which is why there is no admin detail read.
+ * admin list and detail include scheduled and expired documents. The detail
+ * remains addressable when publication changes move a document off a page.
  */
 public record AdminNoticeView(
         UUID id,
@@ -24,7 +24,7 @@ public record AdminNoticeView(
         Instant startsAt,
         @Schema(description = "게시 종료 시각. 비어 있으면 만료되지 않습니다.")
         @Nullable Instant endsAt,
-        @Schema(description = "지금 게시 창 안에 있는지. 예정·만료된 공지도 이 목록에는 함께 나옵니다.")
+        @Schema(description = "지금 게시 기간 안에 있는지. 관리 화면에는 예정·종료된 공지도 나옵니다.")
         boolean active,
         @Schema(description = "공지를 등록한 사람의 이름. 계정이 지워졌으면 비어 있습니다.")
         @Nullable String createdByName,

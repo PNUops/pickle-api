@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.notice;
 
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.UUID;
@@ -43,9 +44,11 @@ public class NoticeController {
     @GetMapping
     public PageResponse<NoticeView> listNotices(
             @AuthenticationPrincipal @Nullable AuthenticatedUser principal,
+            @Parameter(description = "true이면 기존 열람 범위 안에서 팝업 공지만 조회합니다. 생략하거나 false이면 기존 목록을 반환합니다.")
+            @RequestParam(defaultValue = "false") boolean popup,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return noticeQueryService.list(principal, page, size);
+        return noticeQueryService.list(principal, popup, page, size);
     }
 
     @GetMapping("/{noticeId}")

@@ -5,7 +5,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.time.Instant;
 import kr.ac.pusan.pickle.announcement.dto.AnnouncementCreateRequest;
+import kr.ac.pusan.pickle.announcement.dto.AnnouncementPreviewResponse;
 import kr.ac.pusan.pickle.announcement.dto.AnnouncementView;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
@@ -25,6 +28,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Announcement send (contract {@code createAnnouncement}). Scope rules:
@@ -41,8 +45,8 @@ import org.springframework.transaction.annotation.Transactional;
  * not a recipient</b>: a viewer is another organisation's staff looking in, not
  * a person this organisation announces to.
  *
- * <p>Fan-out is a synchronous INSERT…SELECT into {@code notifications} inside
- * this transaction — the in-app rows exist when the 201 returns; email leaves
+ * <p>Fan-out inserts one resolved recipient snapshot into {@code notifications}
+ * inside this transaction — the in-app rows exist when the 201 returns; email leaves
  * asynchronously via the dispatcher. A per-author sliding budget (10/hour,
  * {@code auth_rate_limits} scope {@code announce}) answers 429 + Retry-After.</p>
  */
@@ -76,6 +80,49 @@ public class AnnouncementService {
     @Transactional
     public AnnouncementView create(AuthenticatedUser actor, AnnouncementCreateRequest request,
             String ip) {
+        Audience audience = resolveAudience(actor, request);
+        // The existing budget covers accepted sends, never previews or rejected scope checks.
+        rateLimitService.hitHourly(RATE_SCOPE, String.valueOf(actor.id()), MAX_PER_HOUR);
+        Target target = audience.target();
+        Announcement announcement = announcementRepository.saveAndFlush(new Announcement(
+                actor.id(), target.scope(), target.orgId(), target.workspaceId(),
+                request.title().strip(), request.body().strip()));
+        List<Long> inserted = fanOut(announcement, audience.recipients());
+        announcement.setRecipientCount(inserted.size());
+        journal.importNotifications(inserted);
+        auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                AuditService.ANNOUNCEMENT_CREATE, "announcement", announcement.getPublicId(),
+                Map.of("scope", target.scope().name(), "recipientCount", inserted.size()), ip);
+        return AnnouncementView.from(announcement, target.orgPublicId(), target.workspacePublicId());
+    }
+
+    /** A read-only estimate; sending resolves the current audience again before enqueue. */
+    @Transactional(readOnly = true)
+    public AnnouncementPreviewResponse preview(AuthenticatedUser actor, AnnouncementCreateRequest request) {
+        Audience audience = resolveAudience(actor, request);
+        List<AnnouncementPreviewResponse.AnnouncementRecipientSample> sample = audience.recipients().stream()
+                .filter(recipient -> !actor.role().isOrgTier() || !recipient.role().isSysTier())
+                .limit(20).map(recipient -> new AnnouncementPreviewResponse.AnnouncementRecipientSample(
+                        recipient.publicId(), recipient.name(), recipient.email())).toList();
+        Target target = audience.target();
+        List<String> warnings = new ArrayList<>();
+        if (audience.recipients().isEmpty()) {
+            warnings.add("발송 대상자가 0명입니다. 알림과 메일이 생성되지 않습니다.");
+        }
+        if (actor.role().isOrgTier() && audience.recipients().stream().anyMatch(recipient -> recipient.role().isSysTier())) {
+            warnings.add("일부 발송 대상자는 계정 열람 권한 때문에 예시에 표시되지 않습니다.");
+        }
+        return new AnnouncementPreviewResponse(target.scope(), target.orgPublicId(), target.workspacePublicId(),
+                audience.recipients().size(), Instant.now(), sample, audience.recipients().size() > sample.size(),
+                warnings);
+    }
+
+    private Audience resolveAudience(AuthenticatedUser actor, AnnouncementCreateRequest request) {
+        Target target = resolveTarget(actor, request);
+        return new Audience(target, recipients(target));
+    }
+
+    private Target resolveTarget(AuthenticatedUser actor, AnnouncementCreateRequest request) {
         AnnouncementScope scope = request.scope();
         List<FieldValidationError> errors = new ArrayList<>();
         Long orgId = null;
@@ -169,80 +216,67 @@ public class AnnouncementService {
             }
         }
 
-        // The 10/hour budget covers SENDS (contract: 발송 제한) — counted only
-        // after every scope/gate/validation check passed, right before the
-        // fan-out, so rejected attempts can never starve a valid announcement.
-        // (REQUIRES_NEW: the count survives even if the fan-out tx rolls back
-        // — an accepted send that fails mid-flight still spent its slot.)
-        rateLimitService.hitHourly(RATE_SCOPE, String.valueOf(actor.id()), MAX_PER_HOUR);
-
-        Announcement announcement = announcementRepository.saveAndFlush(new Announcement(
-                actor.id(), scope, orgId, workspaceId, request.title().strip(), request.body().strip()));
-        int recipients = fanOut(announcement);
-        announcement.setRecipientCount(recipients);
-        journal.importNotifications(jdbcTemplate.queryForList(
-                "select id from notifications where announcement_id = ?", Long.class, announcement.getId()));
-        auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.ANNOUNCEMENT_CREATE, "announcement", announcement.getPublicId(),
-                Map.of("scope", scope.name(), "recipientCount", recipients), ip);
-        // The scope target is what was stored, not what the body named: an
-        // ORG_ADMIN's org announcement takes its org from the actor.
-        return AnnouncementView.from(announcement,
-                announcement.getOrgId() == null ? null
-                        : orgRepository.findById(announcement.getOrgId()).map(Org::getPublicId)
-                                .orElse(null),
-                announcement.getWorkspaceId() == null ? null
-                        : workspaceRepository.findById(announcement.getWorkspaceId())
-                                .map(Workspace::getPublicId).orElse(null));
+        return new Target(scope, orgId, workspaceId,
+                orgId == null ? null : orgRepository.findById(orgId).map(Org::getPublicId).orElse(null),
+                workspaceId == null ? null : workspaceRepository.findById(workspaceId)
+                        .map(Workspace::getPublicId).orElse(null));
     }
 
-    /**
-     * Synchronous fan-out: one PENDING notifications row per ACTIVE user in
-     * scope, in this transaction. Returns the actual insert count. ORG scope
-     * resolves the canonical derived membership; WORKSPACE scope reaches every
-     * ACTIVE member of the (already gated) workspace.
-     */
-    private int fanOut(Announcement announcement) {
-        // Event id and importance are bound from the NotificationEvent catalog
-        // (single source) — the set-based INSERT…SELECT itself stays.
-        String event = NotificationEvent.ANNOUNCEMENT.id();
-        String importance = NotificationEvent.ANNOUNCEMENT.defaultImportance().name();
+    /** One SQL snapshot supplies both a preview's count/sample and a send's fixed recipients. */
+    private List<Recipient> recipients(Target target) {
         String base = """
-                insert into notifications
-                    (user_id, event, title, body, importance, announcement_id, status, recipient_email)
-                select u.id, ?, ?, ?, ?, ?, 'PENDING', u.email
-                  from users u
+                select u.id, u.public_id, u.name, u.email, u.role::text as account_role from users u
                 """;
-        return switch (announcement.getScope()) {
-            case ALL -> jdbcTemplate.update(base + " where u.status = 'ACTIVE'",
-                    event, announcement.getTitle(), announcement.getBody(), importance,
-                    announcement.getId());
+        List<Object> params = new ArrayList<>();
+        String sql = switch (target.scope()) {
+            case ALL -> base + " where u.status = 'ACTIVE'";
             case ORG -> {
-                OrgScope scope = OrgScope.of(announcement.getOrgId());
-                List<Object> params = new ArrayList<>(List.of(event, announcement.getTitle(),
-                        announcement.getBody(), importance, announcement.getId()));
+                OrgScope scope = OrgScope.of(target.orgId());
                 params.addAll(scope.orgIds());
                 params.addAll(scope.orgIds());
                 params.addAll(scope.orgIds());
-                // A viewer row does not make somebody a recipient: it is how one
-                // organisation lets another's staff look in, and an internal
-                // announcement is not addressed to them.
-                yield jdbcTemplate.update(
-                        base + " where u.status = 'ACTIVE' and (exists (select 1"
-                                + " from user_org_roles uor where uor.user_id = u.id and "
-                                + scope.inList("uor.org_id")
-                                + " and uor.role::text in ('ORG_ADMIN', 'ORG_MANAGER')) or "
-                                + OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id", scope) + ")",
-                        params.toArray());
+                // A viewer role alone does not make somebody a recipient.
+                yield base + " where u.status = 'ACTIVE' and (exists (select 1"
+                        + " from user_org_roles uor where uor.user_id = u.id and "
+                        + scope.inList("uor.org_id")
+                        + " and uor.role::text in ('ORG_ADMIN', 'ORG_MANAGER')) or "
+                        + OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id", scope) + ")";
             }
-            case WORKSPACE -> jdbcTemplate.update(base + """
-                          join workspace_members gm on gm.user_id = u.id
-                         where gm.workspace_id = ? and u.status = 'ACTIVE'
-                        """,
-                    event, announcement.getTitle(), announcement.getBody(), importance,
-                    announcement.getId(), announcement.getWorkspaceId());
+            case WORKSPACE -> {
+                params.add(target.workspaceId());
+                yield base + " join workspace_members gm on gm.user_id = u.id"
+                        + " where gm.workspace_id = ? and u.status = 'ACTIVE'";
+            }
         };
+        return jdbcTemplate.query(sql + " order by u.id", (rs, index) -> new Recipient(rs.getLong("id"),
+                rs.getObject("public_id", UUID.class), rs.getString("name"), rs.getString("email"),
+                UserRole.valueOf(rs.getString("account_role"))), params.toArray());
     }
+
+    /** Bounded inserts reuse the already selected identities and addresses without another audience read. */
+    private List<Long> fanOut(Announcement announcement, List<Recipient> recipients) {
+        List<Long> ids = new ArrayList<>();
+        for (int offset = 0; offset < recipients.size(); offset += 500) {
+            List<Recipient> batch = recipients.subList(offset, Math.min(offset + 500, recipients.size()));
+            String values = "(?, ?::text), ".repeat(batch.size() - 1) + "(?, ?::text)";
+            List<Object> params = new ArrayList<>(List.of(NotificationEvent.ANNOUNCEMENT.id(),
+                    announcement.getTitle(), announcement.getBody(),
+                    NotificationEvent.ANNOUNCEMENT.defaultImportance().name(), announcement.getId()));
+            for (Recipient recipient : batch) { params.add(recipient.id()); params.add(recipient.email()); }
+            ids.addAll(jdbcTemplate.queryForList("""
+                    insert into notifications (user_id, event, title, body, importance, announcement_id,
+                        status, recipient_email)
+                    select recipients.user_id, ?, ?, ?, ?, ?, 'PENDING', recipients.email
+                      from (values %s) as recipients(user_id, email) returning id
+                    """.formatted(values), Long.class, params.toArray()));
+        }
+        return ids;
+    }
+
+    private record Target(AnnouncementScope scope, @Nullable Long orgId, @Nullable Long workspaceId,
+            @Nullable UUID orgPublicId, @Nullable UUID workspacePublicId) { }
+    private record Recipient(long id, UUID publicId, String name, String email, UserRole role) { }
+    private record Audience(Target target, List<Recipient> recipients) { }
 
     /** The WORKSPACE-scope gate: the workspace has resources in a managed org. */
     private boolean workspaceLinkedToOrg(long workspaceId, Collection<Long> orgIds) {

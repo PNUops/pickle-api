@@ -1,12 +1,17 @@
 package kr.ac.pusan.pickle.announcement;
 
 import kr.ac.pusan.pickle.announcement.dto.AnnouncementView;
+import kr.ac.pusan.pickle.announcement.dto.AnnouncementDetailResponse;
+import kr.ac.pusan.pickle.common.error.ApiException;
+import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
+import java.util.UUID;
 
 /** Contract {@code listAnnouncements}: sender-org visibility, newest first. */
 @Service
@@ -35,6 +40,17 @@ public class AnnouncementQueryService {
                         AnnouncementScope.ALL, actor.readableOrgIds(), pageable)
                 : announcementRepository.findAllByOrderByIdDesc(pageable);
         return PageResponse.of(result.getContent().stream().map(this::toView).toList(), result);
+    }
+
+    @Transactional(readOnly = true)
+    public AnnouncementDetailResponse get(AuthenticatedUser actor, UUID id) {
+        Announcement announcement = (actor.role().isOrgTier()
+                ? announcementRepository.findVisibleByPublicId(id, AnnouncementScope.ALL, actor.readableOrgIds())
+                : announcementRepository.findByPublicId(id)).orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                        "발송건을 찾을 수 없습니다", "조회할 수 있는 발송건이 없습니다."));
+        var view = toView(announcement);
+        return AnnouncementDetailResponse.from(announcement, view.orgId(), view.workspaceId());
     }
 
     /**
