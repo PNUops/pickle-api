@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.95.0, 273 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.96.0, 276 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -236,6 +236,9 @@ operations:
   - { id: updateOrgRequestMail, method: PUT, path: "/admin/users/{userId}/org-roles/{orgId}/request-mail", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: listUsers,       method: GET,    path: "/admin/users",                      roles: { USER: deny, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: getUser,         method: GET,    path: "/admin/users/{userId}",             roles: { USER: deny, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminUserSupport, method: GET, path: "/admin/users/{userId}/support", roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminUserResourceAccess, method: GET, path: "/admin/users/{userId}/support/access", roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: previewAdminUserProfileImpact, method: POST, path: "/admin/users/{userId}/profile-impact", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: disableUser,          method: POST,   path: "/admin/users/{userId}/disable",     roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: enableUser,           method: POST,   path: "/admin/users/{userId}/enable",      roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: resetUserMfa,         method: POST,   path: "/admin/users/{userId}/mfa-reset",   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

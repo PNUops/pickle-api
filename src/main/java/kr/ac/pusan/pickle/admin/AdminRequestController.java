@@ -58,9 +58,10 @@ public class AdminRequestController {
             @RequestParam(required = false) RequestStatus status,
             @RequestParam(required = false) ResourceType type,
             @RequestParam(required = false) UUID orgId,
+            @RequestParam(required = false) UUID workspaceId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return approvalService.list(principal, status, type, orgId, page, size);
+        return approvalService.list(principal, status, type, orgId, workspaceId, page, size);
     }
 
     @GetMapping("/{requestId}")

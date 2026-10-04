@@ -255,6 +255,9 @@ class ContractDriftTest {
             // Admin user surface (contract v0.9.0).
             "GET /admin/users",
             "GET /admin/users/{userId}",
+            "GET /admin/users/{userId}/support",
+            "GET /admin/users/{userId}/support/access",
+            "POST /admin/users/{userId}/profile-impact",
             "POST /admin/users/{userId}/disable",
             "POST /admin/users/{userId}/enable",
             // 2FA enrollment (contract v0.9.0).
@@ -418,6 +421,17 @@ class ContractDriftTest {
         assertThat(operationIdIssues(fetchRuntimeSpec()))
                 .as("runtime OpenAPI operationIds")
                 .isEmpty();
+    }
+
+    @Test
+    void userSupportSchemasDoNotReplaceExistingActionsOrMemberships() throws Exception {
+        JsonNode schemas = fetchRuntimeSpec().path("components").path("schemas");
+        assertThat(schemas.path("Action").path("enum").toString()).isEqualTo("[\"ACCEPT\",\"DROP\"]");
+        assertThat(schemas.path("AdminUserProfileImpactAction").path("enum").toString())
+                .isEqualTo("[\"PROFILE\",\"ENABLE\"]");
+        assertThat(schemas.path("Membership").path("properties").has("workspaceKind")).isTrue();
+        assertThat(schemas.path("Membership").path("properties").has("resourceCounts")).isFalse();
+        assertThat(schemas.path("AdminUserSupportMembership").path("properties").has("resourceCounts")).isTrue();
     }
 
     @Test

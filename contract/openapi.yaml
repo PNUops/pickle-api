@@ -78,8 +78,9 @@ components:
       properties:
         action:
           $ref: "#/components/schemas/AdminBulkAccessAction"
-          description: "GRANT는 없는 권한을 만들고, CHANGE는 있는 권한의 등급을 바꾸며, REVOKE는 권한을 지웁니\
-            다."
+          description: "GRANT는 없는 권한을 만들고, CHANGE는 있는 권한의 등급을 바꿉니다. 둘은 활성 구성원에게만 허\
+            용됩니다. REVOKE는 기존 개인 권한을 지우며 비활성 계정과 구성원 해제 후에도 가능합니다. 회수할 개인 권한이 없으면 NO_GRANT로\
+            \ 거부합니다. 워크스페이스 전체 부여는 그대로 둡니다."
         role:
           anyOf:
           - $ref: "#/components/schemas/ResourceRole"
@@ -1878,6 +1879,356 @@ components:
           type:
           - "string"
           - "null"
+      type: "object"
+    AdminUserProfileImpactAction:
+      enum:
+      - "PROFILE"
+      - "ENABLE"
+      type: "string"
+    AdminUserProfileImpactRequest:
+      properties:
+        action:
+          $ref: "#/components/schemas/AdminUserProfileImpactAction"
+        profile:
+          anyOf:
+          - $ref: "#/components/schemas/AdminUpdateProfileRequest"
+          - type: "null"
+      required:
+      - "action"
+      type: "object"
+    AdminUserProfileImpactResponse:
+      properties:
+        action:
+          $ref: "#/components/schemas/AdminUserProfileImpactAction"
+        candidateStatus:
+          $ref: "#/components/schemas/UserStatus"
+        claimsPossible:
+          type: "boolean"
+        invitations:
+          items:
+            $ref: "#/components/schemas/AdminUserProfileInvitationImpact"
+          type: "array"
+        observedAt:
+          format: "date-time"
+          type: "string"
+        studentNoWillChange:
+          type: "boolean"
+        userId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "action"
+      - "candidateStatus"
+      - "claimsPossible"
+      - "invitations"
+      - "observedAt"
+      - "studentNoWillChange"
+      - "userId"
+      type: "object"
+    AdminUserProfileInvitationImpact:
+      properties:
+        acceptedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        alreadyMember:
+          type: "boolean"
+        id:
+          format: "uuid"
+          type: "string"
+        matchedBy:
+          type: "string"
+        recipients:
+          items:
+            $ref: "#/components/schemas/AdminUserProfileRecipientImpact"
+          type: "array"
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+        status:
+          $ref: "#/components/schemas/WorkspaceInvitationStatus"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceKind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        workspaceName:
+          type: "string"
+      required:
+      - "alreadyMember"
+      - "id"
+      - "matchedBy"
+      - "recipients"
+      - "role"
+      - "status"
+      - "workspaceId"
+      - "workspaceKind"
+      - "workspaceName"
+      type: "object"
+    AdminUserProfileRecipientImpact:
+      properties:
+        grantedEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        orgId:
+          format: "uuid"
+          type: "string"
+        projectedStatus:
+          $ref: "#/components/schemas/RequestRecipientStatus"
+        requestId:
+          format: "uuid"
+          type: "string"
+        requestStatus:
+          $ref: "#/components/schemas/RequestStatus"
+        status:
+          $ref: "#/components/schemas/RequestRecipientStatus"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+      required:
+      - "orgId"
+      - "projectedStatus"
+      - "requestId"
+      - "requestStatus"
+      - "status"
+      - "type"
+      type: "object"
+    AdminUserResourceAccessResponse:
+      properties:
+        baseConditionsSatisfied:
+          description: "활성 계정, 소유 워크스페이스 구성원과 리소스 부여의 공통 조건만 충족했는지. 종류별 작업이나 실제 연결\
+            \ 성공을 보장하지 않습니다."
+          type: "boolean"
+        canRevoke:
+          description: "현재 관리자가 기존 일괄 접근 변경으로 이 사용자의 개인 부여를 회수할 수 있는지"
+          type: "boolean"
+        effectiveRole:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceRole"
+          - type: "null"
+        id:
+          format: "uuid"
+          type: "string"
+        name:
+          type: "string"
+        orgId:
+          format: "uuid"
+          type: "string"
+        orgName:
+          type: "string"
+        personalGrantRole:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceRole"
+          - type: "null"
+        reasons:
+          description: "공통 진단 사유. ACCOUNT_INACTIVE, NOT_WORKSPACE_MEMBER, NO_RESOURCE_GRANT,\
+            \ RESOURCE_ENDED, RESOURCE_NOT_READY. 종류별 상세 조건은 별도 확인이 필요합니다."
+          items:
+            type: "string"
+          type: "array"
+        requestId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        revokeReason:
+          description: "회수 조건. ALLOWED, FORBIDDEN, RESOURCE_NOT_FOUND, NO_PERSONAL_GRANT.\
+            \ 기존 개인 부여의 회수는 계정 비활성이나 구성원 해제 이후에도 가능합니다."
+          type: "string"
+        standingRights:
+          type: "boolean"
+        status:
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        userStatus:
+          $ref: "#/components/schemas/UserStatus"
+        workspaceGrantRole:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceRole"
+          - type: "null"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceName:
+          type: "string"
+        workspaceRole:
+          anyOf:
+          - $ref: "#/components/schemas/WorkspaceMemberRole"
+          - type: "null"
+      required:
+      - "baseConditionsSatisfied"
+      - "canRevoke"
+      - "id"
+      - "name"
+      - "orgId"
+      - "orgName"
+      - "reasons"
+      - "revokeReason"
+      - "standingRights"
+      - "status"
+      - "type"
+      - "userStatus"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
+    AdminUserSupportInvitation:
+      properties:
+        acceptedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        matchedBy:
+          type: "string"
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+        status:
+          $ref: "#/components/schemas/WorkspaceInvitationStatus"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceKind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        workspaceName:
+          type: "string"
+      required:
+      - "id"
+      - "matchedBy"
+      - "role"
+      - "status"
+      - "workspaceId"
+      - "workspaceKind"
+      - "workspaceName"
+      type: "object"
+    AdminUserSupportMembership:
+      properties:
+        resourceCounts:
+          items:
+            $ref: "#/components/schemas/AdminUserSupportResourceCount"
+          type: "array"
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceKind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        workspaceName:
+          type: "string"
+      required:
+      - "resourceCounts"
+      - "role"
+      - "workspaceId"
+      - "workspaceKind"
+      - "workspaceName"
+      type: "object"
+    AdminUserSupportRelatedRequest:
+      properties:
+        applicant:
+          type: "boolean"
+        grantedEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        orgId:
+          format: "uuid"
+          type: "string"
+        orgName:
+          type: "string"
+        reason:
+          type:
+          - "string"
+          - "null"
+        recipientId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        recipientStatus:
+          anyOf:
+          - $ref: "#/components/schemas/RequestRecipientStatus"
+          - type: "null"
+        resourceId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        status:
+          $ref: "#/components/schemas/RequestStatus"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceName:
+          type: "string"
+      required:
+      - "applicant"
+      - "id"
+      - "orgId"
+      - "orgName"
+      - "status"
+      - "type"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
+    AdminUserSupportResourceCount:
+      properties:
+        count:
+          description: "조회 가능한 기관의 종류별 행 수. 종료된 이력을 포함하며 도메인은 모든 종류를 셉니다."
+          format: "int64"
+          type: "integer"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+      required:
+      - "count"
+      - "type"
+      type: "object"
+    AdminUserSupportResponse:
+      properties:
+        invitations:
+          items:
+            $ref: "#/components/schemas/AdminUserSupportInvitation"
+          type: "array"
+        invitationsVisible:
+          type: "boolean"
+        memberships:
+          items:
+            $ref: "#/components/schemas/AdminUserSupportMembership"
+          type: "array"
+        observedAt:
+          format: "date-time"
+          type: "string"
+        requests:
+          items:
+            $ref: "#/components/schemas/AdminUserSupportRelatedRequest"
+          type: "array"
+        resources:
+          description: "조회 가능한 기관의 접근 목록형 리소스. 도메인은 EXTERNAL만 포함하며 VM 연결 도메인은 워크스페\
+            이스 도메인 목록과 연결 VM에서 확인합니다. 종료된 리소스 이력도 포함합니다."
+          items:
+            $ref: "#/components/schemas/AdminUserResourceAccessResponse"
+          type: "array"
+        userId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "invitations"
+      - "invitationsVisible"
+      - "memberships"
+      - "observedAt"
+      - "requests"
+      - "resources"
+      - "userId"
       type: "object"
     AdminWorkspaceDetailResponse:
       properties:
@@ -11519,6 +11870,12 @@ components:
       required:
       - "outcome"
       type: "object"
+    WorkspaceInvitationStatus:
+      enum:
+      - "PENDING"
+      - "ACCEPTED"
+      - "CANCELED"
+      type: "string"
     WorkspaceKind:
       enum:
       - "PERSONAL"
@@ -11622,7 +11979,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.95.0"
+  version: "0.96.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -12104,6 +12461,12 @@ paths:
       parameters:
       - in: "query"
         name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "workspaceId"
         required: false
         schema:
           format: "uuid"
@@ -14626,6 +14989,12 @@ paths:
           format: "uuid"
           type: "string"
       - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
         name: "page"
         required: false
         schema:
@@ -15536,6 +15905,120 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
+  /admin/users/{userId}/profile-impact:
+    post:
+      description: "제안된 프로필 또는 복원할 계정 상태에서 수락 가능한 초대와 가입 대기 신청의 다음 상태를 조회합니다. 값을 저\
+        장하거나 초대를 수락하지 않습니다. 미리보기는 예약이 아니며 생성 대기는 실제 생성 완료가 아닙니다."
+      operationId: "previewAdminUserProfileImpact"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserProfileImpactRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminUserProfileImpactResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "프로필 정정과 계정 활성화의 초대 영향 미리보기"
+      tags:
+      - "admin-user-support-controller"
+  /admin/users/{userId}/support:
+    get:
+      description: "구성원 관계는 사용자 상세의 조회 범위를 따릅니다. 리소스와 신청 결과는 조회 가능한 기관으로 제한하며 초대는\
+        \ 승인 권한자에게만 보입니다. 저장된 학번으로 대기 초대를 계정과 연결하는 조회는 시스템 관리자에게만 허용됩니다. 생성 대기와 리소\
+        스의 실제 상태를 구분합니다."
+      operationId: "getAdminUserSupport"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminUserSupportResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "사용자의 관계와 실제 신청 결과 조회"
+      tags:
+      - "admin-user-support-controller"
+  /admin/users/{userId}/support/access:
+    get:
+      description: "관리자가 조회할 수 있는 기관의 지정 리소스에 대해 구성원과 부여, 계정 및 리소스 상태를 설명합니다. 실제 사\
+        용자 인가와 연결 상태는 변경하지 않으며 종류별 작업 성공을 보장하지 않습니다."
+      operationId: "getAdminUserResourceAccess"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "type"
+        required: true
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "query"
+        name: "resourceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminUserResourceAccessResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "사용자와 리소스의 공통 접근 조건 조회"
+      tags:
+      - "admin-user-support-controller"
   /admin/vm-flavors:
     get:
       operationId: "listAdminVmFlavors"

@@ -733,6 +733,44 @@ class AdminBulkChangeTest {
                 .andExpect(jsonPath("$.errors[0].field").value("change.access.role"));
     }
 
+    @Test
+    void inactiveNamedGrantsCanBeRevokedWithoutChangingWorkspaceWideAccess() throws Exception {
+        User disabled = user("disabled-revoke-" + UUID.randomUUID() + "@pusan.ac.kr", "비활성 회수 대상", UserRole.USER, null);
+        jdbcTemplate.update("insert into workspace_members(workspace_id,user_id,role) values(?,?,'MEMBER')", workspaceA, disabled.getId());
+        long first = createVm(orgA.getId(), workspaceA, "RUNNING", today.plusDays(10));
+        long foreign = createVm(orgB.getId(), workspaceB, "RUNNING", today.plusDays(10));
+        jdbcTemplate.update("""
+                insert into resource_access_grants(resource_type,resource_id,grantee_type,user_id,role)
+                values('VM',?,'USER',?,'EDITOR'),('VM',?,'USER',?,'EDITOR')
+                """, first, disabled.getId(), foreign, disabled.getId());
+        jdbcTemplate.update("insert into resource_access_grants(resource_type,resource_id,grantee_type,role) values('VM',?,'WORKSPACE','MEMBER')", first);
+        jdbcTemplate.update("update users set status='DISABLED' where id=?", disabled.getId());
+        List<UUID> targets = List.of(pub("vms", first), pub("vms", foreign));
+        for (String action : List.of("GRANT", "CHANGE")) {
+            assertThat(item(previewJson(orgAdminToken, request("VM", targets, access(action, disabled, "MEMBER"))), pub("vms", first))
+                    .get("reason").asString()).isEqualTo("INELIGIBLE");
+        }
+        JsonNode revoked = applyJson(orgAdminToken, request("VM", targets, access("REVOKE", disabled, null)));
+        assertThat(item(revoked, pub("vms", first)).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(item(revoked, pub("vms", foreign)).get("reason").asString()).isEqualTo("NOT_FOUND");
+        assertThat(grantRole(first, disabled.getId())).isNull();
+        assertThat(grantRole(foreign, disabled.getId())).isEqualTo("EDITOR");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from resource_access_grants where resource_type='VM' and resource_id=? and grantee_type='WORKSPACE'", Long.class, first)).isEqualTo(1);
+        assertThat(auditDetail(pub("vms", first), "vm.access_grant_remove").get("granteeUserId")).isEqualTo(disabled.getPublicId().toString());
+        jdbcTemplate.update("update users set status='ACTIVE' where id=?", disabled.getId());
+        assertThat(grantRole(first, disabled.getId())).isNull();
+    }
+
+    @Test
+    void departedUsersExistingGrantCanBeCleanedUpBySystemAdministrator() throws Exception {
+        long first = createVm(orgA.getId(), workspaceA, "RUNNING", today.plusDays(10));
+        jdbcTemplate.update("insert into resource_access_grants(resource_type,resource_id,grantee_type,user_id,role) values('VM',?,'USER',?,'EDITOR')", first, outsider.getId());
+        Map<String, Object> body = request("VM", List.of(pub("vms", first)), access("REVOKE", outsider, null));
+        assertThat(item(previewJson(sysManagerToken, body), pub("vms", first)).get("reason").asString()).isEqualTo("FORBIDDEN");
+        assertThat(item(applyJson(sysAdminToken, body), pub("vms", first)).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(grantRole(first, outsider.getId())).isNull();
+    }
+
     // ── domains ────────────────────────────────────────────────────────────
 
     @Test
