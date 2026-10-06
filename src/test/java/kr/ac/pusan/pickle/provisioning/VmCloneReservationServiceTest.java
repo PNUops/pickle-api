@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.provisioning;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -75,6 +76,27 @@ class VmCloneReservationServiceTest {
                 new NodePlacementBudget.VmPlacementResources(2, 344, 10)))
                 .isInstanceOf(VmCloneReservationService.NoCapacityException.class)
                 .hasMessageContaining("수용할 수 있는 노드");
+    }
+
+    @Test
+    void sharedCpuReservesAgainstTheLockedPlatformIntentAndDeductsExternalVcpuOnce() {
+        ReflectionTestUtils.setField(second, "labels", Map.of("placement_capacity", Map.of(
+                "schema_version", 2, "measured_at", Instant.parse("2026-09-18T00:00:00Z").toString(),
+                "physical", Map.of("cpu_threads", 32, "memory_mb", 65536, "disk_gb", 1000),
+                "reserved", Map.of("cpu_threads", 4, "memory_mb", 8192, "disk_gb", 200),
+                "allocatable", Map.of("cpu_threads", 41, "memory_mb", 57344, "disk_gb", 800),
+                "cpu_policy", Map.of("allocation_ratio", 2, "committed_vcpu", 15))));
+        when(vms.sumActiveByNodeId(second.getId(), VmStatus.DELETED)).thenReturn(allocated(25, 4096, 100));
+        assertThat(service.reserve(canonical.getPublicId(), null,
+                new NodePlacementBudget.VmPlacementResources(16, 2048, 20)).node()).isSameAs(second);
+        org.mockito.InOrder lockedRead = inOrder(nodes, vms);
+        lockedRead.verify(nodes).findAllByIdForUpdate(List.of(second.getId()));
+        lockedRead.verify(vms).sumActiveByNodeId(second.getId(), VmStatus.DELETED);
+
+        when(vms.sumActiveByNodeId(second.getId(), VmStatus.DELETED)).thenReturn(allocated(26, 4096, 100));
+        assertThatThrownBy(() -> service.reserve(canonical.getPublicId(), null,
+                new NodePlacementBudget.VmPlacementResources(16, 2048, 20)))
+                .isInstanceOf(VmCloneReservationService.NoCapacityException.class);
     }
 
     @Test
