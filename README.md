@@ -325,6 +325,35 @@ mapping 중단·삭제와 VM 소유권 종료의 resource retirement에만 사�
 직접 손대지 않습니다. 관리 대상 VM은 하이퍼바이저 `protection` 플래그를 상시 켜 두고,
 의도된 삭제 직전에만 내립니다.
 
+### 노드의 CPU 배치 예산
+
+노드 `labels.placement_capacity`의 schema1은 물리 용량에서 예약량을 뺀 CPU, 메모리,
+디스크 예산을 사용합니다. schema2는 `cpu_policy`의 `allocation_ratio`(1 또는 2)와
+`committed_vcpu`를 함께 검증합니다. CPU 예산은 `(physical.cpu_threads -
+reserved.cpu_threads) × allocation_ratio - committed_vcpu`입니다. `reserved.cpu_threads`는
+호스트가 사용하는 물리 CPU 예약량이며, `committed_vcpu`는 플랫폼 VM 목록 밖에서 이미
+사용하거나 별도로 확보한 vCPU입니다. 플랫폼에 기록된 VM의 할당량과 새 요청은 남은
+예산에 대해 노드를 잠근 상태에서 함께 확인합니다. 외부 vCPU를 다시 빼지 않습니다.
+
+메모리와 디스크는 두 schema 모두 `physical - reserved`로 계산합니다. 노드의 CPU
+column은 물리 thread 수를 유지하며 CPU 공유 비율은 VM 개수나 성능 보장 비율이 아닙니다.
+메타데이터가 없는 기존 노드는 기존 배치 동작을 유지합니다. 메타데이터가 있는데 version,
+정수 값, 필드 구성이나 계산 결과가 맞지 않으면 배치를 거부합니다.
+
+아래 예시는 16 physical threads 중 호스트용 4개를 예약하고 외부 vCPU 6개를 확보한
+설정입니다. 플랫폼 VM에 할당할 수 있는 CPU 예산은 18 vCPU입니다.
+
+```json
+{
+  "schema_version": 2,
+  "physical": {"cpu_threads": 16, "memory_mb": 65536, "disk_gb": 512},
+  "reserved": {"cpu_threads": 4, "memory_mb": 8192, "disk_gb": 128},
+  "allocatable": {"cpu_threads": 18, "memory_mb": 57344, "disk_gb": 384},
+  "cpu_policy": {"allocation_ratio": 2, "committed_vcpu": 6},
+  "measured_at": "2026-01-01T00:00:00Z"
+}
+```
+
 ## GPU 할당 API
 
 GPU 할당은 가상머신과 별도 리소스입니다. `GPU` 종류로 임대 시간을 직접 신청하고

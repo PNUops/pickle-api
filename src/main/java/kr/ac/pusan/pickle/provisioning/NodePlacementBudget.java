@@ -25,6 +25,8 @@ public final class NodePlacementBudget {
 
     public static NodePlacementBudget from(Node node, Instant observedAt) {
         return node.placementCapacity(observedAt).map(capacity -> {
+            // The validated CPU budget already deducts external committed vCPUs.
+            // allocated below contains only platform VM intent from the locked node.
             PlacementCapacity.CapacityAmounts available = capacity.allocatable();
             return new NodePlacementBudget(available.cpuThreads(), available.memoryMb(), available.diskGb(), true);
         }).orElseGet(() -> new NodePlacementBudget(node.getCpuThreads(), node.getMemoryMb(), node.getDiskCapacityGb(), false));
