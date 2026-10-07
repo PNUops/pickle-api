@@ -102,7 +102,7 @@ public class ApprovalService {
 
     @Transactional(readOnly = true)
     public PageResponse<RequestDetailResponse> list(AuthenticatedUser actor, RequestStatus status,
-            ResourceType type, UUID orgId, int page, int size) {
+            ResourceType type, UUID orgId, UUID workspaceId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
         OrgScope scope = listScopeOrgId(actor, orgId);
         Specification<Request> spec = Specification.unrestricted();
@@ -114,6 +114,12 @@ public class ApprovalService {
         }
         if (type != null) {
             spec = spec.and(RequestSpecs.type(type));
+        }
+        if (workspaceId != null) {
+            Long internalWorkspace = workspaceRepository.findByPublicId(workspaceId)
+                    .map(kr.ac.pusan.pickle.workspace.Workspace::getId).orElse(null);
+            spec = spec.and(internalWorkspace == null ? (root, query, cb) -> cb.disjunction()
+                    : RequestSpecs.workspace(internalWorkspace));
         }
         Page<Request> result = requestRepository.findAll(spec, pageable);
         return PageResponse.of(assembler.toDetails(result.getContent(), actor), result);

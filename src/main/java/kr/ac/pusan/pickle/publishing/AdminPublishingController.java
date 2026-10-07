@@ -75,11 +75,12 @@ public class AdminPublishingController {
     public PageResponse<AdminDomainView> listAdminDomains(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
+            @RequestParam(required = false) UUID workspaceId,
             @RequestParam(required = false) DomainKind kind,
             @RequestParam(required = false) DomainStatus status,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return adminPublishingService.listDomains(principal, orgId, kind, status, page, size);
+        return adminPublishingService.listDomains(principal, orgId, workspaceId, kind, status, page, size);
     }
 
     @GetMapping("/certificates")

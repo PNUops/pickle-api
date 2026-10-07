@@ -57,9 +57,10 @@ import tools.jackson.databind.ObjectMapper;
  * own owners and the owners of its workspace; this one is a system
  * administrator, or an organisation administrator of the institution the
  * resource belongs to, the same tier that may schedule a VM's deletion.
- * Every rule of the first way holds here: the person must be active and a
- * member of the owning workspace, only grants naming a person are made, and
- * one person holds one entry per resource.
+     * New grants and role changes require an active member of the owning
+     * workspace. Removing an existing personal grant also works after account
+     * disable or membership removal, so a later activation cannot restore it.
+     * Workspace-wide grants are untouched.
  *
  * <p>Every edit is an administrator's intervention in a workspace's own
  * list, so its audit row says so beside the shape the owner's edits leave.
@@ -219,7 +220,7 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
             values.put("listed", false);
             return values;
         }
-        User grantee = activeUser(change.access().userId());
+        User grantee = eligibleUser(change.access());
         values.put("granteeRole", grantee == null ? null
                 : grantOf(target, grantee).map(grant -> grant.getRole().name()).orElse(null));
         return values;
@@ -232,7 +233,7 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
             return Judgement.refused(AdminBulkChangeReason.INELIGIBLE);
         }
         AdminBulkAccessChange access = change.access();
-        User grantee = activeUser(access.userId());
+        User grantee = eligibleUser(access);
         if (grantee == null) {
             // An id no active account has is refused as ineligible, not as
             // missing: the grantee's existence is not this surface's to disclose.
@@ -241,7 +242,7 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
         boolean member = workspaceMemberRepository
                 .findByWorkspaceIdAndUserId(target.identity().workspaceId(), grantee.getId())
                 .isPresent();
-        if (!member) {
+        if (!member && access.action() != AdminBulkAccessAction.REVOKE) {
             return Judgement.refused(AdminBulkChangeReason.NOT_MEMBER);
         }
         ResourceAccessGrant grant = grantOf(target, grantee).orElse(null);
@@ -387,9 +388,9 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
                 detailOf(grant, previousRole, batchId), ip);
     }
 
-    private @Nullable User activeUser(UUID publicId) {
-        return userRepository.findByPublicId(publicId)
-                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
+    private @Nullable User eligibleUser(AdminBulkAccessChange access) {
+        return userRepository.findByPublicId(access.userId())
+                .filter(user -> access.action() == AdminBulkAccessAction.REVOKE || user.getStatus() == UserStatus.ACTIVE)
                 .orElse(null);
     }
 

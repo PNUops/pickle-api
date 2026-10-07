@@ -162,11 +162,12 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     @Query("""
             select d from Domain d
             where (:orgIds is null or d.orgId in :orgIds)
+              and (:workspaceId is null or d.workspaceId = :workspaceId)
               and (:kind is null or cast(d.kind as string) = :kind)
               and ((:status is null and cast(d.status as string) <> 'REMOVED')
                    or cast(d.status as string) = :status)
             order by d.id desc
             """)
-    Page<Domain> findAdmin(@Param("orgIds") Collection<Long> orgIds, @Param("kind") String kind,
+    Page<Domain> findAdmin(@Param("orgIds") Collection<Long> orgIds, @Param("workspaceId") Long workspaceId, @Param("kind") String kind,
             @Param("status") String status, Pageable pageable);
 }
