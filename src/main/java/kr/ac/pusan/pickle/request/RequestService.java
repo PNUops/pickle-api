@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.request;
 
+import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -73,6 +74,7 @@ public class RequestService {
     private final RequestRecipientService recipientService;
     private final kr.ac.pusan.pickle.admin.ApprovalService approvalService;
     private final kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService;
+    private final EntityManager entityManager;
 
     public RequestService(RequestRepository requestRepository, RequestAssembler assembler, RequestApproval requestApproval,
             List<RequestTypeHandler> handlers, WorkspaceRepository workspaceRepository,
@@ -81,7 +83,9 @@ public class RequestService {
             RequestPeriodPresetRepository periodPresetRepository, Clock clock,
             RequestRecipientService recipientService,
             kr.ac.pusan.pickle.admin.ApprovalService approvalService,
-            kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService) {
+            kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService,
+            EntityManager entityManager) {
+        this.entityManager = entityManager;
         this.adminWorkspaceQueryService = adminWorkspaceQueryService;
         this.recipientService = recipientService;
         this.approvalService = approvalService;
@@ -136,15 +140,14 @@ public class RequestService {
             // for the request's organisation, checked below.
             adminWorkspaceQueryService.requireOperated(actor, workspace.getPublicId());
         }
-        boolean workspaceOwner = membership != null && membership.getRole() == WorkspaceMemberRole.OWNER;
         // Checked before the form's contents so a refusal does not first teach
         // the caller which of their recipients are members. Only the kinds that
         // take the organisation from the form can be answered this early; the
         // rest are answered once the organisation is known, below.
         if (!handler.derivesOrgId()) {
-            boolean approver = form.orgId() != null && orgRepository.findByPublicId(form.orgId())
-                    .map(found -> RequestApprovers.mayApprove(actor, found.getId())).orElse(false);
-            requireMaySubmitAs(form, workspaceOwner, approver);
+            Long formOrgId = form.orgId() == null ? null
+                    : orgRepository.findByPublicId(form.orgId()).map(Org::getId).orElse(null);
+            requireMaySubmitAs(form, actor, membership, formOrgId);
         }
 
         List<FieldValidationError> errors = new ArrayList<>();
@@ -197,8 +200,11 @@ public class RequestService {
         // domain that turns out not to exist would answer with that failure
         // instead of the field error the applicant needs to see.
         Org org = resolveOrg(handler, form);
-        boolean approver = RequestApprovers.mayApprove(actor, org.getId());
-        requireMaySubmitAs(form, workspaceOwner, approver);
+        requireMaySubmitAs(form, actor, membership, org.getId());
+        // Refused here rather than by the charge at the end, so an actor
+        // already over the budget is not answered 429 after every placement
+        // and the approval have run.
+        recipientService.precheckPlacements(actor, recipients);
 
         Request saved = requestRepository.save(new Request(form.type(), workspace.getId(),
                 org.getId(),
@@ -206,31 +212,63 @@ public class RequestService {
                 Texts.blankToNull(form.extraNote()), period.endDate(), period.presetId(),
                 form.displayName().strip()));
         handler.saveDetail(saved, form);
+        // Recipients named by 학번 become members or invitees here, after every
+        // check on the form. This happens at submission, also for a request
+        // that is later rejected or canceled: the roster is the class,
+        // whatever becomes of this one request for it.
+        RequestRecipientService.Placed placed =
+                recipientService.placeStudentNos(actor, workspace, saved, recipients, ip);
+        recipients = placed.recipients();
         recipientService.saveAtSubmission(saved, recipients);
+
+        RequestDetailResponse response;
 
         // An approver deciding what they submit, in this transaction and
         // through the approve endpoint's own code. Anything that refuses the
         // approval rolls the submission back with it.
         if (form.approval() != null) {
-            return submitAndApprove(actor, saved, handler, workspace, org.getPublicId(),
+            response = submitAndApprove(actor, saved, handler, workspace, org.getPublicId(),
                     form.approval(), recipients.size(), ip);
+        } else if (handler.isAutoApproved(form)) {
+            // A kind whose policy issues without a reviewer is approved here,
+            // in this transaction, through the same code an approving reviewer
+            // runs. Deciding it later — a sweep, a job — would leave a window
+            // in which the applicant is looking at a request nobody will ever
+            // act on.
+            response = autoApprove(actor, saved, handler, workspace, org.getPublicId(), ip);
+        } else {
+            response = submitForReview(actor, form, saved, handler, workspace, org, recipients.size(), ip);
         }
+        // Last, once nothing else can refuse the submission. The budget is
+        // charged in its own transaction and stays spent if this one rolls
+        // back, so charging any earlier would bill a refused approval; a
+        // refusal here rolls back every placement above with the rest.
+        //
+        // Flushed first, so a write that fails when Hibernate sends it fails
+        // here, before the charge, rather than at commit after it. What a
+        // flush cannot bring forward is a deferred constraint trigger, which
+        // PostgreSQL runs at commit; a submission refused by one still spends
+        // the budget. SET CONSTRAINTS ALL IMMEDIATE would close that, and would
+        // also change when every other deferred trigger in the transaction
+        // runs, so it is not used.
+        if (placed.written() > 0) {
+            entityManager.flush();
+        }
+        recipientService.chargePlacements(actor, placed.written());
+        return response;
+    }
 
-        // A kind whose policy issues without a reviewer is approved here, in
-        // this transaction, through the same code an approving reviewer runs.
-        // Deciding it later — a sweep, a job — would leave a window in which
-        // the applicant is looking at a request nobody will ever act on.
-        if (handler.isAutoApproved(form)) {
-            return autoApprove(actor, saved, handler, workspace, org.getPublicId(), ip);
-        }
+    private RequestDetailResponse submitForReview(AuthenticatedUser actor, CreateRequestRequest form,
+            Request saved, RequestTypeHandler handler, Workspace workspace, Org org, int recipientCount,
+            String ip) {
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("type", form.type().name());
         auditArgs.put("workspaceId", workspace.getPublicId());
         auditArgs.put("orgId", org.getPublicId());
         auditArgs.putAll(handler.submitAuditArgs(saved));
-        if (!recipients.isEmpty()) {
-            auditArgs.put("recipients", recipients.size());
+        if (recipientCount > 0) {
+            auditArgs.put("recipients", recipientCount);
         }
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
                 "request", saved.getPublicId(), auditArgs, ip);
@@ -246,13 +284,13 @@ public class RequestService {
      * Who may send what. Recipients are for a workspace owner or an approver
      * of the organisation; a same-step approval is for an approver only.
      */
-    private static void requireMaySubmitAs(CreateRequestRequest form, boolean workspaceOwner,
-            boolean approver) {
-        if (form.approval() != null && !approver) {
+    private static void requireMaySubmitAs(CreateRequestRequest form, AuthenticatedUser actor,
+            @Nullable WorkspaceMember membership, @Nullable Long orgId) {
+        if (form.approval() != null && !RequestApprovers.mayApprove(actor, orgId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "이 기관의 신청을 승인할 수 있는 관리자만 제출과 동시에 승인할 수 있습니다.");
         }
-        if (form.hasRecipients() && !workspaceOwner && !approver) {
+        if (form.hasRecipients() && !RecipientNamers.mayName(actor, membership, orgId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.REQUEST_RECIPIENTS_FORBIDDEN,
                     "대상자를 지정할 권한이 없습니다",
                     "다른 사람을 대상자로 지정하는 신청은 워크스페이스 소유자나 이 기관의 신청을 승인할 수 있는 관리자만 낼 수 있습니다.");

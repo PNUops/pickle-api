@@ -57,6 +57,7 @@ public class NotificationComposer {
                     "/admin/gpus", event.defaultImportance(), Map.of());
             case REQUEST_SUBMITTED -> requestSubmitted(event, args);
             case REQUEST_APPROVED -> requestApproved(event, args);
+            case RESOURCE_GRANTED -> resourceGranted(event, args);
             case REQUEST_REJECTED -> new Composed(event.id(), resourceLabel(args) + " 신청 반려",
                     """
                     %s 신청이 반려되었습니다.
@@ -410,7 +411,9 @@ public class NotificationComposer {
         // compile here. A statement switch would not, and neither did the
         // string comparison this replaces.
         String body = type == null
-                ? "%s '%s' 신청이 승인되었습니다.\n콘솔에서 확인해 주세요.".formatted(label, name)
+                ? args.get("recipientTotal") != null
+                        ? "%s '%s' 신청이 승인되었습니다.\n%s".formatted(label, name, recipientSummary(args))
+                        : "%s '%s' 신청이 승인되었습니다.\n콘솔에서 확인해 주세요.".formatted(label, name)
                 : switch (type) {
                     case VM -> """
                             VM '%s' 신청이 승인되었습니다.
@@ -451,6 +454,83 @@ public class NotificationComposer {
         return new Composed(event.id(), label + " 신청 승인", body + reviewComment(args),
                 link, event.defaultImportance(),
                 payload(args, "requestId", "resourceName"));
+    }
+
+    /**
+     * What happened to the recipients of a many-person request, for the
+     * person who asked. Parts that are zero are left out, so a request whose
+     * recipients all hold accounts does not mention joining.
+     */
+    private static String recipientSummary(Map<String, Object> args) {
+        int total = count(args, "recipientTotal");
+        int queued = count(args, "queued");
+        int pendingJoin = count(args, "pendingJoin");
+        int skipped = count(args, "skipped");
+        // Worded about the resources, not the people: "M명은 생성을 시작했습니다"
+        // read as if the recipients themselves had started something.
+        String started = queued > 0 ? queued + "명의 리소스는 생성 대기열에 들어갔" : null;
+        String waiting = pendingJoin > 0 ? pendingJoin + "명의 리소스는 가입하면 만들어집니다." : null;
+        StringBuilder sentence = new StringBuilder("대상자 " + total + "명 중 ");
+        if (started != null && waiting != null) {
+            sentence.append(started).append("고 ").append(waiting);
+        } else if (started != null) {
+            sentence.append(started).append("습니다.");
+        } else if (waiting != null) {
+            sentence.append(waiting);
+        }
+        if (skipped > 0) {
+            if (started != null || waiting != null) {
+                sentence.append(' ');
+            }
+            sentence.append(skipped).append("명은 대상에서 제외되었습니다.");
+        }
+        return sentence.toString();
+    }
+
+    private static int count(Map<String, Object> args, String key) {
+        return args.get(key) instanceof Number n ? n.intValue() : 0;
+    }
+
+    /**
+     * The notice for someone a resource was made for on another person's
+     * request. They never applied, so the approval wording ("신청이
+     * 승인되었습니다") would tell them something untrue; this names the
+     * workspace instead, which is how they know where it came from.
+     *
+     * <p>Only keys reach this today: a VM recipient hears from
+     * {@code vm.create.done} once provisioning finishes, and the materializer
+     * publishes nothing for it at creation. The VM branch exists so the
+     * switch stays exhaustive and a later caller gets a true sentence.</p>
+     */
+    private Composed resourceGranted(NotificationEvent event, Map<String, Object> args) {
+        ResourceType type = resourceType(args);
+        if (type == null) {
+            throw new IllegalStateException("resource.granted needs a resource type");
+        }
+        // Both names are chosen by people other than the reader, and a
+        // newline in either would split the sentence or start a list item.
+        String workspace = oneLine(str(args, "workspaceName"));
+        String name = oneLine(str(args, "resourceName"));
+        return switch (type) {
+            case LLM_API_KEY -> new Composed(event.id(), "LLM API 키 지급",
+                    """
+                    '%s' 워크스페이스에서 LLM API 키를 지급받았습니다. 키 이름은 '%s'입니다.
+                    콘솔에서 키를 발급하면 사용할 수 있습니다.""".formatted(workspace, name),
+                    args.get("llmKeyId") != null ? "/console/llm-keys/" + args.get("llmKeyId") : "/console/llm-keys",
+                    event.defaultImportance(),
+                    payload(args, "requestId", "workspaceName", "resourceName", "llmKeyId"));
+            case VM -> new Composed(event.id(), "VM 지급",
+                    """
+                    '%s' 워크스페이스에서 VM을 지급받았습니다. 호스트 이름은 '%s'입니다.
+                    콘솔에서 생성 진행 상황을 확인할 수 있습니다.""".formatted(workspace, name),
+                    args.get("vmId") != null ? "/console/vms/" + args.get("vmId") : "/console/vms",
+                    event.defaultImportance(),
+                    payload(args, "requestId", "workspaceName", "resourceName", "vmId"));
+            // Neither kind can name recipients, so nothing is ever granted to
+            // someone else through a request of theirs.
+            case DOMAIN, GPU -> throw new IllegalStateException(
+                    "resource.granted does not apply to " + type);
+        };
     }
 
     /** The reviewer's comment as its own list item, or nothing. Shared by every

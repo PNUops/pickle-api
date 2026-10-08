@@ -227,8 +227,13 @@ public class ApprovalService {
             auditArgs.put("recipientsSkipped", settled.skipped());
             // No type on the notice: the per-kind wording speaks to the owner
             // of the one resource ("generation starts", "issue your key"), and
-            // the requester of a many-person request owns none of them.
+            // the requester of a many-person request owns none of them. What
+            // they get instead is how the recipients were settled.
             notifyArgs.put("resourceName", request.getDisplayName());
+            notifyArgs.put("recipientTotal", settled.queued() + settled.pendingJoin() + settled.skipped());
+            notifyArgs.put("queued", settled.queued());
+            notifyArgs.put("pendingJoin", settled.pendingJoin());
+            notifyArgs.put("skipped", settled.skipped());
         } else {
             // The decision, the resource and its first grant, shared with the path
             // that approves without a reviewer.
@@ -241,14 +246,18 @@ public class ApprovalService {
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
                 "request", request.getPublicId(), auditArgs, ip);
-        String reviewComment = Texts.blankToNull(form.comment());
+        // The comment is the reviewer speaking to the requester. When they are
+        // the same person it would only quote the approver back to themselves.
+        String reviewComment = submittedByReviewer ? null : Texts.blankToNull(form.comment());
         if (reviewComment != null) {
             notifyArgs.put("comment", reviewComment);
         }
         // In-tx insert: the notice exists iff the approval committed. A request
-        // submitted and approved in one step has nobody to tell: the requester
-        // is the person who just decided.
-        if (!submittedByReviewer) {
+        // submitted and approved in one step has nobody to tell about the
+        // decision: the requester is the person who just decided. One with
+        // recipients still gets the summary, since how its recipients were
+        // settled is news even to the person who decided it.
+        if (!submittedByReviewer || perRecipient) {
             notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_APPROVED,
                     notifyArgs, null);
         }
