@@ -31,10 +31,11 @@ import org.springframework.transaction.annotation.Transactional;
  * Writes nothing: members are added and invitations opened only when the
  * request is submitted.
  *
- * <p>Answers whether an ACTIVE account holds each 학번 and its name, which is
- * more than an invitation answers. It is open to exactly the people who may
- * name recipients here, and capped per minute like invitation; there is no
- * hourly budget, because nothing is spent.</p>
+ * <p>Answers whether an ACTIVE account holds each 학번, the same bit an
+ * invitation's ADDED answers; the account itself is named only for members.
+ * It is open to exactly the people who may name recipients here, and capped
+ * per minute like invitation; there is no hourly budget, because nothing is
+ * spent.</p>
  */
 @Service
 public class RosterService {
@@ -92,10 +93,15 @@ public class RosterService {
                 continue;
             }
             RequestRecipientService.RosterEntry entry = recipientService.rosterEntry(workspace, studentNo);
+            // The account is named only when it is already a member, whom the
+            // caller can see in the member list anyway. A registered non-member
+            // is reported by status alone, so the lookup does not turn into a
+            // 학번-to-name directory of people outside the workspace.
+            boolean member = entry.status() == RosterEntryStatus.MEMBER;
             results.add(new RosterEntryResult(studentNo, entry.status(),
-                    entry.user() != null ? entry.user().getPublicId() : null,
+                    member ? entry.user().getPublicId() : null,
                     entry.invitation() != null ? entry.invitation().getPublicId() : null,
-                    entry.user() != null ? entry.user().getName() : null));
+                    member ? entry.user().getName() : null));
         }
         return new ResolveRosterResponse(results);
     }

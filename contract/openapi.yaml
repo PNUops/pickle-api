@@ -9354,7 +9354,7 @@ components:
           - "string"
           - "null"
         name:
-          description: "그 계정의 이름. MEMBER와 REGISTERED일 때만 있습니다."
+          description: "그 구성원의 이름. MEMBER일 때만 있고, 구성원이 아닌 REGISTERED에는 없습니다."
           type:
           - "string"
           - "null"
@@ -9365,7 +9365,7 @@ components:
           description: "요청에 쓴 학번(앞뒤 공백 제거)."
           type: "string"
         userId:
-          description: "그 학번의 활성 계정. MEMBER와 REGISTERED일 때만 있습니다."
+          description: "그 학번의 구성원 계정. MEMBER일 때만 있고, 구성원이 아닌 REGISTERED에는 없습니다."
           format: "uuid"
           type:
           - "string"

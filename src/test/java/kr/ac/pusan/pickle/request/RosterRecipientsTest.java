@@ -121,7 +121,9 @@ class RosterRecipientsTest {
         assertThat(results.get(0).get("studentNo").asString()).isEqualTo(member.getStudentNo());
         assertThat(results.get(0).get("userId").asString()).isEqualTo(member.getPublicId().toString());
         assertThat(results.get(0).get("name").asString()).isEqualTo(member.getName());
-        assertThat(results.get(1).get("userId").asString()).isEqualTo(registered.getPublicId().toString());
+        // A registered non-member is a status only: no account id, no name.
+        assertThat(results.get(1).get("userId").isNull()).isTrue();
+        assertThat(results.get(1).get("name").isNull()).isTrue();
         assertThat(results.get(2).get("invitationId").asString()).isEqualTo(invitation.toString());
         assertThat(results.get(3).get("userId").isNull()).isTrue();
         assertThat(results.get(3).get("invitationId").isNull()).isTrue();
