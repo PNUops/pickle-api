@@ -512,13 +512,13 @@ public class NotificationComposer {
         return switch (type) {
             case LLM_API_KEY -> new Composed(event.id(), "LLM API 키 지급",
                     """
-                    '%s' 워크스페이스에서 LLM API 키 '%s'가 지급되었습니다.
+                    '%s' 워크스페이스에서 LLM API 키를 지급받았습니다. 키 이름은 '%s'입니다.
                     콘솔에서 키를 발급하면 사용할 수 있습니다.""".formatted(workspace, name),
                     "/console/llm-keys/" + args.get("llmKeyId"), event.defaultImportance(),
                     payload(args, "requestId", "workspaceName", "resourceName", "llmKeyId"));
             case VM -> new Composed(event.id(), "VM 지급",
                     """
-                    '%s' 워크스페이스에서 VM '%s'가 지급되었습니다.
+                    '%s' 워크스페이스에서 VM을 지급받았습니다. 호스트 이름은 '%s'입니다.
                     콘솔에서 생성 진행 상황을 확인할 수 있습니다.""".formatted(workspace, name),
                     args.get("vmId") != null ? "/console/vms/" + args.get("vmId") : "/console/vms",
                     event.defaultImportance(),

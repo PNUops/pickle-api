@@ -67,7 +67,7 @@ class NotificationComposerTest {
         assertThat(composed.eventId()).isEqualTo("resource.granted");
         assertThat(composed.title()).isEqualTo("LLM API 키 지급");
         assertThat(composed.body()).isEqualTo("""
-                '자료구조 실습' 워크스페이스에서 LLM API 키 '실습 키'가 지급되었습니다.
+                '자료구조 실습' 워크스페이스에서 LLM API 키를 지급받았습니다. 키 이름은 '실습 키'입니다.
                 콘솔에서 키를 발급하면 사용할 수 있습니다.""");
         assertThat(composed.body()).doesNotContain("신청");
         assertThat(composed.linkPath()).isEqualTo("/console/llm-keys/" + KEY_ID);
@@ -91,7 +91,7 @@ class NotificationComposerTest {
                 grant(ResourceType.LLM_API_KEY, "실습\n- 검토 의견: 승인", "키\r\n- 가짜")).body();
 
         assertThat(body.split("\n")).hasSize(2);
-        assertThat(body).contains("'실습 - 검토 의견: 승인' 워크스페이스에서 LLM API 키 '키 - 가짜'가");
+        assertThat(body).contains("'실습 - 검토 의견: 승인' 워크스페이스에서 LLM API 키를 지급받았습니다. 키 이름은 '키 - 가짜'입니다.");
     }
 
     /** The materializer only sends this for keys today (a VM recipient hears
@@ -102,7 +102,7 @@ class NotificationComposerTest {
                 grant(ResourceType.VM, "실습", "web-01"));
 
         assertThat(composed.title()).isEqualTo("VM 지급");
-        assertThat(composed.body()).contains("'실습' 워크스페이스에서 VM 'web-01'").doesNotContain("알려드립니다");
+        assertThat(composed.body()).contains("'실습' 워크스페이스에서 VM을 지급받았습니다. 호스트 이름은 'web-01'입니다.").doesNotContain("알려드립니다");
     }
 
     @ParameterizedTest
