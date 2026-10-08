@@ -136,7 +136,7 @@ public class WorkspaceInvitationService {
     private WorkspaceInvitationResult inviteOne(AuthenticatedUser actor, Workspace workspace, Invitee invitee,
             String ip) {
         InvitationWriter.Placement placement =
-                invitationWriter.place(actor, workspace, invitee.email(), invitee.studentNo(), ip);
+                invitationWriter.place(actor, workspace, invitee.email(), invitee.studentNo(), ip, Map.of());
         return invitee.result(placement.outcome(), placement.invitationId(),
                 placement.member() != null ? placement.member().getPublicId() : null);
     }

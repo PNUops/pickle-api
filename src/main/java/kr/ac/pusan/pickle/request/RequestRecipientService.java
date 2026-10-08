@@ -30,6 +30,7 @@ import kr.ac.pusan.pickle.workspace.InvitationWriter;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceInvitation;
 import kr.ac.pusan.pickle.workspace.WorkspaceInvitationRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceInvitationOutcome;
 import kr.ac.pusan.pickle.workspace.WorkspaceInvitationStatus;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
@@ -214,6 +215,10 @@ public class RequestRecipientService {
                 : new RosterEntry(RosterEntryStatus.NEW, null, null);
     }
 
+    /** The recipients with ids only, and how many people that added or invited. */
+    public record Placed(List<Resolved> recipients, int written) {
+    }
+
     /**
      * Turns every recipient named by a 학번 that {@link #resolve} could not
      * settle into a member or an open invitation, through the same write a
@@ -221,22 +226,31 @@ public class RequestRecipientService {
      *
      * <p>The caller has decided the actor may name recipients here, as an
      * owner or as an approver; the invitation endpoint's own owner gate does
-     * not apply. Each such person is charged against the actor's hourly
-     * invitation budget before anything is written, and a list that does not
-     * fit is refused whole. The locks are taken in ascending key order, as a
-     * bulk invitation takes them, and before any membership is inserted.</p>
+     * not apply. Nothing is charged here: the caller charges
+     * {@link Placed#written} through {@link #chargePlacements} once nothing
+     * else can refuse the submission.</p>
+     *
+     * <p>Locks are taken as a bulk invitation and a 학번 claim take them: the
+     * email of every ACTIVE account a 학번 names as well as the 학번 itself,
+     * all in ascending key order, so emails come first. Without the email
+     * lock a claim for the same account by email could hold the lock this
+     * waits on while waiting on the membership row this inserted.</p>
      *
      * <p>Members are added and invitations opened at submission, so a request
      * that is later rejected or canceled leaves them in place.</p>
      */
-    public List<Resolved> placeStudentNos(AuthenticatedUser actor, Workspace workspace, List<Resolved> resolved,
-            String ip) {
+    public Placed placeStudentNos(AuthenticatedUser actor, Workspace workspace, Request request,
+            List<Resolved> resolved, String ip) {
         List<String> studentNos = resolved.stream().map(Resolved::studentNo).filter(Objects::nonNull).toList();
         if (studentNos.isEmpty()) {
-            return resolved;
+            return new Placed(resolved, 0);
         }
-        invitationWriter.chargeEntries(actor.id(), studentNos.size());
-        invitationWriter.lockStudentNos(studentNos);
+        List<String> emails = studentNos.stream()
+                .map(studentNo -> userRepository.findByStudentNoIgnoreCase(studentNo)
+                        .filter(user -> user.getStatus() == UserStatus.ACTIVE).orElse(null))
+                .filter(Objects::nonNull).map(User::getEmail).toList();
+        invitationWriter.lockInOrder(emails, studentNos);
+        Map<String, Object> auditExtra = Map.of("viaRequest", true, "requestId", request.getPublicId());
         List<Resolved> placed = new ArrayList<>(resolved.size());
         List<FieldValidationError> errors = new ArrayList<>();
         Set<Long> users = new HashSet<>();
@@ -248,6 +262,7 @@ public class RequestRecipientService {
                 invitations.add(recipient.invitationId());
             }
         }
+        int written = 0;
         for (int i = 0; i < resolved.size(); i++) {
             Resolved recipient = resolved.get(i);
             if (recipient.studentNo() == null) {
@@ -255,7 +270,11 @@ public class RequestRecipientService {
                 continue;
             }
             InvitationWriter.Placement placement =
-                    invitationWriter.placeByStudentNo(actor, workspace, recipient.studentNo(), ip);
+                    invitationWriter.placeByStudentNo(actor, workspace, recipient.studentNo(), ip, auditExtra);
+            if (placement.outcome() == WorkspaceInvitationOutcome.ADDED
+                    || placement.outcome() == WorkspaceInvitationOutcome.INVITED) {
+                written++;
+            }
             Long invitationId = placement.invitationId() == null ? null
                     : invitationRepository.findByPublicId(placement.invitationId())
                             .map(WorkspaceInvitation::getId).orElse(null);
@@ -277,7 +296,18 @@ public class RequestRecipientService {
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
-        return placed;
+        return new Placed(placed, written);
+    }
+
+    /**
+     * Charges the people a submission added or invited against the actor's
+     * hourly invitation budget, or refuses with 429 having charged nothing,
+     * which rolls the placements back with the rest of the submission.
+     */
+    public void chargePlacements(AuthenticatedUser actor, int written) {
+        if (written > 0) {
+            invitationWriter.chargeEntries(actor.id(), written);
+        }
     }
 
     /**

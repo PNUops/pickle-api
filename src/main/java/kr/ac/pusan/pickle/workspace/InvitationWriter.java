@@ -1,9 +1,12 @@
 package kr.ac.pusan.pickle.workspace;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -78,16 +81,28 @@ public class InvitationWriter {
         }
     }
 
-    /** Locks every 학번 in ascending key order. */
-    public void lockStudentNos(Collection<String> studentNos) {
-        studentNos.stream().map(InvitationLocks::studentNoKey).distinct().sorted()
-                .forEach(invitationLocks::lock);
+    /**
+     * Locks every email and 학번 given, in ascending key order: all emails
+     * before any 학번, each sorted. That is the order a bulk invitation and a
+     * 학번 claim (which takes its account's email lock first) both use.
+     */
+    public void lockInOrder(Collection<String> emails, Collection<String> studentNos) {
+        lockOrder(emails, studentNos).forEach(invitationLocks::lock);
     }
 
-    /** {@link #place} for one 학번, whose lock the caller already holds. */
+    static List<String> lockOrder(Collection<String> emails, Collection<String> studentNos) {
+        return Stream.concat(emails.stream().map(InvitationLocks::emailKey),
+                        studentNos.stream().map(InvitationLocks::studentNoKey))
+                .distinct().sorted().toList();
+    }
+
+    /**
+     * {@link #place} for one 학번, whose locks the caller already holds.
+     * {@code auditExtra} is added to the audit entry, to say why it happened.
+     */
     public Placement placeByStudentNo(AuthenticatedUser actor, Workspace workspace, String studentNo,
-            String ip) {
-        return place(actor, workspace, null, studentNo, ip);
+            String ip, Map<String, Object> auditExtra) {
+        return place(actor, workspace, null, studentNo, ip, auditExtra);
     }
 
     /**
@@ -96,7 +111,7 @@ public class InvitationWriter {
      * the caller holds its lock.
      */
     Placement place(AuthenticatedUser actor, Workspace workspace, @Nullable String email,
-            @Nullable String studentNo, String ip) {
+            @Nullable String studentNo, String ip, Map<String, Object> auditExtra) {
         // Enumeration: ADDED versus INVITED tells the owner whether an ACTIVE
         // account holds this email or 학번. That bit cannot be hidden, because
         // adding an existing account at once is the point of the feature. What
@@ -115,11 +130,12 @@ public class InvitationWriter {
             if (inserted == 0) {
                 return new Placement(WorkspaceInvitationOutcome.ALREADY_MEMBER, target, null);
             }
+            Map<String, Object> auditArgs = new LinkedHashMap<>(Map.of("userId", target.getPublicId(),
+                    "email", target.getEmail(), "role", WorkspaceMemberRole.MEMBER.name(),
+                    "viaInvitation", false, "bulk", true));
+            auditArgs.putAll(auditExtra);
             auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_MEMBER_ADD,
-                    "workspace", workspace.getPublicId(),
-                    Map.of("userId", target.getPublicId(), "email", target.getEmail(),
-                            "role", WorkspaceMemberRole.MEMBER.name(), "viaInvitation", false, "bulk", true),
-                    ip);
+                    "workspace", workspace.getPublicId(), auditArgs, ip);
             return new Placement(WorkspaceInvitationOutcome.ADDED, target, null);
         }
 
@@ -133,10 +149,11 @@ public class InvitationWriter {
                     .orElse(null);
             return new Placement(WorkspaceInvitationOutcome.ALREADY_INVITED, null, existing);
         }
+        Map<String, Object> auditArgs = new LinkedHashMap<>(Map.of("invitationId", invitationId,
+                "kind", email != null ? "email" : "studentNo"));
+        auditArgs.putAll(auditExtra);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_INVITATION_CREATE,
-                "workspace", workspace.getPublicId(),
-                Map.of("invitationId", invitationId, "kind", email != null ? "email" : "studentNo"),
-                ip);
+                "workspace", workspace.getPublicId(), auditArgs, ip);
         return new Placement(WorkspaceInvitationOutcome.INVITED, null, invitationId);
     }
 }
