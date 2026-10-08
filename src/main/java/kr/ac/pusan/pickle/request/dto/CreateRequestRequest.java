@@ -109,8 +109,8 @@ public record CreateRequestRequest(
          */
         @Schema(description = "리소스를 받을 대상자. 비우면 신청자 본인이 받는 일반 신청입니다. "
                 + "VM과 LLM API 키에만 쓸 수 있고, 워크스페이스 소유자나 이 기관의 신청을 승인할 수 있는 관리자만 지정할 수 있습니다. "
-                + "대상자마다 리소스를 하나씩 만들며, 가입 전인 초대 대상자는 가입할 때 만듭니다. 한 신청에 500명까지입니다.")
-        @Size(max = 500, message = "대상자는 한 번에 500명까지 지정할 수 있습니다.")
+                + "대상자마다 리소스를 하나씩 만들며, 가입 전인 초대 대상자는 가입할 때 만듭니다.")
+        @Size(max = 200, message = "대상자는 한 번에 200명까지 지정할 수 있습니다.")
         @Valid @Nullable List<CreateRequestRecipient> recipients,
 
         /**

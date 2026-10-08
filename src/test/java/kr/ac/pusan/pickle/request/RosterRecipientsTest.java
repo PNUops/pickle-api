@@ -303,10 +303,10 @@ class RosterRecipientsTest {
     }
 
     @Test
-    void aRequestNamesAtMostFiveHundredRecipients() throws Exception {
+    void aRequestNamesAtMostTwoHundredRecipients() throws Exception {
         UUID workspace = createWorkspace();
         List<Map<String, Object>> recipients = new ArrayList<>();
-        for (int i = 0; i < 501; i++) {
+        for (int i = 0; i < 201; i++) {
             recipients.add(Map.of("studentNo", studentNo()));
         }
         long invitations = count("workspace_invitations");
