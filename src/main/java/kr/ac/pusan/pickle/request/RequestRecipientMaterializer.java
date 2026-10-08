@@ -22,6 +22,7 @@ import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import org.jobrunr.jobs.annotations.Job;
@@ -252,8 +253,8 @@ public class RequestRecipientMaterializer {
         if (workspaceId == null) {
             return Outcome.NOT_APPLICABLE;
         }
-        boolean workspaceLive = workspaceRepository.findByIdForUpdate(workspaceId)
-                .map(workspace -> workspace.getDeletedAt() == null).orElse(false);
+        Workspace workspace = workspaceRepository.findByIdForUpdate(workspaceId).orElse(null);
+        boolean workspaceLive = workspace != null && workspace.getDeletedAt() == null;
         RequestRecipient recipient = recipientRepository.findWithLockById(recipientId).orElse(null);
         if (recipient == null || recipient.getStatus() != RequestRecipientStatus.QUEUED) {
             return Outcome.NOT_APPLICABLE;
@@ -317,14 +318,20 @@ public class RequestRecipientMaterializer {
         // A VM tells its owner when provisioning finishes (the creation notice
         // goes to the VM's owners). A key has no such later moment: it exists
         // now and waits for its owner to issue the secret, which is what the
-        // approval notice for a key says.
+        // notice for a key says. Only the requester applied for it; anyone
+        // else named on the request is told it was granted to them instead.
         if (request.getResourceType() == ResourceType.LLM_API_KEY) {
             Map<String, Object> notifyArgs = new LinkedHashMap<>();
             notifyArgs.put("requestId", request.getPublicId());
             notifyArgs.put("type", request.getResourceType().name());
             notifyArgs.put("resourceName", created.resourceName());
             notifyArgs.putAll(created.notificationArgs());
-            notificationService.publish(userId, NotificationEvent.REQUEST_APPROVED, notifyArgs, null);
+            if (userId.equals(request.getRequesterId())) {
+                notificationService.publish(userId, NotificationEvent.REQUEST_APPROVED, notifyArgs, null);
+            } else {
+                notifyArgs.put("workspaceName", workspace.getName());
+                notificationService.publish(userId, NotificationEvent.RESOURCE_GRANTED, notifyArgs, null);
+            }
         }
         return Outcome.CREATED;
     }

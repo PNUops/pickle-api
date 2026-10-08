@@ -529,28 +529,76 @@ class RequestRecipientsTest {
     @Test
     void keysAreCreatedForEachRecipientAndTheyAreTold() throws Exception {
         UUID workspace = createWorkspace(ownerToken);
+        String workspaceName = jdbcTemplate.queryForObject("select name from workspaces where public_id = ?",
+                String.class, workspace);
         User first = addMember(workspace, "key-1");
         User second = addMember(workspace, "key-2");
-        long requestId = approvedKeyRequest(workspace, List.of(first, second));
+        long requestId = approvedKeyRequest(workspace, List.of(first, second, owner));
+        String requestPath = "/console/requests/" + SeedFixtures.publicId(jdbcTemplate, "requests", requestId);
+
+        // The requester hears how the recipients were settled, once.
+        Map<String, Object> summary = jdbcTemplate.queryForMap("""
+                select title, body from notifications
+                 where user_id = ? and event = 'request.approved' and link_path = ?
+                """, owner.getId(), requestPath);
+        assertThat((String) summary.get("body"))
+                .startsWith("리소스 '대상자 테스트' 신청이 승인되었습니다.\n")
+                .contains("대상자 3명 중 3명은 생성을 시작했습니다.");
 
         materializer.run();
-        assertThat(keyCount(requestId)).isEqualTo(2);
-        for (User recipient : List.of(first, second)) {
+        assertThat(keyCount(requestId)).isEqualTo(3);
+        for (User recipient : List.of(first, second, owner)) {
             Long keyId = jdbcTemplate.queryForObject(
                     "select resource_id from request_recipients where request_id = ? and user_id = ?",
                     Long.class, requestId, recipient.getId());
             assertThat(ownerOf("LLM_API_KEY", keyId)).isEqualTo(recipient.getId());
             assertThat(jdbcTemplate.queryForObject("select created_by from llm_api_keys where id = ?",
                     Long.class, keyId)).isEqualTo(recipient.getId());
+        }
+        // Recipients who never applied are told the key was granted to them,
+        // not that a request of theirs was approved.
+        for (User recipient : List.of(first, second)) {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                    select n.event, n.body, n.link_path from notifications n
+                      join llm_api_keys k on n.link_path = '/console/llm-keys/' || k.public_id
+                     where n.user_id = ? and k.request_id = ?
+                    """, recipient.getId(), requestId);
+            assertThat(rows).hasSize(1);
+            assertThat(rows.get(0).get("event")).isEqualTo("resource.granted");
+            assertThat((String) rows.get(0).get("body")).contains("'" + workspaceName + "' 워크스페이스에서");
             assertThat(jdbcTemplate.queryForObject("""
                     select count(*) from notifications where user_id = ? and event = 'request.approved'
-                    """, Long.class, recipient.getId())).isEqualTo(1);
+                    """, Long.class, recipient.getId())).isZero();
         }
-        // The requester owns none of them.
-        assertThat(jdbcTemplate.queryForObject("""
-                select count(*) from resource_access_grants g join llm_api_keys k on k.id = g.resource_id
-                 where g.resource_type = 'LLM_API_KEY'::resource_type and k.request_id = ? and g.user_id = ?
-                """, Long.class, requestId, owner.getId())).isZero();
+        // The requester named themselves too: their own key keeps the approval wording.
+        assertThat(jdbcTemplate.queryForList("""
+                select n.event from notifications n
+                  join llm_api_keys k on n.link_path = '/console/llm-keys/' || k.public_id
+                 where n.user_id = ? and k.request_id = ?
+                """, String.class, owner.getId(), requestId)).containsExactly("request.approved");
+    }
+
+    @Test
+    void anApproverWhoSubmitsAndApprovesGetsTheSummaryOnce() throws Exception {
+        UUID workspace = linkedWorkspace();
+        User member = addMember(workspace, "one-step-key");
+        String invited = email("one-step-invitee");
+        UUID invitation = invite(workspace, invited);
+        Map<String, Object> body = common(workspace, "LLM_API_KEY");
+        body.put("llmKey", Map.of());
+        body.put("recipients", List.of(Map.of("userId", member.getPublicId()),
+                Map.of("invitationId", invitation)));
+        Map<String, Object> approval = new HashMap<>();
+        approval.put("llmKey", Map.of());
+        approval.put("grantedEndDate", LocalDate.now(ClockConfig.KST).plusMonths(1).toString());
+        body.put("approval", approval);
+
+        JsonNode created = created(postJson("/api/v1/requests", orgAdminToken, body));
+        List<String> bodies = jdbcTemplate.queryForList("""
+                select body from notifications where user_id = ? and event = 'request.approved' and link_path = ?
+                """, String.class, orgAdmin.getId(), "/console/requests/" + created.get("id").asString());
+        assertThat(bodies).hasSize(1);
+        assertThat(bodies.get(0)).contains("대상자 2명 중 1명은 생성을 시작했고 1명은 가입하면 만들어집니다.");
     }
 
     @Test
