@@ -34,14 +34,22 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Answers whether an ACTIVE account holds each 학번, the same bit an
  * invitation's ADDED answers; the account itself is named only for members.
  * It is open to exactly the people who may name recipients here, and capped
- * per minute like invitation; there is no hourly budget, because nothing is
- * spent.</p>
+ * like invitation: calls per minute, and 학번 per hour in a budget of its
+ * own, apart from the invitation budget because a lookup invites nobody.</p>
  */
 @Service
 public class RosterService {
 
     static final int RESOLVE_CALLS_PER_MINUTE = 10;
     static final String RESOLVE_CALL_SCOPE = "workspace_roster_resolve";
+    /**
+     * 학번 per actor per hour, counted across calls. Without it anyone who
+     * owns a workspace — which anyone can create — could ask whether an
+     * account holds each of hundreds of thousands of 학번 an hour, leaving
+     * no trace, since a lookup writes nothing.
+     */
+    static final int RESOLVE_ENTRIES_PER_HOUR = 2000;
+    static final String RESOLVE_ENTRY_SCOPE = "workspace_roster_resolve_entries";
 
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -78,6 +86,18 @@ public class RosterService {
         // act on is not answered either.
         if (workspace.getKind() == WorkspaceKind.PERSONAL) {
             throw forbidden("개인 워크스페이스에는 학번으로 대상자를 지정할 수 없습니다.");
+        }
+
+        // Every entry sent counts, charged for the whole request up front; a
+        // request that does not fit is refused without spending any of it.
+        try {
+            rateLimitService.hitHourly(RESOLVE_ENTRY_SCOPE, "user:" + actor.id(), RESOLVE_ENTRIES_PER_HOUR,
+                    request.studentNos().size());
+        } catch (ApiException limited) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, ErrorCodes.RATE_LIMITED,
+                    "요청이 너무 많습니다", "한 시간에 확인할 수 있는 학번(" + RESOLVE_ENTRIES_PER_HOUR
+                            + "건)을 넘었습니다. 잠시 후 다시 시도해 주세요.",
+                    null, limited.getRetryAfterSeconds());
         }
 
         List<RosterEntryResult> results = new ArrayList<>(request.studentNos().size());

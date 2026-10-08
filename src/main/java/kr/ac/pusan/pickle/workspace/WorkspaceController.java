@@ -126,7 +126,7 @@ public class WorkspaceController {
                     + "있지만 구성원이 아닌지, 대기 중인 초대가 있는지, 계정도 초대도 없는지를 요청과 같은 순서로 "
                     + "돌려줍니다. 아무것도 기록하지 않으며, 구성원 추가와 초대는 학번 대상자로 신청을 제출할 때 "
                     + "일어납니다. 워크스페이스 소유자나, orgId로 지정한 기관의 신청을 승인할 수 있는 관리자만 "
-                    + "호출할 수 있고 개인 워크스페이스에는 쓸 수 없습니다. 한 번에 500건까지, 1분에 10번까지입니다.")
+                    + "호출할 수 있고 개인 워크스페이스에는 쓸 수 없습니다. 한 번에 500건까지, 1분에 10번까지, 한 시간에 2000건까지입니다.")
     public ResolveRosterResponse resolveWorkspaceRoster(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId,

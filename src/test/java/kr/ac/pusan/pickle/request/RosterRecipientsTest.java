@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.request;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -94,7 +95,7 @@ class RosterRecipientsTest {
                 userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         jdbcTemplate.update("update request_recipients set status = 'CANCELED' where status = 'QUEUED'");
         jdbcTemplate.update("delete from auth_rate_limits where scope like 'workspace_invite%'");
-        jdbcTemplate.update("delete from auth_rate_limits where scope = 'workspace_roster_resolve'");
+        jdbcTemplate.update("delete from auth_rate_limits where scope like 'workspace_roster_resolve%'");
     }
 
     // ---------------------------------------------------------------- resolve
@@ -163,6 +164,11 @@ class RosterRecipientsTest {
                 .andExpect(jsonPath("$.code").value("REQUEST_RECIPIENTS_FORBIDDEN"));
         resolve(otherOrgAdminToken(), workspace, org.getPublicId(), roster)
                 .andExpect(status().isForbidden());
+        // A workspace is not narrowed to one organisation (operator decision,
+        // 2026-09-28): another organisation's approver acting for their own
+        // organisation reaches it as a submission would.
+        resolve(otherOrgAdminToken(), workspace, otherOrg().getPublicId(), roster)
+                .andExpect(status().isOk());
 
         long personal = jdbcTemplate.queryForObject(
                 "insert into workspaces (kind, name) values ('PERSONAL', ?) returning id", Long.class,
@@ -181,6 +187,23 @@ class RosterRecipientsTest {
             resolve(ownerToken, workspace, null, List.of(studentNo())).andExpect(status().isOk());
         }
         resolve(ownerToken, workspace, null, List.of(studentNo())).andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void resolveChargesAnHourlyBudgetOfStudentNumbers() throws Exception {
+        UUID workspace = createWorkspace();
+        jdbcTemplate.update("""
+                insert into auth_rate_limits (scope, subject, window_start, request_count)
+                values ('workspace_roster_resolve_entries', ?,
+                        date_bin(interval '15 minutes', now(), timestamptz 'epoch'), 1999)
+                """, "user:" + owner.getId());
+
+        resolve(ownerToken, workspace, null, List.of(studentNo(), studentNo()))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+        // A refused request spends nothing: the one entry left still fits.
+        resolve(ownerToken, workspace, null, List.of(studentNo())).andExpect(status().isOk());
+        jdbcTemplate.update("delete from auth_rate_limits where scope = 'workspace_roster_resolve_entries'");
     }
 
     // ------------------------------------------------------------- submission
@@ -211,8 +234,13 @@ class RosterRecipientsTest {
                 String.class, workspaceId, registered.getId())).isEqualTo("MEMBER");
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs where action = 'workspace.member_add' and target_id = ?
-                   and detail ->> 'userId' = ?
-                """, Long.class, workspace.toString(), registered.getPublicId().toString())).isEqualTo(1);
+                   and detail ->> 'userId' = ? and detail ->> 'viaRequest' = 'true' and detail ->> 'requestId' = ?
+                """, Long.class, workspace.toString(), registered.getPublicId().toString(),
+                submitted.get("id").asString())).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from audit_logs where action = 'workspace.invitation_create' and target_id = ?
+                   and detail ->> 'viaRequest' = 'true' and detail ->> 'requestId' = ?
+                """, Long.class, workspace.toString(), submitted.get("id").asString())).isEqualTo(1);
         // The existing invitation is reused, and one is opened for the 학번 with nothing.
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from request_recipients rr join workspace_invitations i on i.id = rr.invitation_id
@@ -251,19 +279,111 @@ class RosterRecipientsTest {
         JsonNode created = created(postJson("/api/v1/requests", orgAdminToken, body));
         assertThat(created.get("status").asString()).isEqualTo("APPROVED");
         assertThat(statuses(created.get("recipients"))).containsExactly("QUEUED");
+        long workspaceId = SeedFixtures.internalId(jdbcTemplate, "workspaces", workspace);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from workspace_members where workspace_id = ? and user_id = ?",
+                Long.class, workspaceId, registered.getId())).isEqualTo(1);
+        // The approver is told how the recipients were settled.
+        assertThat(jdbcTemplate.queryForObject("""
+                select body from notifications where user_id = ? and event = 'request.approved' and link_path = ?
+                """, String.class, orgAdmin().getId(), "/console/requests/" + created.get("id").asString()))
+                .contains("대상자 1명 중 1명의 리소스는 생성 대기열에 들어갔습니다.");
+    }
+
+    /** A refused approval rolls the placements back, and the budget is not spent on them. */
+    @Test
+    void aRefusedApprovalChargesNoInvitationBudget() throws Exception {
+        UUID workspace = createWorkspace();
+        String fresh = studentNo();
+        Map<String, Object> body = keyBody(workspace, List.of(Map.of("studentNo", fresh)));
+        Map<String, Object> approval = new HashMap<>();
+        approval.put("llmKey", Map.of());
+        approval.put("grantedStartDate", LocalDate.now(ClockConfig.KST).plusMonths(2).toString());
+        approval.put("grantedEndDate", LocalDate.now(ClockConfig.KST).plusMonths(1).toString());
+        body.put("approval", approval);
+
+        postJson("/api/v1/requests", orgAdminToken, body).andExpect(status().isUnprocessableContent());
+        assertThat(jdbcTemplate.queryForObject("""
+                select coalesce(sum(request_count), 0) from auth_rate_limits
+                 where scope = 'workspace_invite_entries' and subject = ?
+                """, Long.class, "user:" + orgAdmin().getId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from workspace_invitations where invitee_student_no = ?", Long.class, fresh))
+                .isZero();
+    }
+
+    /**
+     * What a submission placed outlives the request: a rejected or canceled
+     * one leaves its members and invitations, and its recipient rows stay
+     * closed whatever later happens to those invitations.
+     */
+    @Test
+    void membersAndInvitationsOutliveARejectedOrCanceledRequest() throws Exception {
+        UUID workspace = createWorkspace();
+        long workspaceId = SeedFixtures.internalId(jdbcTemplate, "workspaces", workspace);
+        User registered = user("outlive-registered", studentNo());
+        String joiner = studentNo();
+        String dropped = studentNo();
+
+        JsonNode rejected = created(postJson("/api/v1/requests", ownerToken, keyBody(workspace, List.of(
+                Map.of("studentNo", registered.getStudentNo()), Map.of("studentNo", joiner)))));
+        postJson("/api/v1/admin/requests/" + rejected.get("id").asString() + "/reject", orgAdminToken,
+                Map.of("comment", "이번 학기에는 지원하지 않습니다.")).andExpect(status().isOk());
+        JsonNode canceled = created(postJson("/api/v1/requests", ownerToken, keyBody(workspace, List.of(
+                Map.of("studentNo", dropped)))));
+        postJson("/api/v1/requests/" + canceled.get("id").asString() + "/cancel", ownerToken, Map.of())
+                .andExpect(status().isOk());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from workspace_members where workspace_id = ? and user_id = ?",
+                Long.class, workspaceId, registered.getId())).isEqualTo(1);
+        for (String studentNo : List.of(joiner, dropped)) {
+            assertThat(jdbcTemplate.queryForObject("""
+                    select status::text from workspace_invitations where workspace_id = ? and invitee_student_no = ?
+                    """, String.class, workspaceId, studentNo)).isEqualTo("PENDING");
+        }
+        for (JsonNode request : List.of(rejected, canceled)) {
+            assertThat(recipientStatuses(request)).containsOnly("CANCELED");
+        }
+
+        // The invitee joins; the closed row is not reopened for them.
+        invitationClaimService.claimByStudentNo(user("outlive-joiner", joiner));
+        // The other invitation is canceled; the closed row keeps its own reason.
+        UUID droppedInvitation = jdbcTemplate.queryForObject("""
+                select public_id from workspace_invitations where workspace_id = ? and invitee_student_no = ?
+                """, UUID.class, workspaceId, dropped);
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspace + "/invitations/" + droppedInvitation)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNoContent());
+
+        for (JsonNode request : List.of(rejected, canceled)) {
+            assertThat(recipientStatuses(request)).containsOnly("CANCELED");
+            assertThat(jdbcTemplate.queryForList("""
+                    select rr.reason from request_recipients rr join requests r on r.id = rr.request_id
+                     where r.public_id = ?
+                    """, String.class, UUID.fromString(request.get("id").asString()))).containsOnlyNulls();
+        }
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from request_recipients rr join requests r on r.id = rr.request_id
+                 where r.public_id = ? and rr.user_id is not null and rr.invitation_id is not null
+                """, Long.class, UUID.fromString(rejected.get("id").asString()))).isZero();
     }
 
     @Test
     void aPlainMemberCannotNameStudentNumbers() throws Exception {
         UUID workspace = createWorkspace();
         User plain = addMember(workspace, user("sn-plain", studentNo()));
+        User registered = user("sn-plain-target", studentNo());
         long invitations = count("workspace_invitations");
+        long members = count("workspace_members");
 
         postJson("/api/v1/requests", jwtService.createAccessToken(plain),
-                keyBody(workspace, List.of(Map.of("studentNo", studentNo()))))
+                keyBody(workspace, List.of(Map.of("studentNo", studentNo()),
+                        Map.of("studentNo", registered.getStudentNo()))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("REQUEST_RECIPIENTS_FORBIDDEN"));
         assertThat(count("workspace_invitations")).isEqualTo(invitations);
+        assertThat(count("workspace_members")).isEqualTo(members);
     }
 
     @Test
@@ -412,9 +532,24 @@ class RosterRecipientsTest {
                 .andExpect(status().isOk());
     }
 
-    private String otherOrgAdminToken() {
-        Org other = orgRepository.findFirstByNameOrderByIdAsc("학번 타기관").orElseGet(() ->
+    private Org otherOrg() {
+        return orgRepository.findFirstByNameOrderByIdAsc("학번 타기관").orElseGet(() ->
                 orgRepository.save(new Org("학번 타기관", null)));
+    }
+
+    private User orgAdmin() {
+        return userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
+    }
+
+    private List<String> recipientStatuses(JsonNode request) {
+        return jdbcTemplate.queryForList("""
+                select rr.status from request_recipients rr join requests r on r.id = rr.request_id
+                 where r.public_id = ?
+                """, String.class, UUID.fromString(request.get("id").asString()));
+    }
+
+    private String otherOrgAdminToken() {
+        Org other = otherOrg();
         User admin = userRepository.findByEmail("roster.other-admin@pusan.ac.kr").orElseGet(() -> {
             User user = user("other-admin", null);
             user.setRole(UserRole.ORG_ADMIN);
