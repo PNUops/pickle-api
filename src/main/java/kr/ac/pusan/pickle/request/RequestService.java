@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.request;
 
+import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -73,6 +74,7 @@ public class RequestService {
     private final RequestRecipientService recipientService;
     private final kr.ac.pusan.pickle.admin.ApprovalService approvalService;
     private final kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService;
+    private final EntityManager entityManager;
 
     public RequestService(RequestRepository requestRepository, RequestAssembler assembler, RequestApproval requestApproval,
             List<RequestTypeHandler> handlers, WorkspaceRepository workspaceRepository,
@@ -81,7 +83,9 @@ public class RequestService {
             RequestPeriodPresetRepository periodPresetRepository, Clock clock,
             RequestRecipientService recipientService,
             kr.ac.pusan.pickle.admin.ApprovalService approvalService,
-            kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService) {
+            kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService,
+            EntityManager entityManager) {
+        this.entityManager = entityManager;
         this.adminWorkspaceQueryService = adminWorkspaceQueryService;
         this.recipientService = recipientService;
         this.approvalService = approvalService;
@@ -197,6 +201,11 @@ public class RequestService {
         // instead of the field error the applicant needs to see.
         Org org = resolveOrg(handler, form);
         requireMaySubmitAs(form, actor, membership, org.getId());
+        // Refused here rather than by the charge at the end, so an actor
+        // already over the budget is not answered 429 after every placement
+        // and the approval have run.
+        recipientService.precheckPlacements(actor, recipients);
+
         Request saved = requestRepository.save(new Request(form.type(), workspace.getId(),
                 org.getId(),
                 actor.id(), form.purpose().strip(),
@@ -234,6 +243,17 @@ public class RequestService {
         // charged in its own transaction and stays spent if this one rolls
         // back, so charging any earlier would bill a refused approval; a
         // refusal here rolls back every placement above with the rest.
+        //
+        // Flushed first, so a write that fails when Hibernate sends it fails
+        // here, before the charge, rather than at commit after it. What a
+        // flush cannot bring forward is a deferred constraint trigger, which
+        // PostgreSQL runs at commit; a submission refused by one still spends
+        // the budget. SET CONSTRAINTS ALL IMMEDIATE would close that, and would
+        // also change when every other deferred trigger in the transaction
+        // runs, so it is not used.
+        if (placed.written() > 0) {
+            entityManager.flush();
+        }
         recipientService.chargePlacements(actor, placed.written());
         return response;
     }

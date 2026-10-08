@@ -73,12 +73,31 @@ public class InvitationWriter {
             rateLimitService.hitHourly(WorkspaceInvitationService.INVITE_ENTRY_SCOPE, "user:" + actorId,
                     WorkspaceInvitationService.INVITE_ENTRIES_PER_HOUR, entries);
         } catch (ApiException limited) {
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, ErrorCodes.RATE_LIMITED,
-                    "요청이 너무 많습니다", "한 시간에 초대할 수 있는 인원("
-                            + WorkspaceInvitationService.INVITE_ENTRIES_PER_HOUR
-                            + "명)을 넘었습니다. 잠시 후 다시 시도해 주세요.",
-                    null, limited.getRetryAfterSeconds());
+            throw overBudget(limited);
         }
+    }
+
+    /**
+     * Refuses with the same 429 when {@code entries} would not fit the
+     * actor's hourly invitation budget, charging nothing. A caller that
+     * charges only at the end uses this first, so an actor already over the
+     * budget is refused before any work rather than after all of it.
+     */
+    public void requireBudgetFor(long actorId, int entries) {
+        try {
+            rateLimitService.checkHourly(WorkspaceInvitationService.INVITE_ENTRY_SCOPE, "user:" + actorId,
+                    WorkspaceInvitationService.INVITE_ENTRIES_PER_HOUR, entries);
+        } catch (ApiException limited) {
+            throw overBudget(limited);
+        }
+    }
+
+    private static ApiException overBudget(ApiException limited) {
+        return new ApiException(HttpStatus.TOO_MANY_REQUESTS, ErrorCodes.RATE_LIMITED,
+                "요청이 너무 많습니다", "한 시간에 초대할 수 있는 인원("
+                        + WorkspaceInvitationService.INVITE_ENTRIES_PER_HOUR
+                        + "명)을 넘었습니다. 잠시 후 다시 시도해 주세요.",
+                null, limited.getRetryAfterSeconds());
     }
 
     /**

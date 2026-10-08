@@ -290,6 +290,27 @@ class RosterRecipientsTest {
                 .contains("대상자 1명 중 1명의 리소스는 생성 대기열에 들어갔습니다.");
     }
 
+    /** Only people the submission really added or invited are charged, not 학번 already settled. */
+    @Test
+    void theBudgetIsChargedForAddedAndInvitedPeopleOnly() throws Exception {
+        UUID workspace = createWorkspace();
+        User member = addMember(workspace, user("charge-member", studentNo()));
+        String invited = studentNo();
+        inviteStudentNo(workspace, invited);
+        User registered = user("charge-registered", studentNo());
+        jdbcTemplate.update("delete from auth_rate_limits where scope like 'workspace_invite%'");
+
+        created(postJson("/api/v1/requests", ownerToken, keyBody(workspace, List.of(
+                Map.of("studentNo", member.getStudentNo()),
+                Map.of("studentNo", invited),
+                Map.of("studentNo", registered.getStudentNo()),
+                Map.of("studentNo", studentNo())))));
+        assertThat(jdbcTemplate.queryForObject("""
+                select coalesce(sum(request_count), 0) from auth_rate_limits
+                 where scope = 'workspace_invite_entries' and subject = ?
+                """, Long.class, "user:" + owner.getId())).isEqualTo(2);
+    }
+
     /** A refused approval rolls the placements back, and the budget is not spent on them. */
     @Test
     void aRefusedApprovalChargesNoInvitationBudget() throws Exception {

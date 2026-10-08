@@ -245,6 +245,8 @@ public class RequestRecipientService {
         if (studentNos.isEmpty()) {
             return new Placed(resolved, 0);
         }
+        // Read before the locks. Reading again after them would not help: it
+        // comes from the same persistence context, so it could be just as stale.
         List<String> emails = studentNos.stream()
                 .map(studentNo -> userRepository.findByStudentNoIgnoreCase(studentNo)
                         .filter(user -> user.getStatus() == UserStatus.ACTIVE).orElse(null))
@@ -297,6 +299,20 @@ public class RequestRecipientService {
             throw ApiException.validationFailed(errors);
         }
         return new Placed(placed, written);
+    }
+
+    /**
+     * Refuses a submission whose 학번 recipients could not fit the actor's
+     * hourly invitation budget, before anything is placed. Every 학번 still
+     * unsettled after {@link #resolve} (a registered non-member or a newcomer)
+     * is counted as one, which is what placing it costs unless something
+     * changed in between; the charge at the end counts what was really written.
+     */
+    public void precheckPlacements(AuthenticatedUser actor, List<Resolved> resolved) {
+        int unsettled = (int) resolved.stream().filter(recipient -> recipient.studentNo() != null).count();
+        if (unsettled > 0) {
+            invitationWriter.requireBudgetFor(actor.id(), unsettled);
+        }
     }
 
     /**
