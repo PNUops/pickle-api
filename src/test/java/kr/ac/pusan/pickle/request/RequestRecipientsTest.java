@@ -543,7 +543,7 @@ class RequestRecipientsTest {
                 """, owner.getId(), requestPath);
         assertThat((String) summary.get("body"))
                 .startsWith("리소스 '대상자 테스트' 신청이 승인되었습니다.\n")
-                .contains("대상자 3명 중 3명은 생성을 시작했습니다.");
+                .contains("대상자 3명 중 3명의 리소스는 생성 대기열에 들어갔습니다.");
 
         materializer.run();
         assertThat(keyCount(requestId)).isEqualTo(3);
@@ -591,6 +591,7 @@ class RequestRecipientsTest {
         Map<String, Object> approval = new HashMap<>();
         approval.put("llmKey", Map.of());
         approval.put("grantedEndDate", LocalDate.now(ClockConfig.KST).plusMonths(1).toString());
+        approval.put("comment", "한 번에 승인");
         body.put("approval", approval);
 
         JsonNode created = created(postJson("/api/v1/requests", orgAdminToken, body));
@@ -598,7 +599,9 @@ class RequestRecipientsTest {
                 select body from notifications where user_id = ? and event = 'request.approved' and link_path = ?
                 """, String.class, orgAdmin.getId(), "/console/requests/" + created.get("id").asString());
         assertThat(bodies).hasSize(1);
-        assertThat(bodies.get(0)).contains("대상자 2명 중 1명은 생성을 시작했고 1명은 가입하면 만들어집니다.");
+        assertThat(bodies.get(0)).contains("대상자 2명 중 1명의 리소스는 생성 대기열에 들어갔고 1명의 리소스는 가입하면 만들어집니다.")
+                // The approver's own comment is not quoted back to them.
+                .doesNotContain("검토 의견").doesNotContain("한 번에 승인");
     }
 
     @Test

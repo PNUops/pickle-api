@@ -246,7 +246,9 @@ public class ApprovalService {
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
                 "request", request.getPublicId(), auditArgs, ip);
-        String reviewComment = Texts.blankToNull(form.comment());
+        // The comment is the reviewer speaking to the requester. When they are
+        // the same person it would only quote the approver back to themselves.
+        String reviewComment = submittedByReviewer ? null : Texts.blankToNull(form.comment());
         if (reviewComment != null) {
             notifyArgs.put("comment", reviewComment);
         }

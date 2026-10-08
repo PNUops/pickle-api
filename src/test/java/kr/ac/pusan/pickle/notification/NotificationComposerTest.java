@@ -73,6 +73,13 @@ class NotificationComposerTest {
         assertThat(composed.linkPath()).isEqualTo("/console/llm-keys/" + KEY_ID);
     }
 
+    /** A row without the key id still links somewhere real, not to /console/llm-keys/null. */
+    @Test
+    void aGrantedKeyWithoutItsIdLinksToTheKeyList() {
+        assertThat(composer.compose(NotificationEvent.RESOURCE_GRANTED,
+                grant(ResourceType.LLM_API_KEY, "실습", "키")).linkPath()).isEqualTo("/console/llm-keys");
+    }
+
     /** Nothing is published after a granted key, so the notice promises nothing. */
     @Test
     void aGrantedKeyPromisesNoFurtherNotice() {
@@ -129,7 +136,7 @@ class NotificationComposerTest {
         assertThat(composed.title()).isEqualTo("리소스 신청 승인");
         assertThat(composed.body()).isEqualTo("""
                 리소스 '실습 키' 신청이 승인되었습니다.
-                대상자 5명 중 3명은 생성을 시작했고 1명은 가입하면 만들어집니다. 1명은 대상에서 제외되었습니다.""");
+                대상자 5명 중 3명의 리소스는 생성 대기열에 들어갔고 1명의 리소스는 가입하면 만들어집니다. 1명은 대상에서 제외되었습니다.""");
         assertThat(composed.linkPath()).isEqualTo("/console/requests/" + REQUEST_ID);
 
         args.put("recipientTotal", 2);
@@ -137,12 +144,12 @@ class NotificationComposerTest {
         args.put("pendingJoin", 2);
         args.put("skipped", 0);
         assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
-                .endsWith("\n대상자 2명 중 2명은 가입하면 만들어집니다.");
+                .endsWith("\n대상자 2명 중 2명의 리소스는 가입하면 만들어집니다.");
 
         args.put("queued", 2);
         args.put("pendingJoin", 0);
         assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
-                .endsWith("\n대상자 2명 중 2명은 생성을 시작했습니다.");
+                .endsWith("\n대상자 2명 중 2명의 리소스는 생성 대기열에 들어갔습니다.");
 
         args.put("queued", 0);
         args.put("skipped", 2);

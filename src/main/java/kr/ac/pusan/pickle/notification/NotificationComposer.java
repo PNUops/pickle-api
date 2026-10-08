@@ -466,8 +466,10 @@ public class NotificationComposer {
         int queued = count(args, "queued");
         int pendingJoin = count(args, "pendingJoin");
         int skipped = count(args, "skipped");
-        String started = queued > 0 ? queued + "명은 생성을 시작했" : null;
-        String waiting = pendingJoin > 0 ? pendingJoin + "명은 가입하면 만들어집니다." : null;
+        // Worded about the resources, not the people: "M명은 생성을 시작했습니다"
+        // read as if the recipients themselves had started something.
+        String started = queued > 0 ? queued + "명의 리소스는 생성 대기열에 들어갔" : null;
+        String waiting = pendingJoin > 0 ? pendingJoin + "명의 리소스는 가입하면 만들어집니다." : null;
         StringBuilder sentence = new StringBuilder("대상자 " + total + "명 중 ");
         if (started != null && waiting != null) {
             sentence.append(started).append("고 ").append(waiting);
@@ -514,7 +516,8 @@ public class NotificationComposer {
                     """
                     '%s' 워크스페이스에서 LLM API 키를 지급받았습니다. 키 이름은 '%s'입니다.
                     콘솔에서 키를 발급하면 사용할 수 있습니다.""".formatted(workspace, name),
-                    "/console/llm-keys/" + args.get("llmKeyId"), event.defaultImportance(),
+                    args.get("llmKeyId") != null ? "/console/llm-keys/" + args.get("llmKeyId") : "/console/llm-keys",
+                    event.defaultImportance(),
                     payload(args, "requestId", "workspaceName", "resourceName", "llmKeyId"));
             case VM -> new Composed(event.id(), "VM 지급",
                     """
