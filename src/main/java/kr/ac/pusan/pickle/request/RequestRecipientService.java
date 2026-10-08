@@ -17,16 +17,21 @@ import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.config.ClockConfig;
+import kr.ac.pusan.pickle.profile.ProfileValidator;
 import kr.ac.pusan.pickle.request.dto.CreateRequestRecipient;
 import kr.ac.pusan.pickle.request.dto.RequestRecipientResponse;
+import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.workspace.InvitationWriter;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceInvitation;
 import kr.ac.pusan.pickle.workspace.WorkspaceInvitationRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceInvitationStatus;
+import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -55,8 +60,17 @@ public class RequestRecipientService {
     static final String REASON_INVITATION_CANCELED = "초대가 취소되었습니다.";
     static final String REASON_EXPIRED = "가입했을 때 사용 기간이 이미 끝나 만들지 않았습니다.";
 
-    /** A recipient as validated at submission: exactly one of the two ids. */
-    public record Resolved(@Nullable Long userId, @Nullable Long invitationId) {
+    /**
+     * A recipient as validated at submission: exactly one of the three set.
+     * A 학번 is a person still to be placed — added as a member or invited —
+     * which {@link #placeStudentNos} turns into one of the two ids.
+     */
+    public record Resolved(@Nullable Long userId, @Nullable Long invitationId, @Nullable String studentNo) {
+    }
+
+    /** Where a 학번 stands in a workspace, read without writing anything. */
+    public record RosterEntry(RosterEntryStatus status, @Nullable User user,
+            @Nullable WorkspaceInvitation invitation) {
     }
 
     /** How an approval left the recipients, for its audit entry. */
@@ -70,6 +84,7 @@ public class RequestRecipientService {
     private final WorkspaceInvitationRepository invitationRepository;
     private final UserRepository userRepository;
     private final RequestRecipientMaterializer materializer;
+    private final InvitationWriter invitationWriter;
     private final JdbcTemplate jdbcTemplate;
     private final Clock clock;
 
@@ -77,7 +92,9 @@ public class RequestRecipientService {
             RequestRepository requestRepository, RequestReviewRepository reviewRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
             WorkspaceInvitationRepository invitationRepository, UserRepository userRepository,
-            RequestRecipientMaterializer materializer, JdbcTemplate jdbcTemplate, Clock clock) {
+            RequestRecipientMaterializer materializer, InvitationWriter invitationWriter,
+            JdbcTemplate jdbcTemplate, Clock clock) {
+        this.invitationWriter = invitationWriter;
         this.recipientRepository = recipientRepository;
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
@@ -94,32 +111,34 @@ public class RequestRecipientService {
     /**
      * Checks each named recipient, appending one field error per bad entry so
      * the whole list is reported at once. A user must be an ACTIVE member of
-     * the workspace; an invitation must be a PENDING invitation into it.
+     * the workspace; an invitation must be a PENDING invitation into it; a
+     * 학번 may name anyone, and resolves to a member or an open invitation
+     * where one exists. Nothing is written here.
      */
     public List<Resolved> resolve(Workspace workspace, List<CreateRequestRecipient> entries,
             List<FieldValidationError> errors) {
         List<Resolved> resolved = new ArrayList<>(entries.size());
-        Set<UUID> seen = new HashSet<>();
+        // Account and invitation public ids, and folded 학번 for people
+        // with neither, so that one person named two ways counts twice.
+        Set<Object> seen = new HashSet<>();
         for (int i = 0; i < entries.size(); i++) {
             String field = "recipients[" + i + "]";
             CreateRequestRecipient entry = entries.get(i);
-            if (entry == null || (entry.userId() == null) == (entry.invitationId() == null)) {
-                errors.add(new FieldValidationError(field, "userId와 invitationId 중 하나만 보내 주세요."));
+            if (entry == null || given(entry) != 1) {
+                errors.add(new FieldValidationError(field, "userId, invitationId, studentNo 중 하나만 보내 주세요."));
                 continue;
             }
-            UUID key = entry.userId() != null ? entry.userId() : entry.invitationId();
-            if (!seen.add(key)) {
-                errors.add(new FieldValidationError(field, "같은 대상자가 두 번 들어 있습니다."));
-                continue;
-            }
+            Object key;
+            Resolved recipient;
             if (entry.userId() != null) {
                 User user = userRepository.findByPublicId(entry.userId()).orElse(null);
                 if (user == null || !activeMember(workspace.getId(), user)) {
                     errors.add(new FieldValidationError(field, "이 워크스페이스의 활성 구성원이 아닙니다."));
                     continue;
                 }
-                resolved.add(new Resolved(user.getId(), null));
-            } else {
+                key = user.getPublicId();
+                recipient = new Resolved(user.getId(), null, null);
+            } else if (entry.invitationId() != null) {
                 WorkspaceInvitation invitation = invitationRepository
                         .findByPublicId(entry.invitationId()).orElse(null);
                 if (invitation == null || !invitation.getWorkspaceId().equals(workspace.getId())
@@ -127,10 +146,138 @@ public class RequestRecipientService {
                     errors.add(new FieldValidationError(field, "이 워크스페이스의 대기 중인 초대가 아닙니다."));
                     continue;
                 }
-                resolved.add(new Resolved(null, invitation.getId()));
+                key = invitation.getPublicId();
+                recipient = new Resolved(null, invitation.getId(), null);
+            } else {
+                String studentNo = entry.studentNo().strip();
+                // A personal workspace takes no members and no invitations, so
+                // a 학번 could only ever name its owner.
+                if (workspace.getKind() == WorkspaceKind.PERSONAL) {
+                    errors.add(new FieldValidationError(field + ".studentNo",
+                            "개인 워크스페이스에는 학번으로 대상자를 지정할 수 없습니다."));
+                    continue;
+                }
+                if (!ProfileValidator.isStudentNoFormat(studentNo)) {
+                    errors.add(new FieldValidationError(field + ".studentNo",
+                            "학번 형식이 올바르지 않습니다. (영문·숫자·하이픈 4~20자)"));
+                    continue;
+                }
+                RosterEntry found = rosterEntry(workspace, studentNo);
+                key = switch (found.status()) {
+                    case MEMBER, REGISTERED -> found.user().getPublicId();
+                    case INVITED -> found.invitation().getPublicId();
+                    case NEW -> InvitationWriter.studentNoKey(studentNo);
+                    case INVALID, DUPLICATE -> throw new IllegalStateException(
+                            "a single 학번 cannot be " + found.status());
+                };
+                // A member or an open invitation is settled now; anyone else is
+                // placed once every check has passed, by placeStudentNos.
+                recipient = found.status() == RosterEntryStatus.MEMBER
+                        ? new Resolved(found.user().getId(), null, null)
+                        : found.status() == RosterEntryStatus.INVITED
+                                ? new Resolved(null, found.invitation().getId(), null)
+                                : new Resolved(null, null, studentNo);
             }
+            if (!seen.add(key)) {
+                errors.add(new FieldValidationError(field, "같은 대상자가 두 번 들어 있습니다."));
+                continue;
+            }
+            resolved.add(recipient);
         }
         return resolved;
+    }
+
+    private static int given(CreateRequestRecipient entry) {
+        return (entry.userId() != null ? 1 : 0) + (entry.invitationId() != null ? 1 : 0)
+                + (Texts.blankToNull(entry.studentNo()) != null ? 1 : 0);
+    }
+
+    /**
+     * Where a well-formed 학번 stands in a workspace. An account that is not
+     * ACTIVE counts as no account, as it does when inviting: the answer must
+     * not tell an account in any other state from a missing one.
+     */
+    public RosterEntry rosterEntry(Workspace workspace, String studentNo) {
+        User active = userRepository.findByStudentNoIgnoreCase(studentNo)
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE).orElse(null);
+        if (active != null) {
+            boolean member = workspaceMemberRepository
+                    .findByWorkspaceIdAndUserId(workspace.getId(), active.getId()).isPresent();
+            return new RosterEntry(member ? RosterEntryStatus.MEMBER : RosterEntryStatus.REGISTERED,
+                    active, null);
+        }
+        WorkspaceInvitation invitation = invitationRepository
+                .findPendingIdByStudentNo(workspace.getId(), studentNo)
+                .flatMap(invitationRepository::findByPublicId).orElse(null);
+        return invitation != null
+                ? new RosterEntry(RosterEntryStatus.INVITED, null, invitation)
+                : new RosterEntry(RosterEntryStatus.NEW, null, null);
+    }
+
+    /**
+     * Turns every recipient named by a 학번 that {@link #resolve} could not
+     * settle into a member or an open invitation, through the same write a
+     * bulk invitation makes, and returns the list with ids only.
+     *
+     * <p>The caller has decided the actor may name recipients here, as an
+     * owner or as an approver; the invitation endpoint's own owner gate does
+     * not apply. Each such person is charged against the actor's hourly
+     * invitation budget before anything is written, and a list that does not
+     * fit is refused whole. The locks are taken in ascending key order, as a
+     * bulk invitation takes them, and before any membership is inserted.</p>
+     *
+     * <p>Members are added and invitations opened at submission, so a request
+     * that is later rejected or canceled leaves them in place.</p>
+     */
+    public List<Resolved> placeStudentNos(AuthenticatedUser actor, Workspace workspace, List<Resolved> resolved,
+            String ip) {
+        List<String> studentNos = resolved.stream().map(Resolved::studentNo).filter(Objects::nonNull).toList();
+        if (studentNos.isEmpty()) {
+            return resolved;
+        }
+        invitationWriter.chargeEntries(actor.id(), studentNos.size());
+        invitationWriter.lockStudentNos(studentNos);
+        List<Resolved> placed = new ArrayList<>(resolved.size());
+        List<FieldValidationError> errors = new ArrayList<>();
+        Set<Long> users = new HashSet<>();
+        Set<Long> invitations = new HashSet<>();
+        for (Resolved recipient : resolved) {
+            if (recipient.userId() != null) {
+                users.add(recipient.userId());
+            } else if (recipient.invitationId() != null) {
+                invitations.add(recipient.invitationId());
+            }
+        }
+        for (int i = 0; i < resolved.size(); i++) {
+            Resolved recipient = resolved.get(i);
+            if (recipient.studentNo() == null) {
+                placed.add(recipient);
+                continue;
+            }
+            InvitationWriter.Placement placement =
+                    invitationWriter.placeByStudentNo(actor, workspace, recipient.studentNo(), ip);
+            Long invitationId = placement.invitationId() == null ? null
+                    : invitationRepository.findByPublicId(placement.invitationId())
+                            .map(WorkspaceInvitation::getId).orElse(null);
+            // Another entry may have come to name the same person while the
+            // locks were being taken (an account claimed its invitation, say).
+            boolean fresh = placement.member() != null ? users.add(placement.member().getId())
+                    : invitationId != null && invitations.add(invitationId);
+            if (!fresh) {
+                errors.add(new FieldValidationError("recipients[" + i + "]",
+                        placement.member() == null && invitationId == null
+                                ? "학번의 초대 상태가 바뀌었습니다. 다시 시도해 주세요."
+                                : "같은 대상자가 두 번 들어 있습니다."));
+                continue;
+            }
+            placed.add(placement.member() != null
+                    ? new Resolved(placement.member().getId(), null, null)
+                    : new Resolved(null, invitationId, null));
+        }
+        if (!errors.isEmpty()) {
+            throw ApiException.validationFailed(errors);
+        }
+        return placed;
     }
 
     /**
@@ -140,6 +287,9 @@ public class RequestRecipientService {
      */
     public void saveAtSubmission(Request request, List<Resolved> recipients) {
         for (Resolved recipient : recipients) {
+            if (recipient.studentNo() != null) {
+                throw new IllegalStateException("a 학번 recipient must be placed before it is saved");
+            }
             recipientRepository.save(new RequestRecipient(request.getId(), recipient.userId(),
                     recipient.invitationId(), recipient.userId() != null
                             ? RequestRecipientStatus.QUEUED : RequestRecipientStatus.PENDING_JOIN));

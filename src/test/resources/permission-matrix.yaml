@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.95.0, 273 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.96.0, 274 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -93,6 +93,7 @@ operations:
   - { id: cancelWorkspaceInvitation, method: DELETE, path: "/workspaces/{workspaceId}/invitations/{invitationId}", roles: { USER: allow_workspace_scoped:OWNER, ORG_VIEWER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_VIEWER: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
   - { id: updateWorkspaceMember,    method: PATCH,  path: "/workspaces/{workspaceId}/members/{userId}", roles: { USER: allow_workspace_scoped:OWNER, ORG_VIEWER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_VIEWER: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
   - { id: removeWorkspaceMember,    method: DELETE, path: "/workspaces/{workspaceId}/members/{userId}", roles: { USER: allow_workspace_scoped:OWNER, ORG_VIEWER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_VIEWER: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
+  - { id: resolveWorkspaceRoster,   method: POST,   path: "/workspaces/{workspaceId}/roster/resolve", roles: { USER: allow_workspace_scoped:OWNER, ORG_VIEWER: allow_workspace_scoped:OWNER, ORG_MANAGER: "allow_workspace_scoped:OWNER+allow_org_scoped", ORG_ADMIN: "allow_workspace_scoped:OWNER+allow_org_scoped", SYS_VIEWER: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: "allow_workspace_scoped:OWNER+allow" } }
 
   # ── 3.5 VM requests (workspace-role-scoped) ───────────────────────────────────
   - { id: createRequest,      method: POST,   path: "/requests",                     roles: { USER: allow_workspace_scoped:MEMBER, ORG_VIEWER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_VIEWER: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }

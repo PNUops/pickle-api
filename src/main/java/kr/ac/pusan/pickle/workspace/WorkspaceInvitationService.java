@@ -6,7 +6,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -21,7 +20,6 @@ import kr.ac.pusan.pickle.profile.ProfileValidator;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
-import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.workspace.dto.InviteWorkspaceMembersRequest;
 import kr.ac.pusan.pickle.workspace.dto.InviteWorkspaceMembersRequest.WorkspaceInvitationEntry;
 import kr.ac.pusan.pickle.workspace.dto.InviteWorkspaceMembersResponse;
@@ -59,23 +57,24 @@ public class WorkspaceInvitationService {
 
     private final WorkspaceService workspaceService;
     private final WorkspaceInvitationRepository invitationRepository;
-    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
     private final InvitationLocks invitationLocks;
+    private final InvitationWriter invitationWriter;
 
     private final kr.ac.pusan.pickle.request.RequestRecipientService recipientService;
 
     public WorkspaceInvitationService(WorkspaceService workspaceService,
             WorkspaceInvitationRepository invitationRepository,
-            WorkspaceMemberRepository workspaceMemberRepository, UserRepository userRepository,
+            UserRepository userRepository,
             RateLimitService rateLimitService, AuditService auditService, InvitationLocks invitationLocks,
+            InvitationWriter invitationWriter,
             kr.ac.pusan.pickle.request.RequestRecipientService recipientService) {
+        this.invitationWriter = invitationWriter;
         this.recipientService = recipientService;
         this.workspaceService = workspaceService;
         this.invitationRepository = invitationRepository;
-        this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
@@ -108,15 +107,7 @@ public class WorkspaceInvitationService {
                 "워크스페이스 소유자(OWNER)만 구성원을 초대할 수 있습니다.",
                 "PERSONAL 워크스페이스에는 구성원을 초대할 수 없습니다.");
         List<Invitee> invitees = normalize(request.entries());
-        try {
-            rateLimitService.hitHourly(INVITE_ENTRY_SCOPE, subject, INVITE_ENTRIES_PER_HOUR,
-                    invitees.size());
-        } catch (ApiException limited) {
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, ErrorCodes.RATE_LIMITED,
-                    "요청이 너무 많습니다", "한 시간에 초대할 수 있는 인원(" + INVITE_ENTRIES_PER_HOUR
-                            + "명)을 넘었습니다. 잠시 후 다시 시도해 주세요.",
-                    null, limited.getRetryAfterSeconds());
-        }
+        invitationWriter.chargeEntries(actor.id(), invitees.size());
 
         // The first occurrence of a person is the one that counts; later ones
         // are duplicates, whatever order the work below runs in.
@@ -144,48 +135,10 @@ public class WorkspaceInvitationService {
 
     private WorkspaceInvitationResult inviteOne(AuthenticatedUser actor, Workspace workspace, Invitee invitee,
             String ip) {
-        // Enumeration: ADDED versus INVITED tells the owner whether an ACTIVE
-        // account holds this email or 학번. That bit cannot be hidden, because
-        // adding an existing account at once is the point of the feature. What
-        // is hidden is everything else: an account in any other state answers
-        // INVITED exactly as a missing one does, and ADDED carries the account
-        // id only, no name or profile field.
-        Optional<User> active = (invitee.email() != null
-                ? userRepository.findByEmail(invitee.email())
-                : userRepository.findByStudentNoIgnoreCase(invitee.studentNo()))
-                .filter(user -> user.getStatus() == UserStatus.ACTIVE);
-        if (active.isPresent()) {
-            User target = active.get();
-            int inserted = workspaceMemberRepository.insertMemberIfAbsent(workspace.getId(), target.getId(),
-                    WorkspaceMemberRole.MEMBER.name());
-            invitationRepository.acceptPendingForMember(workspace.getId(), target.getId(),
-                    target.getEmail(), target.getStudentNo());
-            if (inserted == 0) {
-                return invitee.result(WorkspaceInvitationOutcome.ALREADY_MEMBER, null, null);
-            }
-            auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_MEMBER_ADD,
-                    "workspace", workspace.getPublicId(),
-                    Map.of("userId", target.getPublicId(), "email", target.getEmail(),
-                            "role", WorkspaceMemberRole.MEMBER.name(), "viaInvitation", false, "bulk", true),
-                    ip);
-            return invitee.result(WorkspaceInvitationOutcome.ADDED, null, target.getPublicId());
-        }
-
-        UUID invitationId = UUID.randomUUID();
-        int inserted = invitationRepository.insertPendingIfAbsent(invitationId, workspace.getId(),
-                invitee.email(), invitee.studentNo(), WorkspaceMemberRole.MEMBER.name(), actor.id());
-        if (inserted == 0) {
-            UUID existing = (invitee.email() != null
-                    ? invitationRepository.findPendingIdByEmail(workspace.getId(), invitee.email())
-                    : invitationRepository.findPendingIdByStudentNo(workspace.getId(), invitee.studentNo()))
-                    .orElse(null);
-            return invitee.result(WorkspaceInvitationOutcome.ALREADY_INVITED, existing, null);
-        }
-        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_INVITATION_CREATE,
-                "workspace", workspace.getPublicId(),
-                Map.of("invitationId", invitationId, "kind", invitee.email() != null ? "email" : "studentNo"),
-                ip);
-        return invitee.result(WorkspaceInvitationOutcome.INVITED, invitationId, null);
+        InvitationWriter.Placement placement =
+                invitationWriter.place(actor, workspace, invitee.email(), invitee.studentNo(), ip);
+        return invitee.result(placement.outcome(), placement.invitationId(),
+                placement.member() != null ? placement.member().getPublicId() : null);
     }
 
     /**

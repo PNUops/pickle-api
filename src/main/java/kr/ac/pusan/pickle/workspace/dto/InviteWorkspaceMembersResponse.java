@@ -25,7 +25,7 @@ public record InviteWorkspaceMembersResponse(
             @Schema(description = "대기 중인 초대의 식별자. INVITED와 ALREADY_INVITED일 때만 있습니다.")
             @Nullable UUID invitationId,
 
-            @Schema(description = "구성원이 된 계정의 공개 식별자. ADDED일 때만 있습니다.")
+            @Schema(description = "구성원 계정의 공개 식별자. ADDED와 ALREADY_MEMBER일 때만 있습니다.")
             @Nullable UUID userId) {
     }
 }

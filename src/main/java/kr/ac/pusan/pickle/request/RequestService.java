@@ -136,15 +136,14 @@ public class RequestService {
             // for the request's organisation, checked below.
             adminWorkspaceQueryService.requireOperated(actor, workspace.getPublicId());
         }
-        boolean workspaceOwner = membership != null && membership.getRole() == WorkspaceMemberRole.OWNER;
         // Checked before the form's contents so a refusal does not first teach
         // the caller which of their recipients are members. Only the kinds that
         // take the organisation from the form can be answered this early; the
         // rest are answered once the organisation is known, below.
         if (!handler.derivesOrgId()) {
-            boolean approver = form.orgId() != null && orgRepository.findByPublicId(form.orgId())
-                    .map(found -> RequestApprovers.mayApprove(actor, found.getId())).orElse(false);
-            requireMaySubmitAs(form, workspaceOwner, approver);
+            Long formOrgId = form.orgId() == null ? null
+                    : orgRepository.findByPublicId(form.orgId()).map(Org::getId).orElse(null);
+            requireMaySubmitAs(form, actor, membership, formOrgId);
         }
 
         List<FieldValidationError> errors = new ArrayList<>();
@@ -197,8 +196,12 @@ public class RequestService {
         // domain that turns out not to exist would answer with that failure
         // instead of the field error the applicant needs to see.
         Org org = resolveOrg(handler, form);
-        boolean approver = RequestApprovers.mayApprove(actor, org.getId());
-        requireMaySubmitAs(form, workspaceOwner, approver);
+        requireMaySubmitAs(form, actor, membership, org.getId());
+        // Recipients named by 학번 become members or invitees here, after every
+        // check that could still refuse the form. This happens at submission,
+        // also for a request that is later rejected: the roster is the class,
+        // whatever becomes of this one request for it.
+        recipients = recipientService.placeStudentNos(actor, workspace, recipients, ip);
 
         Request saved = requestRepository.save(new Request(form.type(), workspace.getId(),
                 org.getId(),
@@ -246,13 +249,13 @@ public class RequestService {
      * Who may send what. Recipients are for a workspace owner or an approver
      * of the organisation; a same-step approval is for an approver only.
      */
-    private static void requireMaySubmitAs(CreateRequestRequest form, boolean workspaceOwner,
-            boolean approver) {
-        if (form.approval() != null && !approver) {
+    private static void requireMaySubmitAs(CreateRequestRequest form, AuthenticatedUser actor,
+            @Nullable WorkspaceMember membership, @Nullable Long orgId) {
+        if (form.approval() != null && !RequestApprovers.mayApprove(actor, orgId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "이 기관의 신청을 승인할 수 있는 관리자만 제출과 동시에 승인할 수 있습니다.");
         }
-        if (form.hasRecipients() && !workspaceOwner && !approver) {
+        if (form.hasRecipients() && !RecipientNamers.mayName(actor, membership, orgId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.REQUEST_RECIPIENTS_FORBIDDEN,
                     "대상자를 지정할 권한이 없습니다",
                     "다른 사람을 대상자로 지정하는 신청은 워크스페이스 소유자나 이 기관의 신청을 승인할 수 있는 관리자만 낼 수 있습니다.");
