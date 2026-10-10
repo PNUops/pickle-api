@@ -74,6 +74,36 @@ class OpenRouterCatalogueTest {
     }
 
     /**
+     * The vendor's pricing object survives the column and comes back read,
+     * and a row stored before the column existed answers null rather than an
+     * empty pricing that would read as "no other charges".
+     */
+    @Test
+    void storesEveryPriceAxisAndReadsThemBack() {
+        when(client.catalogue()).thenReturn(List.of(
+                new OpenRouterClient.VendorModel("anthropic/claude-sonnet-4.5", "Sonnet", 1000000,
+                        new BigDecimal("0.000003"), new BigDecimal("0.000015"),
+                        "{\"prompt\":\"0.000003\",\"completion\":\"0.000015\","
+                                + "\"input_cache_read\":\"0.0000003\",\"web_search\":\"0.01\","
+                                + "\"overrides\":[{\"min_prompt_tokens\":200000,"
+                                + "\"prompt\":\"0.000006\"}]}"),
+                model("vendor/older", "0.000001")));
+        refreshJob.refresh();
+
+        List<OpenRouterCatalogueResponse.OpenRouterCatalogueModel> models =
+                service.catalogue().models();
+        OpenRouterCatalogueResponse.OpenRouterCatalogueModel sonnet = models.stream()
+                .filter(m -> m.id().equals("anthropic/claude-sonnet-4.5")).findFirst().orElseThrow();
+        assertThat(sonnet.pricing()).isNotNull();
+        assertThat(sonnet.pricing().axes()).extracting(a -> a.axis())
+                .containsExactly("prompt", "completion", "input_cache_read", "web_search");
+        assertThat(sonnet.pricing().tiers()).singleElement()
+                .satisfies(t -> assertThat(t.minPromptTokens()).isEqualTo(200000));
+        assertThat(models.stream().filter(m -> m.id().equals("vendor/older")).findFirst()
+                .orElseThrow().pricing()).isNull();
+    }
+
+    /**
      * The whole reason delisted rows are kept: a model that leaves the vendor's
      * list is still named by fences that were approved while it was there.
      */
