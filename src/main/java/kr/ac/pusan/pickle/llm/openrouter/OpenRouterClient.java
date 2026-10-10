@@ -107,9 +107,20 @@ public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMuta
      * BigDecimal} rather than scaled here: the difference between the cheapest
      * and dearest model is four orders of magnitude, and the reason an approver
      * is shown this list at all is to see that difference.
+     *
+     * <p>{@code pricing} is the vendor's whole pricing object, serialized as
+     * it arrived. The two prices above are lifted out of it for sorting; the
+     * rest is kept whole so an axis nobody here has named yet is stored rather
+     * than dropped. Null when the entry carried no pricing object.
      */
     public record VendorModel(String id, String name, @Nullable Integer contextLength,
-            @Nullable BigDecimal promptPrice, @Nullable BigDecimal completionPrice) {
+            @Nullable BigDecimal promptPrice, @Nullable BigDecimal completionPrice,
+            @Nullable String pricing) {
+
+        public VendorModel(String id, String name, @Nullable Integer contextLength,
+                @Nullable BigDecimal promptPrice, @Nullable BigDecimal completionPrice) {
+            this(id, name, contextLength, promptPrice, completionPrice, null);
+        }
     }
 
     /**
@@ -297,7 +308,8 @@ public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMuta
             models.add(new VendorModel(id.trim(), name == null ? id.trim() : name,
                     entry.path("context_length").isNumber()
                             ? entry.path("context_length").asInt() : null,
-                    price(pricing, "prompt"), price(pricing, "completion")));
+                    price(pricing, "prompt"), price(pricing, "completion"),
+                    pricing.isObject() ? pricing.toString() : null));
         }
         if (models.isEmpty()) {
             throw new OpenRouterException(0, "model catalogue answered without any usable models");
