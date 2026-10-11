@@ -5,12 +5,16 @@ on:
   push:
     branches: [main, develop]
 
-# A branch that gets three pushes in a minute ran three full jobs, and the two
-# that no longer describe anything were still occupying runners. Cancelling is
-# right for a topic branch, where only the newest push is under review, and
-# wrong for the long-lived branches (main, the released line, and develop, the
-# integration line), where each run records the state of a commit that is
-# already merged and cancelling leaves that commit with no result at all.
+# A run comes from one of two events. A push runs only for main (the released
+# line) and develop (the integration line); each such run records the state of
+# a commit that is already merged, and cancelling it would leave that commit
+# with no result at all, so those runs are never cancelled. Every other run is
+# a pull request's, whose ref is refs/pull/<number>/merge, so each pull request
+# is its own group: three pushes to its head in a minute would otherwise run
+# three full jobs while only the newest is under review, so older runs are
+# cancelled. A release pull request from develop to main is cancelled the same
+# way; its merge then runs as a push to main. A branch with no pull request
+# does not run at all.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
