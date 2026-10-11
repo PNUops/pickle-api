@@ -502,7 +502,8 @@ class AdminLlmUsageTest {
                 returning id
                 """, Long.class, workspace.getId(), org.getId(), owner.getId(), name + " 신청");
         jdbcTemplate.update(
-                "insert into llm_key_request_details (request_id) values (?)", requestId);
+                "insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')", requestId);
         String hash = UUID.randomUUID().toString().replace("-", "")
                 + UUID.randomUUID().toString().replace("-", "");
         Long accountId = account == null ? null : account.id();

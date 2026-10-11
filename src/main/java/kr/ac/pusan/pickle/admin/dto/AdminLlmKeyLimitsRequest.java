@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
  * <p>{@code passthroughEndpoints} is the ninth and is the only one of the three
  * lists that grants rather than restricts. Null or empty there is not
  * "unrestricted" and not "blocks nothing" but <b>none of them</b>: a key with
- * an empty list reaches no passthrough path at all. Reading it like either of
+ * an empty list reaches no capability at all, chat included. Reading it like either of
  * the two above inverts what an administrator meant.
  */
 public class AdminLlmKeyLimitsRequest {
@@ -170,13 +170,19 @@ public class AdminLlmKeyLimitsRequest {
         this.creditDeniedModelsSet = true;
     }
 
-    @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
-            PassthroughEndpoints.EMBEDDINGS}),
+    @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
+            PassthroughEndpoints.WEB_SEARCH, PassthroughEndpoints.PDF_OCR,
+            PassthroughEndpoints.CONTAINERS, PassthroughEndpoints.IMAGES,
+            PassthroughEndpoints.EMBEDDINGS, PassthroughEndpoints.RERANK,
+            PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
+            PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
+            PassthroughEndpoints.FILES}),
             arraySchema = @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                     description = "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 "
-                            + "하나도 쓸 수 없습니다. 모델 목록 둘과 반대로 이 목록은 "
-                            + "채워야 열립니다. 채팅과 모델 조회는 이 값에 영향을 받지 "
-                            + "않습니다."))
+                            + "하나도 쓸 수 없습니다(chat 포함). 모델 목록 둘과 반대로 이 목록은 "
+                            + "채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, "
+                            + "pdf_ocr, images, embeddings이고, web_search와 pdf_ocr은 chat과 "
+                            + "함께 부여해야 합니다. 모델 조회는 이 값에 영향을 받지 않습니다."))
     public @Nullable List<String> getPassthroughEndpoints() {
         return passthroughEndpoints;
     }

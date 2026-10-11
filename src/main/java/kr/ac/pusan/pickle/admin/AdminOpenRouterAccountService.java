@@ -29,7 +29,6 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.llm.CreditModelPatterns;
-import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountCredential;
@@ -157,8 +156,6 @@ public class AdminOpenRouterAccountService {
                 form.defaultCreditAllowedModels(), "defaultCreditAllowedModels", modelErrors);
         List<String> defaultDeniedModels = CreditModelPatterns.normalize(
                 form.defaultCreditDeniedModels(), "defaultCreditDeniedModels", modelErrors);
-        List<String> defaultEndpoints = PassthroughEndpoints.normalize(
-                form.defaultPassthroughEndpoints(), "defaultPassthroughEndpoints", modelErrors);
         if (!modelErrors.isEmpty()) {
             throw ApiException.validationFailed(modelErrors);
         }
@@ -169,8 +166,6 @@ public class AdminOpenRouterAccountService {
                 CreditModelPatterns.toJson(objectMapper, defaultModels), Instant.now());
         account.replaceDefaultCreditDeniedModels(
                 CreditModelPatterns.toJson(objectMapper, defaultDeniedModels), Instant.now());
-        account.replaceDefaultPassthroughEndpoints(
-                PassthroughEndpoints.toJson(objectMapper, defaultEndpoints), Instant.now());
         try {
             return tx.execute(status -> {
                 OpenRouterAccount saved = accountRepository.saveAndFlush(account);
@@ -251,18 +246,6 @@ public class AdminOpenRouterAccountService {
             auditArgs.put("defaultCreditDeniedModels", nextModels);
             account.replaceDefaultCreditDeniedModels(
                     CreditModelPatterns.toJson(objectMapper, nextModels), Instant.now());
-        }
-        if (form.isDefaultPassthroughEndpointsSet()) {
-            List<FieldValidationError> endpointErrors = new ArrayList<>();
-            List<String> nextEndpoints = PassthroughEndpoints.normalize(
-                    form.getDefaultPassthroughEndpoints(), "defaultPassthroughEndpoints",
-                    endpointErrors);
-            if (!endpointErrors.isEmpty()) {
-                throw ApiException.validationFailed(endpointErrors);
-            }
-            auditArgs.put("defaultPassthroughEndpoints", nextEndpoints);
-            account.replaceDefaultPassthroughEndpoints(
-                    PassthroughEndpoints.toJson(objectMapper, nextEndpoints), Instant.now());
         }
         try {
             accountRepository.saveAndFlush(account);
@@ -1016,9 +999,6 @@ public class AdminOpenRouterAccountService {
                         "openrouter account " + account.getPublicId()),
                 CreditModelPatterns.fromJson(objectMapper,
                         account.getDefaultCreditDeniedModels(),
-                        "openrouter account " + account.getPublicId()),
-                PassthroughEndpoints.fromJson(objectMapper,
-                        account.getDefaultPassthroughEndpoints(),
                         "openrouter account " + account.getPublicId()),
                 account.getCreatedAt(), account.getUpdatedAt());
     }

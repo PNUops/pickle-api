@@ -162,10 +162,9 @@ public class LlmApiKey {
      * third meaning on one of them. A path nobody granted must not open by the
      * mere act of the gateway learning to serve it.
      *
-     * <p>It governs only the paths the passthrough surface adds. Chat
-     * completions and the model catalogue are outside it and keep the fences
-     * they already have, so an empty list takes nothing away from a key that
-     * exists now.
+     * <p>Chat is one of them since V139, which gave every existing key chat
+     * so that the gateway could start enforcing it. An empty list therefore
+     * closes chat too. The model catalogue stays outside it.
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "passthrough_endpoints", nullable = false, columnDefinition = "jsonb")

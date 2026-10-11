@@ -50,6 +50,17 @@ public class LlmKeyRequestDetail {
     @Column(name = "req_credit_limit")
     private @Nullable BigDecimal reqCreditLimit;
 
+    /**
+     * The capabilities the applicant chose, as a JSON array. The approval
+     * screen starts from it and an approval that sends no list of its own
+     * grants it; what is actually granted is the reviewer's call and lives in
+     * {@link #grantedPassthroughEndpoints}. Requests older than the column were
+     * migrated to ["chat"], which is what every key had then.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "req_passthrough_endpoints", nullable = false, columnDefinition = "jsonb")
+    private String reqPassthroughEndpoints = PassthroughEndpoints.EMPTY_JSON;
+
     @Column(name = "granted_rpm")
     private @Nullable Integer grantedRpm;
 
@@ -106,8 +117,10 @@ public class LlmKeyRequestDetail {
 
     public LlmKeyRequestDetail(long requestId, @Nullable Integer reqRpm,
             @Nullable Integer reqTpm, @Nullable Long reqDailyTokens, boolean reqUseCampus,
-            boolean reqUseCommercial, @Nullable BigDecimal reqCreditLimit) {
+            boolean reqUseCommercial, @Nullable BigDecimal reqCreditLimit,
+            String reqPassthroughEndpoints) {
         this.requestId = requestId;
+        this.reqPassthroughEndpoints = reqPassthroughEndpoints;
         this.reqRpm = reqRpm;
         this.reqTpm = reqTpm;
         this.reqDailyTokens = reqDailyTokens;
@@ -126,6 +139,11 @@ public class LlmKeyRequestDetail {
 
     public @Nullable BigDecimal getReqCreditLimit() {
         return reqCreditLimit;
+    }
+
+    /** The stored JSON array; read it with {@link PassthroughEndpoints#fromJson}. */
+    public String getReqPassthroughEndpoints() {
+        return reqPassthroughEndpoints;
     }
 
     /**

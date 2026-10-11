@@ -15,7 +15,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * have used either.
  */
 public record LlmUsagePassthroughGrantResponse(
-        @Schema(description = "기능 권한 값. images 또는 embeddings입니다.")
+        @Schema(description = "기능 권한 값. chat, images, embeddings 중 하나입니다. 요청 본문으로 "
+                + "판정하는 기능(web_search, pdf_ocr)은 사용량 이벤트가 경로만 기록해 사용을 셀 수 "
+                + "없으므로 행이 없습니다.")
         String capability,
         @Schema(description = "지금 이 기능을 부여받은 키 수")
         long grantedKeys,

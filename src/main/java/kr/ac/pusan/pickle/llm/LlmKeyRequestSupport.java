@@ -97,6 +97,11 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
             errors.add(new FieldValidationError("llmKey.reqCreditLimit",
                     "유료 모델을 쓰지 않는 신청에는 금액을 적을 수 없습니다."));
         }
+        // The same whole-grant rules an approval meets, so the list a reviewer
+        // opens on is one they could approve as it stands. Bean validation has
+        // already refused a missing list.
+        PassthroughEndpoints.normalizeGrant(spec.reqPassthroughEndpoints(),
+                "llmKey.reqPassthroughEndpoints", errors);
     }
 
     /** 비우면 쓰는 것으로 본다. 자체 서빙 모델만 쓰는 신청이 보통이다. */
@@ -112,10 +117,16 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
     @Override
     public void saveDetail(Request request, CreateRequestRequest form) {
         CreateLlmKeyRequestSpec spec = form.llmKey();
+        // Re-normalized rather than carried from validation, for the reason
+        // record() gives: the stored list and the checked list come from the
+        // same function. validateCreate refused anything malformed.
+        String requested = PassthroughEndpoints.toJson(objectMapper,
+                PassthroughEndpoints.normalizeGrant(spec.reqPassthroughEndpoints(),
+                        "llmKey.reqPassthroughEndpoints", new ArrayList<>()));
         detailRepository.save(new LlmKeyRequestDetail(request.getId(),
                 spec.reqRpm(), spec.reqTpm(),
                 spec.reqDailyTokens(), useCampus(spec), useCommercial(spec),
-                spec.reqCreditLimit()));
+                spec.reqCreditLimit(), requested));
     }
 
     @Override
@@ -127,6 +138,8 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
             args.put("reqDailyTokens", detail.getReqDailyTokens());
             args.put("reqUseCampus", detail.isReqUseCampus());
             args.put("reqUseCommercial", detail.isReqUseCommercial());
+            args.put("reqPassthroughEndpoints", PassthroughEndpoints.fromJson(objectMapper,
+                    detail.getReqPassthroughEndpoints(), "request " + request.getPublicId()));
         });
         return args;
     }
@@ -174,14 +187,37 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // one moment it costs nothing to keep.
         CreditModelPatterns.normalize(spec.grantedCreditDeniedModels(),
                 "llmKey.grantedCreditDeniedModels", errors);
-        // Format only, and deliberately no "needs money" rule either, but for a
-        // different reason than the deny list above. This list grants rather
-        // than restricts, so an entry with no money behind it opens a path the
-        // key cannot pay to use — which already fails closed at the credential
-        // check. Refusing it here would instead make the column impossible to
-        // fill before a key is funded.
-        PassthroughEndpoints.normalize(spec.grantedPassthroughEndpoints(),
+        // Format and hierarchy only, and deliberately no "needs money" rule,
+        // but for a different reason than the deny list above. This list
+        // grants rather than restricts, so an entry with no money behind it
+        // opens a path the key cannot pay to use — which already fails closed
+        // at the credential check. Refusing it here would instead make the
+        // column impossible to fill before a key is funded, and chat, which
+        // spans both axes, impossible to grant to a token-only key.
+        //
+        //
+        // An approval that leaves the list out grants what was requested, and
+        // that list is checked again here rather than trusted: it was checked
+        // at submission against the rules of that day, and what may be granted
+        // can have changed since.
+        PassthroughEndpoints.normalizeGrant(grantedOrRequested(request, spec),
                 "llmKey.grantedPassthroughEndpoints", errors);
+    }
+
+    /**
+     * The list an approval grants: the reviewer's own when they sent one, the
+     * request's otherwise. Absent means "as requested", the way an approval
+     * with no numbers grants the service defaults; an empty list is a decision
+     * of its own and grants nothing.
+     */
+    private List<String> grantedOrRequested(Request request, ApproveLlmKeyRequestSpec spec) {
+        if (spec.grantedPassthroughEndpoints() != null) {
+            return spec.grantedPassthroughEndpoints();
+        }
+        return detailRepository.findByRequestId(request.getId())
+                .map(detail -> PassthroughEndpoints.fromJson(objectMapper,
+                        detail.getReqPassthroughEndpoints(), "request " + request.getPublicId()))
+                .orElse(List.of());
     }
 
     @Override
@@ -222,6 +258,10 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         auditArgs.put("grantedCreditLimit", spec.grantedCreditLimit());
         auditArgs.put("keysExpected", resourceCount);
         auditArgs.put("openrouterAccountId", recorded.accountPublicId());
+        // What every recipient's key will carry. An approval may leave the list
+        // out and grant the request's own, so the form alone does not say it.
+        auditArgs.put("grantedPassthroughEndpoints", PassthroughEndpoints.fromJson(objectMapper,
+                recorded.passthroughEndpoints(), "request " + request.getPublicId()));
         auditArgs.putAll(recorded.allocationRecord());
         return auditArgs;
     }
@@ -286,7 +326,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                 CreditModelPatterns.normalize(spec.grantedCreditDeniedModels(),
                         "llmKey.grantedCreditDeniedModels", new ArrayList<>()));
         String passthroughEndpoints = PassthroughEndpoints.toJson(objectMapper,
-                PassthroughEndpoints.normalize(spec.grantedPassthroughEndpoints(),
+                PassthroughEndpoints.normalizeGrant(grantedOrRequested(request, spec),
                         "llmKey.grantedPassthroughEndpoints", new ArrayList<>()));
         detail.grant(spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
                 spec.grantedDailyTokens(), spec.grantedCreditLimit(),
