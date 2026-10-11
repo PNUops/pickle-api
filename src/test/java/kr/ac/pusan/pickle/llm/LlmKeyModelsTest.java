@@ -160,9 +160,11 @@ class LlmKeyModelsTest {
         UUID keyId = createKey("저장 검증 키", "5.00", "hash-store",
                 "[\"*/*\"]", "[\"*/*-pro\"]");
         jdbcTemplate.update("""
-                insert into llm_key_request_details (request_id, granted_credit_limit,
-                    granted_openrouter_account_id, granted_credit_allowed_models, granted_credit_denied_models)
-                select request_id, 5, openrouter_account_id, '["*/*"]'::jsonb, '["*/*-pro"]'::jsonb
+                insert into llm_key_request_details (request_id, req_passthrough_endpoints,
+                    granted_credit_limit, granted_openrouter_account_id,
+                    granted_credit_allowed_models, granted_credit_denied_models)
+                select request_id, '["chat"]'::jsonb, 5, openrouter_account_id,
+                       '["*/*"]'::jsonb, '["*/*-pro"]'::jsonb
                   from llm_api_keys where public_id = ?
                 """, keyId);
         jdbcTemplate.update("""

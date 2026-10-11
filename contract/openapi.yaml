@@ -905,11 +905,22 @@ components:
         orgName:
           type: "string"
         passthroughEndpoints:
-          description: "이 키에 부여된 기능 권한. 빈 배열은 부여 없음. 모델 목록 둘과 반대로 채워야 열린다."
+          description: "이 키에 부여된 기능 권한. 빈 배열은 부여 없음(chat 포함). 모델 목록 둘과 반대로 채워야 열린다\
+            ."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           type: "array"
         purpose:
@@ -1029,12 +1040,24 @@ components:
           - "string"
           - "null"
         passthroughEndpoints:
-          description: "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 하나도 쓸 수 없습니다. 모델 목록 둘과 반\
-            대로 이 목록은 채워야 열립니다. 채팅과 모델 조회는 이 값에 영향을 받지 않습니다."
+          description: "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 하나도 쓸 수 없습니다(chat 포함). 모\
+            델 목록 둘과 반대로 이 목록은 채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr,\
+            \ images, embeddings이고, web_search와 pdf_ocr은 chat과 함께 부여해야 합니다. 모델 조회는\
+            \ 이 값에 영향을 받지 않습니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           maxItems: 20
           minItems: 0
@@ -2269,12 +2292,24 @@ components:
           - "integer"
           - "null"
         grantedPassthroughEndpoints:
-          description: "이 키에 부여할 기능 권한. 비우면 기능을 하나도 쓸 수 없습니다. 모델 목록과 반대로 이 목록은 채워야\
-            \ 열립니다. 채팅과 모델 조회는 이 목록과 무관합니다."
+          description: "이 키에 부여할 기능 권한. 생략하면 신청자가 고른 목록(reqPassthroughEndpoints)으로\
+            \ 승인하고, 빈 배열이면 기능을 하나도 쓸 수 없습니다(chat도 포함). 모델 목록과 반대로 이 목록은 채워야 열립니다.\
+            \ 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, images, embeddings이고, web_search와\
+            \ pdf_ocr은 chat과 함께 부여해야 합니다. 모델 조회는 이 목록과 무관합니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           maxItems: 20
           minItems: 0
@@ -2804,6 +2839,28 @@ components:
           type:
           - "integer"
           - "null"
+        reqPassthroughEndpoints:
+          description: "신청자가 고른 기능 권한. 필수이며 빈 배열도 받습니다. 승인 화면의 초깃값이 되고, 무엇을 부여할지는\
+            \ 승인자가 정합니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, images, embeddings이\
+            고 나머지는 422로 거절합니다. web_search와 pdf_ocr은 chat과 함께 골라야 합니다."
+          items:
+            enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
+            - "images"
+            - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
+            type: "string"
+          maxItems: 20
+          minItems: 0
+          type: "array"
         reqRpm:
           description: "희망 분당 요청 수. 비우면 서비스 기본값을 받습니다."
           format: "int32"
@@ -2829,6 +2886,8 @@ components:
           type:
           - "boolean"
           - "null"
+      required:
+      - "reqPassthroughEndpoints"
       type: "object"
     CreateOpenRouterAccountRequest:
       properties:
@@ -2864,18 +2923,6 @@ components:
           items:
             type: "string"
           maxItems: 50
-          minItems: 0
-          type:
-          - "array"
-          - "null"
-        defaultPassthroughEndpoints:
-          description: "승인 화면 프리필에 쓸 기능 권한 기본값. 비우면 아무 기능도 부여되지 않은 상태가 기본이 됩니다."
-          items:
-            enum:
-            - "images"
-            - "embeddings"
-            type: "string"
-          maxItems: 20
           minItems: 0
           type:
           - "array"
@@ -4872,12 +4919,22 @@ components:
           description: "키 이름"
           type: "string"
         passthroughEndpoints:
-          description: "이 키에 부여된 기능 권한. 빈 배열이면 기능을 하나도 쓸 수 없습니다. 모델 목록 둘과 반대로 이 목록\
-            은 채워야 열립니다. 채팅과 모델 조회는 이 목록과 무관합니다."
+          description: "이 키에 부여된 기능 권한. 빈 배열이면 기능을 하나도 쓸 수 없습니다(chat 포함). 모델 목록 둘과\
+            \ 반대로 이 목록은 채워야 열립니다. 모델 조회는 이 목록과 무관합니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           type: "array"
         purpose:
@@ -5133,11 +5190,21 @@ components:
           - "integer"
           - "null"
         grantedPassthroughEndpoints:
-          description: "승인자가 부여한 기능 권한. 빈 배열이면 부여된 기능이 없습니다."
+          description: "승인자가 부여한 기능 권한. 빈 배열이면 부여된 기능이 없습니다. 검토 전 신청은 빈 배열입니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           type: "array"
         grantedRpm:
@@ -5163,6 +5230,25 @@ components:
           type:
           - "integer"
           - "null"
+        reqPassthroughEndpoints:
+          description: "신청자가 고른 기능 권한. 승인 화면의 초깃값입니다. 이 항목이 생기기 전의 신청은 [\"chat\"]으\
+            로 이관되었습니다."
+          items:
+            enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
+            - "images"
+            - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
+            type: "string"
+          type: "array"
         reqRpm:
           description: "희망 분당 요청 수"
           format: "int32"
@@ -5185,6 +5271,7 @@ components:
       - "grantedCreditAllowedModels"
       - "grantedCreditDeniedModels"
       - "grantedPassthroughEndpoints"
+      - "reqPassthroughEndpoints"
       - "useCampusModels"
       - "useCommercialModels"
       type: "object"
@@ -6105,7 +6192,8 @@ components:
     LlmUsagePassthroughGrantResponse:
       properties:
         capability:
-          description: "기능 권한 값. images 또는 embeddings입니다."
+          description: "기능 권한 값. chat, images, embeddings 중 하나입니다. 요청 본문으로 판정하는 기능\
+            (web_search, pdf_ocr)은 사용량 이벤트가 경로만 기록해 사용을 셀 수 없으므로 행이 없습니다."
           type: "string"
         grantedKeys:
           description: "지금 이 기능을 부여받은 키 수"
@@ -7401,15 +7489,6 @@ components:
           items:
             type: "string"
           type: "array"
-        defaultPassthroughEndpoints:
-          description: "승인 화면이 프리필에 쓰는 기능 권한 기본값. 복사 원본이지 상속원이 아니라서 여기를 바꿔도 이미 발급된\
-            \ 키는 그대로입니다."
-          items:
-            enum:
-            - "images"
-            - "embeddings"
-            type: "string"
-          type: "array"
         eligibleForBinding:
           description: "현재 positive-credit key binding에 선택할 수 있는지"
           type: "boolean"
@@ -7452,7 +7531,6 @@ components:
       - "credits"
       - "defaultCreditAllowedModels"
       - "defaultCreditDeniedModels"
-      - "defaultPassthroughEndpoints"
       - "eligibleForBinding"
       - "id"
       - "name"
@@ -10165,19 +10243,6 @@ components:
           type:
           - "array"
           - "null"
-        defaultPassthroughEndpoints:
-          description: "새 기능 권한 기본값. 생략하면 유지하고, null이나 빈 배열이면 기본값을 지웁니다. 이 쓰기는 게이트\
-            웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 영향이 없습니다."
-          items:
-            enum:
-            - "images"
-            - "embeddings"
-            type: "string"
-          maxItems: 20
-          minItems: 0
-          type:
-          - "array"
-          - "null"
         name:
           description: "새 account 이름. 생략하면 유지하며 null은 허용하지 않습니다."
           maxLength: 120
@@ -11806,7 +11871,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.97.0"
+  version: "0.98.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:

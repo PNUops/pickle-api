@@ -501,7 +501,7 @@ class RosterRecipientsTest {
         body.put("purpose", "학번 대상자 테스트");
         body.put("reqEndDate", LocalDate.now(ClockConfig.KST).plusMonths(4).toString());
         body.put("displayName", "학번 대상자");
-        body.put("llmKey", Map.of());
+        body.put("llmKey", Map.of("reqPassthroughEndpoints", List.of("chat")));
         body.put("recipients", recipients);
         return body;
     }

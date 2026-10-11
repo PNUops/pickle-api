@@ -236,6 +236,62 @@ class AdminBulkChangeTest {
     }
 
     /**
+     * The hierarchy is a property of each key's merged list, not of the
+     * request: ADD web_search lands on a key that has chat and is refused on
+     * one that does not. Removing chat under a feature that needs it is
+     * refused rather than taking the feature away with it.
+     */
+    @Test
+    void theHierarchyIsJudgedOnEachKeysMergedList() throws Exception {
+        Key withChat = key(orgA.getId(), workspaceA, "chat 있는 키", "ACTIVE", null);
+        Key withoutChat = key(orgA.getId(), workspaceA, "chat 없는 키", "ACTIVE", null);
+        setLists(withChat, "[]", "[]", "[\"chat\"]");
+        setLists(withoutChat, "[]", "[]", "[\"images\"]");
+
+        JsonNode added = applyJson(sysAdminToken, request("LLM_KEY",
+                List.of(withChat.publicId(), withoutChat.publicId()),
+                limits(Map.of("passthroughEndpoints", listOp("ADD", List.of("web_search"))))));
+        assertThat(item(added, withChat.publicId()).get("result").asString())
+                .isEqualTo("APPLIED");
+        assertThat(item(added, withoutChat.publicId()).get("reason").asString())
+                .isEqualTo("VALIDATION");
+        assertThat(models(withChat, "passthrough_endpoints")).containsExactly("chat", "web_search");
+        assertThat(models(withoutChat, "passthrough_endpoints")).containsExactly("images");
+
+        JsonNode removed = applyJson(sysAdminToken, request("LLM_KEY",
+                List.of(withChat.publicId()),
+                limits(Map.of("passthroughEndpoints", listOp("REMOVE", List.of("chat"))))));
+        assertThat(item(removed, withChat.publicId()).get("reason").asString())
+                .isEqualTo("VALIDATION");
+        assertThat(models(withChat, "passthrough_endpoints")).containsExactly("chat", "web_search");
+    }
+
+    /**
+     * Chat alone is outside the money gate on the bulk path too, through the
+     * same judgement as the single path.
+     */
+    @Test
+    void sysManagerMayAddOrRemoveChatInBulk() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "운영자 일괄 chat 키", "ACTIVE", null);
+        setLists(key, "[]", "[]", "[\"images\"]");
+
+        JsonNode added = applyJson(sysManagerToken, request("LLM_KEY", List.of(key.publicId()),
+                limits(Map.of("passthroughEndpoints", listOp("ADD", List.of("chat"))))));
+        assertThat(item(added, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(models(key, "passthrough_endpoints")).containsExactly("images", "chat");
+
+        JsonNode removed = applyJson(sysManagerToken, request("LLM_KEY", List.of(key.publicId()),
+                limits(Map.of("passthroughEndpoints", listOp("REMOVE", List.of("chat"))))));
+        assertThat(item(removed, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+
+        JsonNode replaced = applyJson(sysManagerToken, request("LLM_KEY", List.of(key.publicId()),
+                limits(Map.of("passthroughEndpoints", listOp("REPLACE", List.of("chat"))))));
+        assertThat(item(replaced, key.publicId()).get("reason").asString())
+                .isEqualTo("FORBIDDEN");
+        assertThat(models(key, "passthrough_endpoints")).containsExactly("images");
+    }
+
+    /**
      * The money gate is judged per key against what the merge actually moves.
      * The same request is a rate-limit edit on a key already at that amount
      * and a money change on one that is not, and only the second is refused.
@@ -1301,7 +1357,8 @@ class AdminBulkChangeTest {
                 values ('LLM_API_KEY', ?, ?, ?, '테스트', ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requester.getId(), name + " 신청");
-        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)", requestId);
+        jdbcTemplate.update("insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')", requestId);
         long accountId = jdbcTemplate.queryForObject("""
                 insert into openrouter_accounts (org_id, name, created_by)
                 values (?, '일괄 시험 사업', ?)
@@ -1333,7 +1390,8 @@ class AdminBulkChangeTest {
                 values ('LLM_API_KEY', ?, ?, ?, '테스트', ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requester.getId(), name + " 신청");
-        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)", requestId);
+        jdbcTemplate.update("insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')", requestId);
         String hash = (UUID.randomUUID().toString() + UUID.randomUUID()).replace("-", "");
         long id = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys (workspace_id, org_id, request_id, name, purpose,

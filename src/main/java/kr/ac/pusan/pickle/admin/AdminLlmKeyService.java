@@ -277,6 +277,13 @@ public class AdminLlmKeyService {
      * for a sharper reason: it is the only one that grants, and a SYS_MANAGER
      * outside this gate could hand a key image generation, which settles per
      * image, without moving any number.
+     *
+     * <p>Except {@code chat}. It spans both axes, so a key on self-serving
+     * models alone needs it as much as a funded one, and keeping it behind the
+     * money gate would leave a SYS_MANAGER unable to restore chat to a
+     * token-only key. The comparison is between sets without it: granting or
+     * withdrawing chat alone moves nothing here, and reordering moves nothing
+     * either. Every other capability is money-axis only and stays gated.
      */
     public static boolean moneyChanged(LlmKeyLimitRules.Normalized current,
             LlmKeyLimitRules.Normalized next) {
@@ -284,7 +291,8 @@ public class AdminLlmKeyService {
                 || !Objects.equals(current.creditLimitReset(), next.creditLimitReset())
                 || !current.creditAllowedModels().equals(next.creditAllowedModels())
                 || !current.creditDeniedModels().equals(next.creditDeniedModels())
-                || !current.passthroughEndpoints().equals(next.passthroughEndpoints());
+                || !PassthroughEndpoints.withoutChat(current.passthroughEndpoints())
+                        .equals(PassthroughEndpoints.withoutChat(next.passthroughEndpoints()));
     }
 
     /** The refusal a SYS_MANAGER meets on the money side, in one wording. */
