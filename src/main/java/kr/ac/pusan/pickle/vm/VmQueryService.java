@@ -257,7 +257,17 @@ public class VmQueryService {
         return detailOf(vm, myResourceRole, accessManageAllowed, null);
     }
 
+    /** Cross-institution support reads retain status metadata without domain-control proof values. */
+    public VmDetailResponse supportDetailOf(Vm vm, boolean includeDomainVerification) {
+        return detailOf(vm, null, false, null, includeDomainVerification);
+    }
+
     private VmDetailResponse detailOf(Vm vm, ResourceRole myResourceRole, boolean accessManageAllowed, Long actorId) {
+        return detailOf(vm, myResourceRole, accessManageAllowed, actorId, true);
+    }
+
+    private VmDetailResponse detailOf(Vm vm, ResourceRole myResourceRole, boolean accessManageAllowed,
+            Long actorId, boolean includeDomainVerification) {
         long vmId = vm.getId();
         // History-preserving joins: a DELETED vm's workspace/org may have been
         // deleted afterwards, so this deliberately reads all workspaces/orgs.
@@ -290,7 +300,9 @@ public class VmQueryService {
                 .filter(domain -> domain.getStatus() != DomainStatus.REMOVED)
                 .filter(publicationAssembler::hasLiveRoute)
                 .sorted(java.util.Comparator.comparing(Domain::getId))
-                .map(domain -> publicationAssembler.toPublication(domain, vm.getPublicId()))
+                .map(domain -> includeDomainVerification
+                        ? publicationAssembler.toPublication(domain, vm.getPublicId())
+                        : publicationAssembler.toSupportPublication(domain, vm.getPublicId()))
                 .toList();
         boolean passwordRevealAllowed = myResourceRole != null && myResourceRole.atLeast(
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE));

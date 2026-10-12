@@ -214,6 +214,7 @@ class ContractDriftTest {
             "GET /admin/announcements",
             "POST /admin/announcements/preview",
             "GET /admin/announcements/{announcementId}",
+            "GET /admin/support-orgs",
             "GET /admin/workspaces",
             "GET /admin/workspaces/{workspaceId}",
             "GET /admin/workspaces/{workspaceId}/invitations",

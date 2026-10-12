@@ -104,6 +104,17 @@ public class PublicationAssembler {
         return new PublicationView(domain.getFqdn(), toDomainDetail(domain, vmId), route, certificate);
     }
 
+    /** Support metadata omits the DNS verification value used to prove domain control. */
+    public PublicationView toSupportPublication(Domain domain, UUID vmId) {
+        DomainDetailView detail = toDomainDetail(domain, vmId);
+        DomainDetailView metadata = new DomainDetailView(detail.id(), detail.vmId(), detail.kind(),
+                detail.fqdn(), detail.rootDomain(), detail.status(), detail.verifiedAt(), detail.releasedAt(),
+                detail.reservedUntil(), detail.createdAt(), detail.dnsStatus(), detail.dnsLastError(),
+                detail.dnsAppliedAt(), null);
+        PublicationView publication = toPublication(domain, vmId);
+        return new PublicationView(publication.fqdn(), metadata, publication.route(), publication.certificate());
+    }
+
     /**
      * Whether the domain has a live (non-REMOVED) route — i.e. is actually
      * published. A custom-domain row kept by unpublish (verification state

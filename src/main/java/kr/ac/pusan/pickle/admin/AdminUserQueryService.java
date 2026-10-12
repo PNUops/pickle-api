@@ -38,32 +38,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Read side of the admin user surface ({@code GET /admin/users} and
- * {@code /{userId}}). <b>The one admin surface that is not scoped by
- * organisation</b> (operator decision, 2026-08-25): every admin role answers for
- * every account, because organisation membership is derived from the resources a
- * workspace holds, so a person who has requested nothing belongs to no
- * organisation and was visible to nobody. A student may be supported by any
- * organisation and may write to one before requesting anything.
- *
- * <p><b>One exclusion, along a different axis</b> (operator decision,
- * 2026-09-16): the org tier is not answered for system-tier accounts, in the
- * list or the detail. That is not organisation scoping — it is the rule that an
- * administrator should be able to act on every account it is shown, and these
- * are the accounts it may not touch (grantOrgRole refuses a sys-tier target and
- * the account-state writes are SYS_ADMIN-only). The system tier still reads
- * every account, its own included.
- *
- * <p>The {@code orgId} parameter narrows to an organisation's derived members
- * ({@link OrgMembershipSql}) for all tiers alike; it is a filter, not a pin, and
- * an id no organisation has filters to nothing. {@code mfaEnabled} reflects live
- * {@code user_mfa} enrollment (batch-loaded for the list, single lookup for the
- * detail).
- *
- * <p>What this hands out is wider than a directory: the detail carries the
- * account's workspace memberships across every organisation, its disable reason,
- * and its full status-change history including the acting administrator. That
- * follows from the decision above and is recorded in the product spec.
+ * Global support directory and account profile reads. Institution readers are not
+ * answered for system-tier accounts. The optional institution narrows derived
+ * membership; an unknown filter returns an empty page. Detail memberships omit
+ * deleted workspaces, and live MFA state is loaded independently of account flags.
  */
 @Service
 public class AdminUserQueryService {
@@ -110,6 +88,7 @@ public class AdminUserQueryService {
     @Transactional(readOnly = true)
     public PageResponse<UserAdminViewResponse> listUsers(AuthenticatedUser actor, String q,
             UserStatus status, UserRole role, UUID orgId, String sort, int page, int size) {
+        StudentSupportPolicy.requireRead(actor);
         OrgScope scope = scopeOrgId(actor, orgId);
         StringBuilder where = new StringBuilder(" where 1 = 1");
         List<Object> params = new ArrayList<>();
@@ -189,7 +168,7 @@ public class AdminUserQueryService {
     public UserAdminDetailResponse getUser(AuthenticatedUser actor, UUID userId) {
         User user = userRepository.findByPublicId(userId)
                 .orElseThrow(AdminUserQueryService::userNotFound);
-        if (actor.role().isOrgTier() && user.getRole().isSysTier()) {
+        if (!StudentSupportPolicy.canReadUser(actor, user.getRole())) {
             // Withheld from the list, so withheld here too, or the id alone
             // reopens it. 404 as an organisation outside the actor's answers.
             throw userNotFound();
@@ -211,7 +190,6 @@ public class AdminUserQueryService {
         List<UserStatusChangeResponse> statusChanges = mapStatusChanges(
                 userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()),
                 actor.role().isOrgTier());
-        boolean profileVisible = actor.role().isSysTier();
 
         return new UserAdminDetailResponse(user.getPublicId(), user.getEmail(), user.getName(),
                 user.getRole(), managedOrgQueryService.of(user.getId()), user.getStatus(),
@@ -219,20 +197,12 @@ public class AdminUserQueryService {
                 user.getCreatedAt(),
                 user.getWithdrawnAt(), user.getDisabledAt(), user.getDisabledReason(),
                 memberships, activeVmCount, statusChanges,
-                // 학번 is a personal identifier, and this endpoint admits one
-                // role the audit log deliberately does not: ORG_VIEWER, which
-                // an organisation grants to ANOTHER organisation's staff. The
-                // endpoint is not org-scoped either, so filling these in for
-                // the org tier would hand every organisation's staff every
-                // account's 학번. Drawn at the same line the audit log draws
-                // (contract §3.10, v0.51.0) — the earlier reasoning that the
-                // list is the exposed surface was wrong: the detail is reached
-                // by the same six roles.
-                profileVisible ? user.getPosition() : null,
-                profileVisible ? user.getStudentNo() : null,
-                profileVisible ? user.getDepartmentCode() : null,
-                profileVisible ? profileOptionsService.departmentName(user.getDepartmentCode()) : null,
-                profileVisible ? user.getDepartmentOther() : null);
+                user.getPosition(), user.getStudentNo(), user.getDepartmentCode(),
+                profileOptionsService.departmentName(user.getDepartmentCode()), user.getDepartmentOther(),
+                new kr.ac.pusan.pickle.admin.dto.AdminUserSupportCapabilitiesResponse(
+                        StudentSupportPolicy.canReadUser(actor, user.getRole()),
+                        StudentSupportPolicy.canCorrectProfile(actor, user.getRole()),
+                        StudentSupportPolicy.canEnableAccount(actor)));
     }
 
     /**
@@ -320,20 +290,7 @@ public class AdminUserQueryService {
                 "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다.");
     }
 
-    /**
-     * The org filter, for every admin tier alike.
-     *
-     * <p><b>The account directory is the one admin surface that is not scoped</b>
-     * (operator decision, 2026-08-25). Everything else the org tier reads is
-     * confined to the organisations it holds a role in; this is not, because org
-     * membership is derived from the resources a workspace holds, so a person
-     * who has never requested anything belongs to no organisation and was
-     * visible to nobody. A student may be supported by any organisation and may
-     * write to one before requesting anything, so every organisation's staff can
-     * find them. The {@code orgId} parameter narrows to an organisation's
-     * derived members for all admin tiers alike; an id no organisation has
-     * filters to nothing, as a non-matching number did.
-     */
+    /** Optional derived institution-membership filter, independent of support authorization. */
     private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null : jdbcTemplate.query(
                 "select id from orgs where public_id = ?",

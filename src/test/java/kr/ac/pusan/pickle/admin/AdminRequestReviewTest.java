@@ -75,12 +75,12 @@ class AdminRequestReviewTest {
         context(actor(UserRole.ORG_VIEWER), current).andExpect(status().isOk())
                 .andExpect(jsonPath("$.orgId").value(pub("orgs", org).toString()))
                 .andExpect(jsonPath("$.vm.applicantResources.activeVms[?(@.id == '%s')].canReadDetail".formatted(pub("vms", own))).value(true))
-                .andExpect(jsonPath("$.vm.applicantResources.activeVms[?(@.id == '%s')].canReadDetail".formatted(pub("vms", foreign))).value(false))
+                .andExpect(jsonPath("$.vm.applicantResources.activeVms[?(@.id == '%s')].canReadDetail".formatted(pub("vms", foreign))).value(true))
                 .andExpect(jsonPath("$.vm.applicantResources.activeVms[?(@.id == '%s')].orgId".formatted(pub("vms", foreign))).value(pub("orgs", otherOrg).toString()));
         context(actor(UserRole.SYS_VIEWER), current).andExpect(status().isOk())
                 .andExpect(jsonPath("$.vm.applicantResources.activeVms[?(@.id == '%s')].canReadDetail".formatted(pub("vms", foreign))).value(true));
         User other = actor(UserRole.ORG_ADMIN);
-        context(other, request(otherOrg, "범위 밖")).andExpect(status().isNotFound());
+        context(other, request(otherOrg, "범위 밖")).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("select count(*) from resource_access_grants where resource_id=? and resource_type='VM'", Long.class, foreign)).isZero();
     }
 
@@ -216,7 +216,7 @@ class AdminRequestReviewTest {
         }
         User outsider = user(UserRole.ORG_ADMIN);
         SeedFixtures.grantOrgRole(jdbc, outsider.getId(), otherOrg, UserRole.ORG_ADMIN);
-        context(outsider, current).andExpect(status().isNotFound());
+        context(outsider, current).andExpect(status().isOk());
         mvc.perform(get("/api/v1/admin/domains/" + pub("domains", issued) + "/records")
                 .header("Authorization", "Bearer " + token(actor(UserRole.ORG_VIEWER)))).andExpect(status().isOk());
         long domainCount = count("domains"), grantCount = count("resource_access_grants"), jobCount = count("jobrunr_jobs");
@@ -260,7 +260,7 @@ class AdminRequestReviewTest {
         SeedFixtures.grantOrgRole(jdbc, outsider.getId(), otherOrg, UserRole.ORG_ADMIN);
         for (User denied : List.of(outsider, user(UserRole.ORG_VIEWER))) {
             mvc.perform(get("/api/v1/admin/domains/" + domainId).header("Authorization", "Bearer " + token(denied)))
-                    .andExpect(status().isNotFound());
+                    .andExpect(status().isOk());
         }
         mvc.perform(get("/api/v1/admin/domains/" + UUID.randomUUID()).header("Authorization", "Bearer " + token(sys)))
                 .andExpect(status().isNotFound());
@@ -368,7 +368,7 @@ class AdminRequestReviewTest {
                 .andExpect(jsonPath("$.content[0].id").value(pub("requests", matching).toString()));
         mvc.perform(get("/api/v1/admin/requests").param("q", prefix).param("reqIndefinite", "true")
                 .header("Authorization", "Bearer " + token(actor(UserRole.ORG_VIEWER))))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
         String hiddenNumber = "H" + UUID.randomUUID().toString().replace("-", "").substring(0,9);
         applicant.setProfile(UserPosition.STUDENT_UNDERGRAD, hiddenNumber, null, null); users.saveAndFlush(applicant);
         mvc.perform(get("/api/v1/admin/requests").param("q", hiddenNumber).header("Authorization", "Bearer " + token(sys)))

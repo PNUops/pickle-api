@@ -36,7 +36,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
-/** Support reads preserve scoped resource visibility and observe actual claim outcomes. */
+/** Support reads span institutions and observe actual claim outcomes. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -66,7 +66,7 @@ class AdminUserSupportTest {
     }
 
     @Test
-    void allSixReadRolesKeepDirectoryRelationsAndScopeResourceResults() throws Exception {
+    void allSixReadRolesReadGlobalRelationsAndResourceResults() throws Exception {
         member(workspace, target, "OWNER");
         long ownVm = vm(workspace, org);
         long foreignVm = vm(workspace, foreignOrg);
@@ -75,11 +75,11 @@ class AdminUserSupportTest {
             User actor = actor(role);
             read(actor, "").andExpect(status().isOk())
                     .andExpect(jsonPath("$.memberships[0].workspaceId").value(pub("workspaces", workspace).toString()))
-                    .andExpect(jsonPath("$.resources.length()").value(role.isOrgTier() ? 1 : 2))
+                    .andExpect(jsonPath("$.resources.length()").value(2))
                     .andExpect(jsonPath("$.resources[?(@.id == '%s')]".formatted(pub("vms", ownVm))).exists())
-                    .andExpect(jsonPath("$.requests.length()").value(role.isOrgTier() ? 1 : 2));
+                    .andExpect(jsonPath("$.requests.length()").value(2));
             if (role.isOrgTier()) {
-                diagnose(actor, foreignVm).andExpect(status().isNotFound());
+                diagnose(actor, foreignVm).andExpect(status().isOk());
             }
         }
         read(target, "").andExpect(status().isForbidden());
@@ -87,7 +87,7 @@ class AdminUserSupportTest {
     }
 
     @Test
-    void multipleInstitutionRolesDoNotWidenOtherInstitutionsOrRevocation() throws Exception {
+    void globalInstitutionReadsDoNotWidenRevocation() throws Exception {
         member(workspace, target, "MEMBER");
         long first = vm(workspace, org);
         long second = vm(workspace, foreignOrg);
@@ -100,7 +100,8 @@ class AdminUserSupportTest {
         diagnose(actor, second).andExpect(status().isOk()).andExpect(jsonPath("$.canRevoke").value(false));
         read(actor, "?orgId=" + pub("orgs", org)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.resources.length()").value(1));
-        read(actor(UserRole.ORG_VIEWER), "?orgId=" + pub("orgs", foreignOrg)).andExpect(status().isNotFound());
+        read(actor(UserRole.ORG_VIEWER), "?orgId=" + pub("orgs", foreignOrg)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.resources.length()").value(1));
     }
 
     @Test
@@ -148,7 +149,7 @@ class AdminUserSupportTest {
     }
 
     @Test
-    void pendingInvitationIdentityIsApproverOnlyAndClaimedIdentityIsReadable() throws Exception {
+    void allSupportReadersResolvePendingAndClaimedInvitationIdentities() throws Exception {
         String studentNo = "T" + UUID.randomUUID().toString().replace("-", "").substring(0, 9);
         target.setProfile(UserPosition.STUDENT_UNDERGRAD, studentNo, null, null);
         target.setStatus(UserStatus.DISABLED);
@@ -156,19 +157,20 @@ class AdminUserSupportTest {
         long invitation = invitation(studentNo, null);
         long request = request(workspace, org);
         recipient(request, invitation);
-        read(actor(UserRole.ORG_VIEWER), "").andExpect(status().isOk())
-                .andExpect(jsonPath("$.invitationsVisible").value(false)).andExpect(jsonPath("$.invitations").isEmpty())
-                .andExpect(jsonPath("$.requests").isEmpty());
-        read(actor(UserRole.ORG_MANAGER), "").andExpect(status().isOk())
-                .andExpect(jsonPath("$.requests").isEmpty()).andExpect(jsonPath("$.invitations").isEmpty());
+        for (UserRole role : List.of(UserRole.ORG_VIEWER, UserRole.ORG_MANAGER, UserRole.ORG_ADMIN,
+                UserRole.SYS_VIEWER, UserRole.SYS_MANAGER)) {
+            read(actor(role), "").andExpect(status().isOk())
+                    .andExpect(jsonPath("$.invitationsVisible").value(true))
+                    .andExpect(jsonPath("$.invitations.length()").value(1))
+                    .andExpect(jsonPath("$.requests.length()").value(1));
+        }
         long emailInvitation = invitation(null, target.getEmail());
         long emailRequest = request(workspace, org);
         recipient(emailRequest, emailInvitation);
         read(actor(UserRole.ORG_MANAGER), "").andExpect(status().isOk())
-                .andExpect(jsonPath("$.requests.length()").value(1))
-                .andExpect(jsonPath("$.requests[0].id").value(pub("requests", emailRequest).toString()))
-                .andExpect(jsonPath("$.invitations.length()").value(1))
-                .andExpect(jsonPath("$.invitations[0].matchedBy").value("EMAIL"));
+                .andExpect(jsonPath("$.requests.length()").value(2))
+                .andExpect(jsonPath("$.requests[?(@.id == '%s')]".formatted(pub("requests", emailRequest))).exists())
+                .andExpect(jsonPath("$.invitations.length()").value(2));
         read(sysAdmin, "").andExpect(status().isOk())
                 .andExpect(jsonPath("$.requests.length()").value(2)).andExpect(jsonPath("$.invitations.length()").value(2));
         mvc.perform(post(path(target) + "/enable").header("Authorization", "Bearer " + token(sysAdmin)))
@@ -186,14 +188,18 @@ class AdminUserSupportTest {
         jdbc.update("update requests set status='APPROVED' where id=?", request);
         recipient(request, invitation);
         Map<String, Object> proposed = Map.of("position", "STUDENT_UNDERGRAD", "studentNo", " " + studentNo.toLowerCase() + " ");
-        preview(sysAdmin, Map.of("action", "PROFILE", "profile", proposed)).andExpect(status().isOk())
+        long queuedBefore = jdbc.queryForObject("select count(*) from jobrunr_jobs", Long.class);
+        long recipientsBefore = jdbc.queryForObject("select count(*) from request_recipients", Long.class);
+        preview(actor(UserRole.ORG_MANAGER), Map.of("action", "PROFILE", "profile", proposed)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.claimsPossible").value(true))
                 .andExpect(jsonPath("$.invitations[0].recipients[0].projectedStatus").value("QUEUED"))
                 .andExpect(jsonPath("$.invitations[0].recipients[0].orgId").value(pub("orgs", org).toString()));
         assertThat(jdbc.queryForObject("select status from workspace_invitations where id=?", String.class, invitation)).isEqualTo("PENDING");
         assertThat(jdbc.queryForObject("select count(*) from workspace_members where workspace_id=? and user_id=?", Long.class, workspace, target.getId())).isZero();
         assertThat(users.findById(target.getId()).orElseThrow().getStudentNo()).isNull();
-        mvc.perform(patch(path(target) + "/profile").header("Authorization", "Bearer " + token(sysAdmin))
+        assertThat(jdbc.queryForObject("select count(*) from jobrunr_jobs", Long.class)).isEqualTo(queuedBefore);
+        assertThat(jdbc.queryForObject("select count(*) from request_recipients", Long.class)).isEqualTo(recipientsBefore);
+        mvc.perform(patch(path(target) + "/profile").header("Authorization", "Bearer " + token(actor(UserRole.ORG_ADMIN)))
                 .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(proposed))).andExpect(status().isOk());
         read(sysAdmin, "").andExpect(status().isOk()).andExpect(jsonPath("$.invitations[0].status").value("ACCEPTED"))
                 .andExpect(jsonPath("$.requests[0].recipientStatus").value("QUEUED"))
@@ -237,7 +243,7 @@ class AdminUserSupportTest {
     }
 
     @Test
-    void workspaceRequestAndDomainFiltersCountOnlySelectedScopedRows() throws Exception {
+    void workspaceRequestAndDomainFiltersCountGlobalMatchingRows() throws Exception {
         long other = workspace();
         request(workspace, org);
         request(workspace, foreignOrg);
@@ -249,7 +255,7 @@ class AdminUserSupportTest {
         for (String list : List.of("requests", "domains")) {
             mvc.perform(get("/api/v1/admin/" + list).param("workspaceId", pub("workspaces", workspace).toString())
                     .header("Authorization", "Bearer " + token)).andExpect(status().isOk())
-                    .andExpect(jsonPath("$.totalElements").value(1)).andExpect(jsonPath("$.content.length()").value(1));
+                    .andExpect(jsonPath("$.totalElements").value(2)).andExpect(jsonPath("$.content.length()").value(2));
             mvc.perform(get("/api/v1/admin/" + list).param("workspaceId", SeedFixtures.UNKNOWN_ID.toString())
                     .header("Authorization", "Bearer " + token)).andExpect(status().isOk())
                     .andExpect(jsonPath("$.totalElements").value(0));
@@ -259,20 +265,34 @@ class AdminUserSupportTest {
     @Test
     void allResourceTypesKeepActualStatusesAndDomainCountsIncludeVmNames() throws Exception {
         member(workspace, target, "MEMBER");
-        long resource = vm(workspace, org);
-        domain(workspace, org);
+        long resource = vm(workspace, foreignOrg);
+        long externalDomain = domain(workspace, foreignOrg);
         jdbc.update("insert into domains(workspace_id,org_id,vm_id,kind,fqdn,status,verification_token) values(?,?,?,'CUSTOM',?,'PENDING','support-fixture-token')",
-                workspace, org, resource, "custom-" + UUID.randomUUID() + ".example.com");
-        long keyRequest = RequestFixtures.insertLlmKeyRequest(jdbc, workspace, org, owner.getId(), "지원 LLM");
-        jdbc.update("insert into llm_api_keys(workspace_id,org_id,request_id,name,created_by) values(?,?,?,'지원 키',?)", workspace, org, keyRequest, owner.getId());
+                workspace, foreignOrg, resource, "custom-" + UUID.randomUUID() + ".example.com");
+        long keyRequest = RequestFixtures.insertLlmKeyRequest(jdbc, workspace, foreignOrg, owner.getId(), "지원 LLM");
+        long key = jdbc.queryForObject("insert into llm_api_keys(workspace_id,org_id,request_id,name,created_by) values(?,?,?,'지원 키',?) returning id", Long.class, workspace, foreignOrg, keyRequest, owner.getId());
         long gpuRequest = jdbc.queryForObject("insert into requests(resource_type,workspace_id,org_id,requester_id,purpose,display_name) values('GPU',?,?,?,'지원 GPU','지원 GPU') returning id",
-                Long.class, workspace, org, owner.getId());
+                Long.class, workspace, foreignOrg, owner.getId());
         jdbc.update("insert into gpu_request_details(request_id,lease_hours) values(?,1)", gpuRequest);
-        jdbc.update("insert into gpu_allocations(request_id,workspace_id,org_id,name,granted_lease_hours) values(?,?,?,'지원 GPU',1)", gpuRequest, workspace, org);
-        read(sysAdmin, "").andExpect(status().isOk()).andExpect(jsonPath("$.resources.length()").value(4))
+        long allocation = jdbc.queryForObject("insert into gpu_allocations(request_id,workspace_id,org_id,name,granted_lease_hours) values(?,?,?,'지원 GPU',1) returning id", Long.class, gpuRequest, workspace, foreignOrg);
+        Map<String, UUID> resources = Map.of("vms", pub("vms", resource), "llm/keys", pub("llm_api_keys", key),
+                "domains", pub("domains", externalDomain), "gpu-allocations", pub("gpu_allocations", allocation));
+        for (UserRole role : List.of(UserRole.ORG_VIEWER, UserRole.ORG_MANAGER, UserRole.ORG_ADMIN)) {
+            read(actor(role), "").andExpect(status().isOk()).andExpect(jsonPath("$.resources.length()").value(4))
                 .andExpect(jsonPath("$.resources[?(@.type == 'LLM_API_KEY')].status").value("PENDING"))
                 .andExpect(jsonPath("$.resources[?(@.type == 'GPU')].status").value("QUEUED"))
                 .andExpect(jsonPath("$.memberships[0].resourceCounts[?(@.type == 'DOMAIN')].count").value(2));
+            String actorToken = token(actor(role));
+            for (Map.Entry<String, UUID> entry : resources.entrySet()) {
+                String path = "/api/v1/admin/" + entry.getKey();
+                mvc.perform(get(path).param("workspaceId", pub("workspaces", workspace).toString())
+                                .header("Authorization", "Bearer " + actorToken))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(entry.getValue())).exists());
+                mvc.perform(get(path + "/" + entry.getValue()).header("Authorization", "Bearer " + actorToken))
+                        .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(entry.getValue().toString()));
+            }
+        }
     }
 
     @Test
@@ -310,7 +330,9 @@ class AdminUserSupportTest {
                 .andExpect(jsonPath("$.requests.length()").value(2))
                 .andExpect(jsonPath("$.requests[?(@.recipientStatus == 'SKIPPED_INELIGIBLE')].id").value(pub("requests", request).toString()))
                 .andExpect(jsonPath("$.requests[?(@.recipientStatus == 'QUEUED')].id").value(pub("requests", request).toString()))
-                .andExpect(jsonPath("$.invitations").isEmpty());
+                .andExpect(jsonPath("$.invitations.length()").value(2))
+                .andExpect(jsonPath("$.invitations[0].status").value("ACCEPTED"))
+                .andExpect(jsonPath("$.invitations[1].status").value("ACCEPTED"));
     }
 
     @Test
@@ -355,6 +377,23 @@ class AdminUserSupportTest {
                 .andExpect(jsonPath("$.reasons[0]").value("RESOURCE_ENDED"));
     }
 
+    @Test
+    void supportInstitutionFiltersIncludeUnmanagedDisabledInstitutionsAndDenyInventory() throws Exception {
+        jdbc.update("update orgs set status='DISABLED' where id=?", foreignOrg);
+        for (UserRole role : List.of(UserRole.ORG_VIEWER, UserRole.ORG_MANAGER, UserRole.ORG_ADMIN)) {
+            String actorToken = token(actor(role));
+            mvc.perform(get("/api/v1/admin/support-orgs").header("Authorization", "Bearer " + actorToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[?(@.id == '%s')].status".formatted(pub("orgs", foreignOrg))).value("DISABLED"));
+            for (String inventory : List.of("nodes", "gpus")) {
+                mvc.perform(get("/api/v1/admin/" + inventory).header("Authorization", "Bearer " + actorToken))
+                        .andExpect(status().isForbidden());
+            }
+        }
+        mvc.perform(get("/api/v1/admin/support-orgs").header("Authorization", "Bearer " + token(target)))
+                .andExpect(status().isForbidden());
+    }
+
     private User user(UserRole role, UserStatus status) {
         User user = new User("support-" + UUID.randomUUID() + "@pusan.ac.kr", "{test-no-login}", "지원 계정");
         user.setRole(role); user.setStatus(status); user.setEmailVerifiedAt(Instant.now());
@@ -393,8 +432,8 @@ class AdminUserSupportTest {
                 """, Long.class, node, ws, orgId, request, name, name, image);
     }
 
-    private void domain(long ws, long orgId) {
-        jdbc.update("insert into domains(workspace_id,org_id,kind,fqdn,root_domain,status,renew_due_at) values(?,?,'EXTERNAL',?,'pusan.dev','ACTIVE',now()+interval '30 days')", ws, orgId, "support-" + UUID.randomUUID() + ".pusan.dev");
+    private long domain(long ws, long orgId) {
+        return jdbc.queryForObject("insert into domains(workspace_id,org_id,kind,fqdn,root_domain,status,renew_due_at) values(?,?,'EXTERNAL',?,'pusan.dev','ACTIVE',now()+interval '30 days') returning id", Long.class, ws, orgId, "support-" + UUID.randomUUID() + ".pusan.dev");
     }
 
     private void grant(long resource, User user, String role) {

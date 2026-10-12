@@ -279,18 +279,19 @@ class AnnouncementTest {
 
     @Test
     void adminWorkspacePickerFollowsTheWorkspaceGate() throws Exception {
-        // ORG_ADMIN: org-linked workspaces only. memberCount counts ACTIVE members
+        // Workspace metadata is global. memberCount still counts ACTIVE members
         // (the fan-out basis) — the DISABLED member is not part of it
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", mixedWorkspaceId) + "\' && @.memberCount==2)]")
                         .exists())
-                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").doesNotExist());
-        // cross-org filter → 404 (existence stays private)
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").exists());
+        // A foreign institution is a metadata filter; announcement sending remains scoped.
         mockMvc.perform(get("/api/v1/admin/workspaces?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").exists());
         // SYS_ADMIN: all workspaces without a filter; the org filter applies the gate
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + sysAdminToken))
@@ -305,7 +306,7 @@ class AnnouncementTest {
                 .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").exists())
                 .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", mixedWorkspaceId) + "\')]").doesNotExist());
         // all=true: every live workspace for the org tier too (the admin request
-        // screen); the default above stays the announcement picker's scope
+        // screen); announcement writes independently validate their actual institution
         mockMvc.perform(get("/api/v1/admin/workspaces?all=true")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())

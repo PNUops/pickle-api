@@ -22,7 +22,6 @@ import kr.ac.pusan.pickle.admin.dto.AdminUserSupportResponse;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.request.RequestRecipientStatus;
 import kr.ac.pusan.pickle.request.RequestStatus;
@@ -40,7 +39,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** A directory relationship never widens the institution scope of a resource or request. */
+/** Global support metadata resolves directory relationships without granting resource access. */
 @Service
 public class AdminUserSupportQueryService {
     private static final String RESOURCE_ROWS = """
@@ -105,7 +104,7 @@ public class AdminUserSupportQueryService {
                             WorkspaceKind.valueOf(rs.getString("kind")),
                             WorkspaceMemberRole.valueOf(rs.getString("role")), counts);
                 }, user.getId());
-        boolean invitationsVisible = approver(actor);
+        boolean invitationsVisible = StudentSupportPolicy.canRead(actor);
         return new AdminUserSupportResponse(userId, now, memberships, invitationsVisible,
                 invitationsVisible ? invitations(actor, user) : List.of(), requests(actor, user, scope), resources);
     }
@@ -131,14 +130,14 @@ public class AdminUserSupportQueryService {
 
     User requireUser(AuthenticatedUser actor, UUID userId) {
         return users.findByPublicId(userId)
-                .filter(user -> !actor.role().isOrgTier() || !user.getRole().isSysTier())
+                .filter(user -> StudentSupportPolicy.canReadUser(actor, user.getRole()))
                 .orElseThrow(AdminUserSupportQueryService::notFound);
     }
 
     private OrgScope scope(AuthenticatedUser actor, @Nullable UUID orgId) {
         Long internal = orgId == null ? null : jdbc.query("select id from orgs where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
-        return AdminOrgScope.read(actor, orgId, internal);
+        return StudentSupportPolicy.filterScope(actor, orgId, internal);
     }
 
     private List<ResourceRow> resources(OrgScope scope, Instant now, String predicate, Object... args) {
@@ -200,7 +199,7 @@ public class AdminUserSupportQueryService {
     }
 
     private List<AdminUserSupportResponse.AdminUserSupportInvitation> invitations(AuthenticatedUser actor, User user) {
-        String studentNo = actor.role() == UserRole.SYS_ADMIN ? user.getStudentNo() : null;
+        String studentNo = StudentSupportPolicy.canRead(actor) ? user.getStudentNo() : null;
         return jdbc.query("""
                 select i.public_id, w.public_id as workspace_public_id, w.name, w.kind, i.role,
                        i.status, i.accepted_at,
@@ -220,9 +219,8 @@ public class AdminUserSupportQueryService {
     }
 
     private List<AdminUserSupportResponse.AdminUserSupportRelatedRequest> requests(AuthenticatedUser actor, User user, OrgScope scope) {
-        String studentNo = actor.role() == UserRole.SYS_ADMIN ? user.getStudentNo() : null;
-        OrgScope pendingScope = actor.role() == UserRole.SYS_ADMIN ? OrgScope.unrestricted()
-                : actor.role().isOrgTier() ? OrgScope.of(actor.operatedOrgIds()) : OrgScope.nothing();
+        String studentNo = StudentSupportPolicy.canRead(actor) ? user.getStudentNo() : null;
+        OrgScope pendingScope = StudentSupportPolicy.canRead(actor) ? OrgScope.unrestricted() : OrgScope.nothing();
         return jdbc.query("""
                 select r.public_id, r.resource_type, r.status, w.public_id as workspace_public_id,
                        w.name as workspace_name, o.public_id as org_public_id, o.name as org_name,
@@ -259,10 +257,6 @@ public class AdminUserSupportQueryService {
                         rs.getObject("resource_public_id", UUID.class), rs.getObject("granted_end_date", LocalDate.class),
                         rs.getString("reason")), user.getId(), user.getId(), user.getId(), pendingScope.arrayParam(), pendingScope.arrayParam(), user.getEmail(), studentNo,
                 studentNo, scope.arrayParam(), scope.arrayParam(), user.getId(), user.getId());
-    }
-
-    static boolean approver(AuthenticatedUser actor) {
-        return actor.role() == UserRole.SYS_ADMIN || actor.role() == UserRole.ORG_ADMIN || actor.role() == UserRole.ORG_MANAGER;
     }
 
     static @Nullable Instant instant(ResultSet rs, String name) throws SQLException {

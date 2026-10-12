@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle.admin;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -28,7 +30,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * {@code GET /admin/vms} per contract: ORG_ADMIN hard-scoped to their own org
+ * {@code GET /admin/vms} per contract: global support metadata with optional institution filters
  * (another org in the orgId filter answers 404 so cross-org existence stays
  * private), SYS_ADMIN across orgs, the orgId/workspaceId/status filters, paging,
  * and the VmSummary shape. Assertions are per-id (the database is shared
@@ -91,34 +93,33 @@ class AdminVmsTest {
     }
 
     @Test
-    void orgAdminIsPinnedToTheirOrgAndCrossOrgFilterAnswers404() throws Exception {
+    void orgAdminReadsGlobalMetadataAndMayFilterAnyInstitution() throws Exception {
         // users have no admin VM list → 403 ACCESS_DENIED
         mockMvc.perform(get("/api/v1/admin/vms").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
-        // own org only, with or without the explicit own-org filter
+        // Global metadata by default; an institution remains an optional filter.
         mockMvc.perform(get("/api/v1/admin/vms").header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmRunningA1)).exists())
                 .andExpect(jsonPath(byId(vmStoppedA2)).exists())
-                .andExpect(jsonPath(byId(vmRunningB)).doesNotExist());
+                .andExpect(jsonPath(byId(vmRunningB)).exists());
         mockMvc.perform(get("/api/v1/admin/vms?orgId=" + org.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmRunningA1)).exists());
 
-        // another org in the filter → 404, never 403 (existence stays private)
+        // Any institution can be selected as a support filter.
         mockMvc.perform(get("/api/v1/admin/vms?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+                .andExpect(status().isOk());
 
-        // and the other org's admin sees the mirror image
+        // An administrator of another institution sees the same metadata.
         mockMvc.perform(get("/api/v1/admin/vms").header("Authorization", "Bearer " + otherOrgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmRunningB)).exists())
-                .andExpect(jsonPath(byId(vmRunningA1)).doesNotExist());
+                .andExpect(jsonPath(byId(vmRunningA1)).exists());
     }
 
     @Test
@@ -312,6 +313,38 @@ class AdminVmsTest {
     }
 
     /** The public identifier of a row this test set up through direct SQL. */
+    @Test
+    void foreignSupportDetailMasksDomainControlValuesAndKeepsCredentialActionsClosed() throws Exception {
+        String verification = "proof-" + UUID.randomUUID();
+        long domain = jdbcTemplate.queryForObject("""
+                insert into domains(vm_id,workspace_id,org_id,kind,fqdn,status,verification_token)
+                values(?,?,?,'CUSTOM',?,'ACTIVE',?) returning id
+                """, Long.class, vmRunningB, workspaceB, otherOrg.getId(),
+                "proof-" + UUID.randomUUID() + ".example.com", verification);
+        jdbcTemplate.update("insert into routes(domain_id,target_port,status,generation) values(?,8080,'APPLIED',1)", domain);
+        String path = "/api/v1/admin/vms/" + pub("vms", vmRunningB);
+        mockMvc.perform(get(path).header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.publications[0].domain.verification").isEmpty())
+                .andExpect(jsonPath("$.passwordRevealAllowed").value(false))
+                .andExpect(jsonPath("$.accessAllowed").value(false))
+                .andExpect(jsonPath("$.powerControlAllowed").value(false))
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString()).doesNotContain(verification));
+        for (String token : java.util.List.of(otherOrgAdminToken, sysAdminToken)) {
+            mockMvc.perform(get(path).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.publications[0].domain.verification.token").value(verification));
+        }
+        mockMvc.perform(get("/api/v1/admin/routes").param("orgId", otherOrg.getPublicId().toString())
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.domainId == '%s')]".formatted(pub("domains", domain))).exists())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString()).doesNotContain(verification));
+        mockMvc.perform(get("/api/v1/admin/domains/" + pub("domains", domain) + "/records")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isNotFound());
+    }
+
     private UUID pub(String table, long id) {
         return SeedFixtures.publicId(jdbcTemplate, table, id);
     }

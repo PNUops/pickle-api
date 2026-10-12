@@ -86,9 +86,9 @@ public class AdminPublishingController {
     @GetMapping("/domains/{domainId}")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(operationId = "getAdminDomain", summary = "도메인 단건 열람",
-            description = "관리자에게 허용된 기관 범위에서 정확한 도메인 ID의 현재 저장 상태를 봅니다. "
+            description = "학생 지원 권한으로 정확한 도메인 ID의 현재 저장 metadata를 전역 조회합니다. "
                     + "목록과 같은 기간·해제·DNS 상태를 반환하며 외부 조회나 변경을 실행하지 않습니다. "
-                    + "삭제된 도메인과 접근할 수 없는 도메인은 404입니다.")
+                    + "삭제된 도메인과 기관·워크스페이스의 필수 식별 정보를 확인할 수 없는 도메인은 404입니다.")
     public AdminDomainView getAdminDomain(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId) {
         return adminPublishingService.getDomain(principal, domainId);

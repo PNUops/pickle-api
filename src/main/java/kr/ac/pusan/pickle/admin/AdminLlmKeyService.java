@@ -40,7 +40,6 @@ import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountSelectionService;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAllocationQuery;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgScope;
@@ -120,7 +119,7 @@ public class AdminLlmKeyService {
             LlmApiKeyStatus status, String query, int page, int size) {
         Long requestedOrgId = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        OrgScope scope = AdminOrgScope.read(actor, orgId, requestedOrgId);
+        OrgScope scope = StudentSupportPolicy.filterScope(actor, orgId, requestedOrgId);
         Long requestedWorkspaceId = workspaceId == null ? null
                 : workspaceRepository.findByPublicId(workspaceId).map(Workspace::getId).orElse(null);
         Long requestedRequestId = requestId == null ? null
@@ -592,8 +591,7 @@ public class AdminLlmKeyService {
      * are looking at one fact, and two computations of it would drift into two
      * answers about a fence.
      *
-     * <p>The institution scoping is this surface's own: an org-tier reviewer
-     * sees keys of the institutions they read, and a system-tier one sees all.
+     * <p>The institution scoping is this surface's own: every support reader sees key metadata across institutions.
      * Resource grants do not enter it, which is exactly why this is a separate
      * path rather than a widening of the holder's.
      */
@@ -614,8 +612,8 @@ public class AdminLlmKeyService {
      * the usage behind it is a guess.
      *
      * <p>The scoping is this surface's own, the same as the detail beside it:
-     * an org-tier reviewer sees keys of the institutions they read. Resource
-     * grants do not enter it.
+     * every support reader sees usage aggregates across institutions.
+     * Prompt and response content are not part of this projection.
      *
      * <p>The trend is the holder's own response, not a second query. The
      * breakdowns beside it are the part an administrator has and the holder
@@ -633,9 +631,7 @@ public class AdminLlmKeyService {
 
     private LlmApiKey requireReadable(AuthenticatedUser actor, UUID keyId) {
         LlmApiKey key = keyRepository.findByPublicId(keyId).orElseThrow(AdminLlmKeyService::notFound);
-        if (actor.role().isOrgTier() && !actor.reads(key.getOrgId())) {
-            throw notFound();
-        }
+        StudentSupportPolicy.requireRead(actor);
         return key;
     }
 

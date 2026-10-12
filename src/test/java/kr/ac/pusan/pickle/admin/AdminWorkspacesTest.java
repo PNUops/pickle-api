@@ -81,6 +81,17 @@ class AdminWorkspacesTest {
     }
 
     @Test
+    void legacyAllFlagExplicitlyBypassesTheInstitutionFilter() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/workspaces").param("orgId", SeedFixtures.UNKNOWN_ID.toString())
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk()).andExpect(jsonPath(bySlug()).doesNotExist());
+        mockMvc.perform(get("/api/v1/admin/workspaces").param("all", "true")
+                        .param("orgId", SeedFixtures.UNKNOWN_ID.toString())
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk()).andExpect(jsonPath(bySlug()).exists());
+    }
+
+    @Test
     void optionListCarriesKindAndCreatedAt() throws Exception {
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + sysAdminToken))

@@ -69,6 +69,6 @@ public class LlmKeyApprovalContextContributor implements ApprovalContextContribu
                 workspace == null ? "" : workspace.getName(), key.effectiveStatus(now),
                 key.getExpiresAt(), key.getRpm(), key.getTpm(), key.getConcurrency(),
                 key.getDailyTokens(), key.getCreditLimit(), key.getCreditLimitReset(),
-                key.isCreditAxisConnected(), org.getPublicId(), !actor.role().isOrgTier() || actor.reads(key.getOrgId()));
+                key.isCreditAxisConnected(), org.getPublicId(), StudentSupportPolicy.canRead(actor));
     }
 }

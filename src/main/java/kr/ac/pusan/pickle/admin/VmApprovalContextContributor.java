@@ -80,7 +80,7 @@ public class VmApprovalContextContributor implements ApprovalContextContributor 
 
     private static Resources resources(List<Vm> vms, Map<Long, Org> orgs, AuthenticatedUser actor) {
         return new Resources(vms.stream().map(vm -> VmBriefResponse.from(vm, orgs.get(vm.getOrgId()).getPublicId(),
-                        !actor.role().isOrgTier() || actor.reads(vm.getOrgId()))).toList(),
+                        StudentSupportPolicy.canRead(actor))).toList(),
                 ResourceTotalsResponse.of(vms));
     }
 

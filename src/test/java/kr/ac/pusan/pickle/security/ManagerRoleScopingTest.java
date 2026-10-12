@@ -91,16 +91,15 @@ class ManagerRoleScopingTest {
     // ── ORG_MANAGER: org-scoped like ORG_ADMIN ────────────────────────────────
 
     @Test
-    void orgManagerReadsOwnOrgAndMasksForeignOrgAs404() throws Exception {
+    void orgManagerReadsGlobalSupportMetadataAndRetainsForeignWriteGuards() throws Exception {
         // own-org request is visible; the foreign-org request is masked
         get("/api/v1/admin/requests/" + pub("requests", requestInOrgA), orgManagerAToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(pub("requests", requestInOrgA).toString()));
         get("/api/v1/admin/requests/" + pub("requests", requestInOrgB), orgManagerAToken)
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+                .andExpect(status().isOk());
         get("/api/v1/admin/requests/" + pub("requests", requestInOrgB) + "/context", orgManagerAToken)
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
 
         // deciding a foreign-org request is masked as 404, not 403 (existence privacy)
         postJson("/api/v1/admin/requests/" + pub("requests", requestInOrgB) + "/reject", orgManagerAToken,
@@ -109,7 +108,7 @@ class ManagerRoleScopingTest {
 
         // the admin VMs and audit surfaces reject a foreign orgId with 404
         get("/api/v1/admin/vms?orgId=" + orgB.getPublicId(), orgManagerAToken)
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
         get("/api/v1/admin/audit?orgId=" + orgB.getPublicId(), orgManagerAToken)
                 .andExpect(status().isNotFound());
         // the account directory is the exception: a person may be supported by
@@ -123,7 +122,7 @@ class ManagerRoleScopingTest {
         get("/api/v1/admin/requests", orgManagerAToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", requestInOrgA))).exists())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", requestInOrgB))).doesNotExist());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", requestInOrgB))).exists());
     }
 
     @Test

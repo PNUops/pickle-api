@@ -134,7 +134,8 @@ public class AdminPublishingService {
     @Transactional(readOnly = true)
     public PageResponse<AdminRouteView> listRoutes(AuthenticatedUser actor, UUID orgId,
             RouteStatus status, int page, int size) {
-        OrgScope scope = scopedOrgId(actor, orgId);
+        Long requested = orgId == null ? null : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
+        OrgScope scope = kr.ac.pusan.pickle.admin.StudentSupportPolicy.filterScope(actor, orgId, requested);
         Page<Route> routes = routeRepository.findAdmin(orgFilter(scope), name(status), page(page, size));
         Context ctx = context(routes.getContent().stream()
                 .map(r -> domainRepository.findById(r.getDomainId()).orElse(null))
@@ -166,7 +167,8 @@ public class AdminPublishingService {
     @Transactional(readOnly = true)
     public PageResponse<AdminDomainView> listDomains(AuthenticatedUser actor, UUID orgId,
             UUID workspaceId, DomainKind kind, DomainStatus status, int page, int size) {
-        OrgScope scope = scopedOrgId(actor, orgId);
+        Long requested = orgId == null ? null : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
+        OrgScope scope = kr.ac.pusan.pickle.admin.StudentSupportPolicy.filterScope(actor, orgId, requested);
         Long internalWorkspace = workspaceId == null ? null : workspaceRepository.findByPublicId(workspaceId)
                 .map(Workspace::getId).orElse(-1L);
         Page<Domain> domains = domainRepository.findAdmin(orgFilter(scope), internalWorkspace, name(kind), name(status),
@@ -261,7 +263,7 @@ public class AdminPublishingService {
      */
     @Transactional(readOnly = true)
     public List<DnsRecordSetView> listRecords(AuthenticatedUser actor, UUID domainId) {
-        Domain domain = requireReadableDomain(actor, domainId);
+        Domain domain = requireScopedDomain(actor, domainId, true);
         return recordRepository
                 .findByDomainIdAndStatusNotOrderByIdAsc(domain.getId(), DomainRecordStatus.REMOVED)
                 .stream()
@@ -573,7 +575,11 @@ public class AdminPublishingService {
      * write question hides an organisation's own rows from its own viewer.</p>
      */
     private Domain requireReadableDomain(AuthenticatedUser actor, UUID domainId) {
-        return requireScopedDomain(actor, domainId, true);
+        Domain domain = domainRepository.findByPublicId(domainId)
+                .orElseThrow(AdminPublishingService::domainNotFound);
+        if (domain.getStatus() == DomainStatus.REMOVED) { throw domainNotFound(); }
+        kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireRead(actor);
+        return domain;
     }
 
     private Domain requireScopedDomain(AuthenticatedUser actor, UUID domainId, boolean forRead) {

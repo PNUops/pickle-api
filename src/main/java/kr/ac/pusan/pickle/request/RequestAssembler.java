@@ -113,7 +113,7 @@ public class RequestAssembler {
      * The details as {@code viewer} may see them. The only part that depends
      * on who is looking is where each invitation of a many-person request was
      * sent: the requester, the workspace's owners and the organisation's
-     * approvers see it, everyone else sees only that somebody is invited.
+     * support readers see it, everyone else sees only that somebody is invited.
      */
     public List<RequestDetailResponse> toDetails(List<Request> requests,
             kr.ac.pusan.pickle.security.@Nullable AuthenticatedUser viewer) {
@@ -126,7 +126,7 @@ public class RequestAssembler {
                 recipientService.responses(requests, request -> viewer != null
                         && (viewer.id().equals(request.getRequesterId())
                                 || ownedWorkspaces.contains(request.getWorkspaceId())
-                                || RequestApprovers.mayApprove(viewer, request.getOrgId())));
+                                || kr.ac.pusan.pickle.admin.StudentSupportPolicy.canRead(viewer)));
         Map<Long, RequestReview> reviews = reviewRepository
                 .findByRequestIdIn(requests.stream().map(Request::getId).toList())
                 .stream()
