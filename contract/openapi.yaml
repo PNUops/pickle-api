@@ -68,6 +68,26 @@ components:
       - "granteeType"
       - "role"
       type: "object"
+    AdminApprovalImageReference:
+      properties:
+        id:
+          format: "uuid"
+          type: "string"
+        name:
+          type: "string"
+        selectableNow:
+          description: "동일 revision의 호환 ACTIVE replica가 ACTIVE 노드에 있는지. 이 값은 개별 VM\
+            \ 용량이나 실제 생성 완료를 보장하지 않습니다."
+          type: "boolean"
+        version:
+          format: "int32"
+          type: "integer"
+      required:
+      - "id"
+      - "name"
+      - "selectableNow"
+      - "version"
+      type: "object"
     AdminBulkAccessAction:
       enum:
       - "GRANT"
@@ -1702,6 +1722,76 @@ components:
       - "name"
       - "tokenIssued"
       type: "object"
+    AdminRequestGeneratedResourceResponse:
+      properties:
+        canReadDetail:
+          description: "현재 종류별 관리자 상세 조회 가능 여부. 도메인의 REMOVED 이력은 목록 범위에서 관측하되 상세는\
+            \ 열리지 않습니다."
+          type: "boolean"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        id:
+          format: "uuid"
+          type: "string"
+        name:
+          type: "string"
+        nodeId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        nodeName:
+          type:
+          - "string"
+          - "null"
+        orgId:
+          format: "uuid"
+          type: "string"
+        recipientId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        recordUpdatedAt:
+          description: "서버 기록이 갱신된 시각. 외부 시스템 적용이나 연결 성공을 측정한 시각이 아닙니다."
+          format: "date-time"
+          type: "string"
+        releasedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        renewDueAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        reservedUntil:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        state:
+          description: "종류별 서버 상태. VM은 CREATING/ERROR/RUNNING 등 VM 상태, LLM 키는 만료를\
+            \ 반영한 상태, GPU는 할당 상태, 도메인은 원래 행의 상태입니다. 서로 다른 상태를 완료 하나로 합치지 않습니다."
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "canReadDetail"
+      - "createdAt"
+      - "id"
+      - "name"
+      - "orgId"
+      - "recordUpdatedAt"
+      - "state"
+      - "type"
+      - "workspaceId"
+      type: "object"
     AdminRequestPeriodResponse:
       properties:
         displayName:
@@ -2253,6 +2343,80 @@ components:
       - "resources"
       - "userId"
       type: "object"
+    AdminVmPlacementCandidate:
+      properties:
+        fitsOneNow:
+          type: "boolean"
+        nodeId:
+          format: "uuid"
+          type: "string"
+        nodeName:
+          type: "string"
+      required:
+      - "fitsOneNow"
+      - "nodeId"
+      - "nodeName"
+      type: "object"
+    AdminVmPlacementPreviewRequest:
+      properties:
+        diskGb:
+          format: "int32"
+          minimum: 1
+          type: "integer"
+        imageId:
+          format: "uuid"
+          type: "string"
+        memoryMb:
+          format: "int32"
+          minimum: 256
+          type: "integer"
+        orgId:
+          format: "uuid"
+          type: "string"
+        vcpu:
+          format: "int32"
+          minimum: 1
+          type: "integer"
+      required:
+      - "diskGb"
+      - "imageId"
+      - "memoryMb"
+      - "orgId"
+      - "vcpu"
+      type: "object"
+    AdminVmPlacementPreviewResponse:
+      properties:
+        candidates:
+          items:
+            $ref: "#/components/schemas/AdminVmPlacementCandidate"
+          type: "array"
+        fitsAnyOneNow:
+          description: "현재 한 VM의 제안 사양이 맞는 노드가 있는지. N명 전체 용량 예약이나 승인 성공을 보장하지 않습니다\
+            ."
+          type: "boolean"
+        image:
+          $ref: "#/components/schemas/AdminApprovalImageReference"
+          description: "입력 이미지와 같은 논리 revision의 canonical 이미지 정보. 입력 식별자는 inputImageId로\
+            \ 확인합니다."
+        inputImageId:
+          description: "검증한 입력 이미지 식별자. 호환 replica를 입력하면 아래 image.id의 canonical 식별\
+            자와 다를 수 있습니다."
+          format: "uuid"
+          type: "string"
+        observedAt:
+          format: "date-time"
+          type: "string"
+        orgId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "candidates"
+      - "fitsAnyOneNow"
+      - "image"
+      - "inputImageId"
+      - "observedAt"
+      - "orgId"
+      type: "object"
     AdminWorkspaceDetailResponse:
       properties:
         createdAt:
@@ -2500,6 +2664,8 @@ components:
         approvedCount:
           format: "int64"
           type: "integer"
+        canReadDetail:
+          type: "boolean"
         email:
           type: "string"
         id:
@@ -2515,6 +2681,7 @@ components:
           type: "string"
       required:
       - "approvedCount"
+      - "canReadDetail"
       - "email"
       - "id"
       - "name"
@@ -2532,6 +2699,12 @@ components:
           anyOf:
           - $ref: "#/components/schemas/DomainContext"
           - type: "null"
+        generatedResources:
+          description: "이 신청의 실제 request_id로 연결된 자원의 기록과 상태. 자원 행 등록은 VM 프로비저닝 완료가\
+            \ 아닙니다. 신청 FK가 없는 과거 도메인 이름에서 현재 자원 ID를 추론하지 않습니다."
+          items:
+            $ref: "#/components/schemas/AdminRequestGeneratedResourceResponse"
+          type: "array"
         gpu:
           anyOf:
           - $ref: "#/components/schemas/GpuContext"
@@ -2547,9 +2720,23 @@ components:
           anyOf:
           - $ref: "#/components/schemas/LlmKeyContext"
           - type: "null"
+        observedAt:
+          format: "date-time"
+          type: "string"
         orgHeadroom:
           $ref: "#/components/schemas/OrgHeadroom"
           deprecated: true
+        orgId:
+          format: "uuid"
+          type: "string"
+        orgName:
+          type: "string"
+        recipientUserReadFlags:
+          additionalProperties:
+            type: "boolean"
+          description: "저장된 실제 대상 계정별 관리자 사용자 상세 조회 허용 여부. 현재 디렉터리 권한과 교집합이며, 워크스페\
+            이스를 떠난 계정도 포함합니다. 가입 전 식별자로 계정을 추정하지 않습니다."
+          type: "object"
         type:
           $ref: "#/components/schemas/ResourceType"
         vm:
@@ -2561,9 +2748,14 @@ components:
       required:
       - "applicant"
       - "applicantResources"
+      - "generatedResources"
       - "guidance"
       - "history"
+      - "observedAt"
       - "orgHeadroom"
+      - "orgId"
+      - "orgName"
+      - "recipientUserReadFlags"
       - "type"
       - "workspace"
       type: "object"
@@ -4457,6 +4649,8 @@ components:
       type: "object"
     HistoryEntry:
       properties:
+        canReadDetail:
+          type: "boolean"
         comment:
           type:
           - "string"
@@ -4465,6 +4659,9 @@ components:
           anyOf:
           - $ref: "#/components/schemas/ReviewDecision"
           - type: "null"
+        orgId:
+          format: "uuid"
+          type: "string"
         requestId:
           format: "uuid"
           type: "string"
@@ -4482,6 +4679,8 @@ components:
         type:
           $ref: "#/components/schemas/ResourceType"
       required:
+      - "canReadDetail"
+      - "orgId"
       - "requestId"
       - "resourceName"
       - "status"
@@ -5091,6 +5290,8 @@ components:
       type: "object"
     LlmKeyBrief:
       properties:
+        canReadDetail:
+          type: "boolean"
         concurrency:
           format: "int32"
           type:
@@ -5119,6 +5320,9 @@ components:
           type: "string"
         name:
           type: "string"
+        orgId:
+          format: "uuid"
+          type: "string"
         rpm:
           format: "int32"
           type:
@@ -5139,10 +5343,12 @@ components:
         workspaceName:
           type: "string"
       required:
+      - "canReadDetail"
       - "creditAxisConnected"
       - "creditLimit"
       - "id"
       - "name"
+      - "orgId"
       - "status"
       - "workspaceName"
       type: "object"
@@ -6934,6 +7140,8 @@ components:
       type: "object"
     MemberBrief:
       properties:
+        canReadDetail:
+          type: "boolean"
         name:
           type: "string"
         role:
@@ -6941,10 +7149,14 @@ components:
         userId:
           format: "uuid"
           type: "string"
+        userStatus:
+          $ref: "#/components/schemas/UserStatus"
       required:
+      - "canReadDetail"
       - "name"
       - "role"
       - "userId"
+      - "userStatus"
       type: "object"
     Membership:
       properties:
@@ -11126,6 +11338,8 @@ components:
       type: "string"
     VmBriefResponse:
       properties:
+        canReadDetail:
+          type: "boolean"
         diskGb:
           format: "int32"
           type: "integer"
@@ -11142,16 +11356,21 @@ components:
           type: "integer"
         name:
           type: "string"
+        orgId:
+          format: "uuid"
+          type: "string"
         status:
           $ref: "#/components/schemas/VmStatus"
         vcpu:
           format: "int32"
           type: "integer"
       required:
+      - "canReadDetail"
       - "diskGb"
       - "id"
       - "memoryMb"
       - "name"
+      - "orgId"
       - "status"
       - "vcpu"
       type: "object"
@@ -11165,6 +11384,10 @@ components:
         orgHeadroom:
           $ref: "#/components/schemas/OrgHeadroom"
           deprecated: true
+        requestedImage:
+          anyOf:
+          - $ref: "#/components/schemas/AdminApprovalImageReference"
+          - type: "null"
         workspaceResources:
           $ref: "#/components/schemas/Resources"
       required:
@@ -12172,6 +12395,8 @@ components:
           items:
             $ref: "#/components/schemas/VmBriefResponse"
           type: "array"
+        canReadDetail:
+          type: "boolean"
         id:
           format: "uuid"
           type: "string"
@@ -12189,6 +12414,7 @@ components:
           description: "호환용 VM 합계. 새 클라이언트는 vm.workspaceResources.totals를 사용합니다."
       required:
       - "activeVms"
+      - "canReadDetail"
       - "id"
       - "kind"
       - "members"
@@ -12232,7 +12458,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.99.0"
+  version: "0.100.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -12764,6 +12990,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-publishing-controller"
+  /admin/domains/{domainId}:
+    get:
+      description: "관리자에게 허용된 기관 범위에서 정확한 도메인 ID의 현재 저장 상태를 봅니다. 목록과 같은 기간·해제·DNS\
+        \ 상태를 반환하며 외부 조회나 변경을 실행하지 않습니다. 삭제된 도메인과 접근할 수 없는 도메인은 404입니다."
+      operationId: "getAdminDomain"
+      parameters:
+      - in: "path"
+        name: "domainId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminDomainView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "도메인 단건 열람"
       tags:
       - "admin-publishing-controller"
   /admin/domains/{domainId}/force-release:
@@ -15248,6 +15502,36 @@ paths:
           format: "uuid"
           type: "string"
       - in: "query"
+        name: "q"
+        required: false
+        schema:
+          maxLength: 100
+          minLength: 0
+          type: "string"
+      - in: "query"
+        name: "requestedEndFrom"
+        required: false
+        schema:
+          format: "date"
+          type: "string"
+      - in: "query"
+        name: "requestedEndTo"
+        required: false
+        schema:
+          format: "date"
+          type: "string"
+      - in: "query"
+        name: "reqIndefinite"
+        required: false
+        schema:
+          type: "boolean"
+      - in: "query"
+        name: "relatedUserId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
         name: "page"
         required: false
         schema:
@@ -16346,6 +16630,34 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-flavor-controller"
+  /admin/vm-placement/preview:
+    post:
+      description: "신청 저장 전과 승인 검토에서 같은 이미지 revision과 한 VM 사양을 조회합니다. 호환 ACTIVE replica와\
+        \ ACTIVE 노드, 실제 배치 용량 계산을 재사용합니다. 용량을 예약하거나 승인 규칙을 바꾸지 않으며 다인 전체 생성이나 외부 적\
+        용 완료를 보장하지 않습니다."
+      operationId: "previewAdminVmPlacement"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminVmPlacementPreviewRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminVmPlacementPreviewResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "제안 VM 사양의 현재 한 VM 배치 조건 조회"
+      tags:
+      - "admin-vm-placement-controller"
   /admin/vms:
     get:
       operationId: "listAdminVms"

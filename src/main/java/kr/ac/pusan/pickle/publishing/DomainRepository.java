@@ -18,6 +18,9 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     /** Resolution of the identifier this row wears outside the API boundary. */
     Optional<Domain> findByPublicId(UUID publicId);
 
+    /** Exact request provenance; legacy names are never matched here. */
+    List<Domain> findByRequestId(Long requestId);
+
     /** The live row holding an FQDN — the revive-or-409 pre-check. */
     Optional<Domain> findFirstByFqdnAndStatusNot(String fqdn, DomainStatus status);
 

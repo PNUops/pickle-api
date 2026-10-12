@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
@@ -12,6 +13,7 @@ import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.request.ReviewDecision;
 import kr.ac.pusan.pickle.request.RequestStatus;
+import kr.ac.pusan.pickle.user.UserStatus;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -38,7 +40,16 @@ public record ApprovalContextResponse(
         @Nullable VmContext vm,
         @Nullable LlmKeyContext llmKey,
         @Nullable GpuContext gpu,
-        @Nullable DomainContext domain) {
+        @Nullable DomainContext domain,
+        UUID orgId,
+        String orgName,
+        Instant observedAt,
+        @Schema(description = "이 신청의 실제 request_id로 연결된 자원의 기록과 상태. "
+                + "자원 행 등록은 VM 프로비저닝 완료가 아닙니다. 신청 FK가 없는 과거 도메인 이름에서 현재 자원 ID를 추론하지 않습니다.")
+        List<AdminRequestGeneratedResourceResponse> generatedResources,
+        @Schema(description = "저장된 실제 대상 계정별 관리자 사용자 상세 조회 허용 여부. 현재 디렉터리 권한과 교집합이며, "
+                + "워크스페이스를 떠난 계정도 포함합니다. 가입 전 식별자로 계정을 추정하지 않습니다.")
+        Map<UUID, Boolean> recipientUserReadFlags) {
 
     public record GpuContext(long availableCards, long queuedAllocations, int requestedLeaseHours, @Nullable String vmName) {}
 
@@ -63,7 +74,8 @@ public record ApprovalContextResponse(
             String email,
             Instant signupAt,
             long approvedCount,
-            long rejectedCount) {
+            long rejectedCount,
+            boolean canReadDetail) {
     }
 
     public record Resources(List<VmBriefResponse> activeVms, ResourceTotalsResponse totals) {
@@ -81,10 +93,12 @@ public record ApprovalContextResponse(
             @Schema(deprecated = true,
                     description = "호환용 VM 합계. 새 클라이언트는 vm.workspaceResources.totals를 사용합니다.")
             @Deprecated
-            ResourceTotalsResponse totals) {
+            ResourceTotalsResponse totals,
+            boolean canReadDetail) {
     }
 
-    public record MemberBrief(UUID userId, String name, WorkspaceMemberRole role) {
+    public record MemberBrief(UUID userId, String name, WorkspaceMemberRole role,
+            UserStatus userStatus, boolean canReadDetail) {
     }
 
     public record HistoryEntry(
@@ -95,7 +109,9 @@ public record ApprovalContextResponse(
             RequestStatus status,
             @Nullable ReviewDecision decision,
             @Nullable String comment,
-            @Nullable String reviewerName) {
+            @Nullable String reviewerName,
+            UUID orgId,
+            boolean canReadDetail) {
     }
 
     public record OrgHeadroom(
@@ -120,7 +136,8 @@ public record ApprovalContextResponse(
             Resources applicantResources,
             Resources workspaceResources,
             OrgHeadroom orgHeadroom,
-            String guidance) {
+            String guidance,
+            @Nullable AdminApprovalImageReference requestedImage) {
     }
 
     public record LlmKeyContext(
@@ -141,6 +158,8 @@ public record ApprovalContextResponse(
             @Nullable Long dailyTokens,
             BigDecimal creditLimit,
             @Nullable CreditLimitReset creditLimitReset,
-            boolean creditAxisConnected) {
+            boolean creditAxisConnected,
+            UUID orgId,
+            boolean canReadDetail) {
     }
 }

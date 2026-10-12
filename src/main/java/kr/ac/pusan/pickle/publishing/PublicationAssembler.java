@@ -78,12 +78,12 @@ public class PublicationAssembler {
      * the reservation policy: its {@code reservedUntil} equals its release
      * time (due immediately).
      *
-     * <p>Package-private because the admin domain listing carries the same
-     * axis: two copies of this arithmetic would let the two views disagree
+     * <p>Shared by domain listings and request observations: two copies of
+     * this arithmetic would let the views disagree
      * about when a name comes free, and only one of them would be the one the
      * sweeper actually follows.</p>
      */
-    Instant reservedUntil(Domain domain) {
+    public Instant reservedUntil(Domain domain) {
         if (domain.getReleasedAt() == null) {
             return null;
         }

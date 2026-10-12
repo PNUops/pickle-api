@@ -102,7 +102,8 @@ public class ApprovalService {
 
     @Transactional(readOnly = true)
     public PageResponse<RequestDetailResponse> list(AuthenticatedUser actor, RequestStatus status,
-            ResourceType type, UUID orgId, UUID workspaceId, int page, int size) {
+            ResourceType type, UUID orgId, UUID workspaceId, String q, java.time.LocalDate requestedEndFrom,
+            java.time.LocalDate requestedEndTo, Boolean reqIndefinite, UUID relatedUserId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
         OrgScope scope = listScopeOrgId(actor, orgId);
         Specification<Request> spec = Specification.unrestricted();
@@ -120,6 +121,20 @@ public class ApprovalService {
                     .map(kr.ac.pusan.pickle.workspace.Workspace::getId).orElse(null);
             spec = spec.and(internalWorkspace == null ? (root, query, cb) -> cb.disjunction()
                     : RequestSpecs.workspace(internalWorkspace));
+        }
+        if (requestedEndFrom != null && requestedEndTo != null && requestedEndFrom.isAfter(requestedEndTo)) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("requestedEndTo", "기간의 끝은 시작 이후여야 합니다.")));
+        }
+        if (Boolean.TRUE.equals(reqIndefinite) && (requestedEndFrom != null || requestedEndTo != null)) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("reqIndefinite", "무기한 검색에는 종료일 범위를 함께 보내지 않습니다.")));
+        }
+        if (q != null && !q.isBlank()) { spec = spec.and(RequestSpecs.text(q)); }
+        if (requestedEndFrom != null) { spec = spec.and(RequestSpecs.requestedEndFrom(requestedEndFrom)); }
+        if (requestedEndTo != null) { spec = spec.and(RequestSpecs.requestedEndTo(requestedEndTo)); }
+        if (reqIndefinite != null) { spec = spec.and(RequestSpecs.indefinite(reqIndefinite)); }
+        if (relatedUserId != null) {
+            Long user = userRepository.findByPublicId(relatedUserId).map(kr.ac.pusan.pickle.user.User::getId).orElse(null);
+            spec = spec.and(user == null ? (root, query, cb) -> cb.disjunction() : RequestSpecs.relatedUser(user));
         }
         Page<Request> result = requestRepository.findAll(spec, pageable);
         return PageResponse.of(assembler.toDetails(result.getContent(), actor), result);

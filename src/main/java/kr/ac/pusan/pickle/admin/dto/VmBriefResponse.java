@@ -14,10 +14,12 @@ public record VmBriefResponse(
         int vcpu,
         int memoryMb,
         int diskGb,
-        @Nullable LocalDate endDate) {
+        @Nullable LocalDate endDate,
+        UUID orgId,
+        boolean canReadDetail) {
 
-    public static VmBriefResponse from(Vm vm) {
+    public static VmBriefResponse from(Vm vm, UUID orgId, boolean canReadDetail) {
         return new VmBriefResponse(vm.getPublicId(), vm.getName(), vm.getStatus(),
-                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getEndDate());
+                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getEndDate(), orgId, canReadDetail);
     }
 }

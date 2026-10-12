@@ -202,6 +202,8 @@ public class DomainRequestSupport implements RequestTypeHandler {
                 request.getId());
         Domain domain = domainService.issue(request.getWorkspaceId(), ask.get("label"),
                 ask.get("root"));
+        domain.bindRequest(request.getId());
+        domainRepository.flush();
         jdbc.update("update domain_request_details set granted_fqdn = ? where request_id = ?",
                 domain.getFqdn(), request.getId());
         // The public id rides along so the approval notice can point at the

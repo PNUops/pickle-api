@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.publishing;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.Map;
@@ -23,6 +24,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Asking for a name through the request flow, under both policies.
@@ -45,6 +48,8 @@ class DomainRequestKindTest {
     private DnsDomainService domainService;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private PlatformTransactionManager transactions;
 
     private long orgId;
     private UUID orgPublicId;
@@ -300,5 +305,30 @@ class DomainRequestKindTest {
         assertThat(domainRepository.findFirstByFqdnAndStatusNot("reqrecorded.pusan.dev",
                 DomainStatus.REMOVED)).get()
                 .extracting(Domain::getRenewDueAt).matches(due -> ((Instant) due).isAfter(Instant.now()));
+        assertThat(jdbcTemplate.queryForObject("""
+                select d.request_id from domains d join requests r on r.id=d.request_id
+                 where r.public_id=? and d.fqdn='reqrecorded.pusan.dev'
+                """, Long.class, created.id())).isNotNull();
+    }
+
+    @Test
+    void approvalResourceAssociationReviewAndGrantRollBackTogether() {
+        root("pusan.dev", true);
+        String label = "rollback-" + UUID.randomUUID().toString().substring(0, 12);
+        assertThatThrownBy(() -> new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            RequestDetailResponse created = requestService.create(applicant, form(label), "127.0.0.1");
+            domainRepository.flush();
+            assertThat(jdbcTemplate.queryForObject("""
+                    select count(*) from domains d join requests r on r.id=d.request_id
+                      join request_reviews rv on rv.request_id=r.id
+                      join resource_access_grants g on g.resource_type='DOMAIN' and g.resource_id=d.id
+                     where r.public_id=? and g.user_id=? and g.role='OWNER'
+                    """, Long.class, created.id(), applicant.id())).isEqualTo(1);
+            throw new IllegalStateException("rollback control");
+        })).isInstanceOf(IllegalStateException.class).hasMessage("rollback control");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from domains where fqdn=?", Long.class, label + ".pusan.dev"))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from requests where display_name=?", Long.class, label))
+                .isZero();
     }
 }

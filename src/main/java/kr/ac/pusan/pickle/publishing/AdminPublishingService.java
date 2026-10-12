@@ -178,6 +178,17 @@ public class AdminPublishingService {
     }
 
     @Transactional(readOnly = true)
+    public AdminDomainView getDomain(AuthenticatedUser actor, UUID domainId) {
+        Domain domain = requireReadableDomain(actor, domainId);
+        AdminDomainView observed = view(domain, context(List.of(domain)));
+        if (observed.orgId() == null || observed.orgName() == null
+                || observed.workspaceId() == null || observed.workspaceName() == null) {
+            throw domainNotFound();
+        }
+        return observed;
+    }
+
+    @Transactional(readOnly = true)
     public PageResponse<AdminCertificateView> listCertificates(AuthenticatedUser actor, UUID orgId,
             CertificateStatus status, Integer expiringInDays, int page, int size) {
         OrgScope scope = scopedOrgId(actor, orgId);
@@ -603,6 +614,9 @@ public class AdminPublishingService {
     private void requireScope(AuthenticatedUser actor, Domain domain, boolean forRead) {
         if (!actor.role().isOrgTier()) {
             return;
+        }
+        if (domain.getOrgId() == null) {
+            throw domainNotFound();
         }
         boolean allowed = forRead ? actor.reads(domain.getOrgId())
                 : actor.operates(domain.getOrgId());

@@ -95,6 +95,37 @@ public class VmCloneReservationService {
         return new Reservation(canonical, selected.replica(), selected.node(), pin);
     }
 
+    /**
+     * Observes one-VM fit with the reservation's replica and budget rules.
+     * No revision/node locks or allocation writes are taken; the later reserve
+     * rechecks everything. A batch's capacity is never promised here.
+     */
+    @Transactional(readOnly = true)
+    public VmClonePlacementObservation observe(UUID imagePublicId,
+            NodePlacementBudget.VmPlacementResources requested, Instant observedAt) {
+        OsImage preRead = images.findByPublicId(imagePublicId)
+                .orElseThrow(() -> new IllegalArgumentException("OS 이미지를 찾을 수 없습니다."));
+        List<OsImage> revision = images.findAllInDisplayOrder().stream()
+                .filter(image -> image.getName().equals(preRead.getName()) && image.getVersion() == preRead.getVersion()).toList();
+        OsImage canonical = OsImageSelection.canonicalOf(preRead, revision).orElseThrow();
+        if (!OsImageReplicaResolver.compatible(canonical, preRead)) {
+            return new VmClonePlacementObservation(canonical, false, List.of());
+        }
+        List<OsImage> replicas = revision.stream().filter(image -> image.getStatus() == CatalogStatus.ACTIVE)
+                .filter(image -> OsImageReplicaResolver.compatible(canonical, image)).toList();
+        List<VmCloneNodeObservation> candidates = nodes.findAllById(replicas.stream().map(OsImage::getNodeId).distinct().toList()).stream()
+                .filter(node -> node.getStatus() == NodeStatus.ACTIVE)
+                .map(node -> {
+                    Candidate fit = candidate(node, replicas, requested, observedAt);
+                    return new VmCloneNodeObservation(node, fit != null && requested.diskGb() >= canonical.getMinDiskGb(),
+                            fit == null ? Double.NEGATIVE_INFINITY : fit.score());
+                }).sorted(Comparator.comparing((VmCloneNodeObservation value) -> !value.fitsOneNow())
+                        .thenComparing(value -> value.node().isGpuNode())
+                        .thenComparing(Comparator.comparingDouble(VmCloneNodeObservation::score).reversed())
+                        .thenComparing(value -> value.node().getId())).toList();
+        return new VmClonePlacementObservation(canonical, !candidates.isEmpty(), candidates);
+    }
+
     private Candidate candidate(Node node, List<OsImage> replicas,
             NodePlacementBudget.VmPlacementResources requested, Instant observedAt) {
         OsImage replica = replicas.stream().filter(row -> Objects.equals(row.getNodeId(), node.getId()))
@@ -121,6 +152,10 @@ public class VmCloneReservationService {
 
     public record Reservation(OsImage canonical, OsImage replica, Node node, CloneImagePin pin) {
     }
+
+    public record VmCloneNodeObservation(Node node, boolean fitsOneNow, double score) { }
+
+    public record VmClonePlacementObservation(OsImage image, boolean selectableNow, List<VmCloneNodeObservation> candidates) { }
 
     public static final class NoCapacityException extends RuntimeException {
 
