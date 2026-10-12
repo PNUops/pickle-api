@@ -176,16 +176,15 @@ class AdminLlmKeyTest {
     }
 
     /**
-     * Institution scoping is this surface's rule, so a reviewer of another
-     * institution is answered as if the key did not exist.
+     * Support readers may inspect model availability across institutions.
      */
     @Test
-    void aReviewerOfAnotherInstitutionCannotTellTheKeyFromAMissingOne() throws Exception {
+    void aReviewerReadsModelMetadataOfAnotherInstitution() throws Exception {
         Key b = key(orgB.getId(), workspaceB, "타 기관 모델 목록 대상", "ACTIVE", null);
 
         mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId() + "/models")
                         .header("Authorization", "Bearer " + orgManagerToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -212,7 +211,7 @@ class AdminLlmKeyTest {
 
         mockMvc.perform(get("/api/v1/admin/llm/keys?orgId=" + orgB.getPublicId())
                         .header("Authorization", "Bearer " + orgManagerToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/admin/llm/keys/" + a.publicId())
                         .header("Authorization", "Bearer " + orgViewerToken))
                 .andExpect(status().isOk())
@@ -260,31 +259,13 @@ class AdminLlmKeyTest {
         mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
-        // The read gate's negative case, which nothing asserted until now. The
-        // line above passes because this ORG_ADMIN holds a real viewer grant in
-        // org B; these two hold nothing there, so the guard must answer.
-        //
-        // It answers 404 rather than 403 by design — a foreign org may not learn
-        // that the key exists — and that is exactly what makes the gap quiet:
-        // delete the guard and no test fails, while the result is not an error
-        // anywhere, it is another org's key rendering normally. The write side
-        // has had this assertion all along (putLimits and suspend, below); the
-        // read side is where a deny list, which is an approver's decision about
-        // what a key may spend on, would have leaked.
-        //
-        // The model-listing test below now also passes through this guard and
-        // would catch the same deletion. That is not a reason to drop these
-        // lines: it covers the guard incidentally, on its way somewhere else,
-        // so the guard would go bare again the moment that test moves or its
-        // route changes, and nothing would say so. Being covered because
-        // somebody else's path happens to run through you is coincidence, not
-        // coverage.
+        // Cross-institution support reads preserve masked credentials.
         mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId())
                         .header("Authorization", "Bearer " + orgManagerToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId())
                         .header("Authorization", "Bearer " + orgViewerToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId())
                         .header("Authorization", "Bearer " + sysViewerToken))
                 .andExpect(status().isOk());

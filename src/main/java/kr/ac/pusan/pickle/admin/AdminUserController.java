@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin;
 
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -30,8 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Admin user surface (contract tag admin). List and detail answer for every
- * account to every admin role, viewers included — the one admin surface that is
- * not scoped by organisation (see {@link AdminUserQueryService}), which withholds
+ * account to every support role, viewers included (see {@link AdminUserQueryService}), which withholds
  * system-tier accounts from the org tier; disable, enable and the MFA reset are
  * SYS_ADMIN-only, and role changes go through {@code AdminController} (per the
  * permission matrix).
@@ -88,13 +88,12 @@ public class AdminUserController {
         return adminUserService.enable(principal, userId, clientIp(httpRequest));
     }
 
-    /**
-     * 프로필 정정. 직책·학번·소속 are write-once for the account holder, so this
-     * is where they change after that; see {@code ProfileLock} for why the two
-     * halves ship together.
-     */
+    /** Profile correction reuses the domain mutator for fields locked on the holder's own path. */
     @PatchMapping("/{userId}/profile")
-    @PreAuthorize("hasRole('SYS_ADMIN')")
+    @Operation(summary = "사용자 프로필 정정",
+            description = "기관 운영자·관리자는 시스템 계층 계정을 제외한 사용자의 프로필을 전역 정정하며 시스템 관리자는 모든 계정을 정정합니다. "
+                    + "기존 프로필 변경 로직으로 초대 연결과 알림, 감사를 처리합니다. 계정 상태와 MFA, 기관 역할은 변경하지 않습니다.")
+    @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public UserAdminDetailResponse updateUserProfile(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID userId, @Valid @RequestBody AdminUpdateProfileRequest request,

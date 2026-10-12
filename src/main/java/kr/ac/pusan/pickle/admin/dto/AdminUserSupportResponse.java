@@ -13,18 +13,18 @@ import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import org.jspecify.annotations.Nullable;
 
-/** Relationships retain directory visibility; resources and results retain institution scope. */
+/** Support metadata is global; an optional institution filter narrows resources and results. */
 public record AdminUserSupportResponse(
         UUID userId, Instant observedAt, List<AdminUserSupportMembership> memberships,
         boolean invitationsVisible, List<AdminUserSupportInvitation> invitations,
         List<AdminUserSupportRelatedRequest> requests,
-        @Schema(description = "조회 가능한 기관의 접근 목록형 리소스. 도메인은 EXTERNAL만 포함하며 VM 연결 도메인은 "
+        @Schema(description = "학생 지원 권한으로 전역 조회한 접근 목록형 리소스. 기관 선택은 필터입니다. 도메인은 EXTERNAL만 포함하며 VM 연결 도메인은 "
                 + "워크스페이스 도메인 목록과 연결 VM에서 확인합니다. 종료된 리소스 이력도 포함합니다.")
         List<AdminUserResourceAccessResponse> resources) {
 
     @Schema(name = "AdminUserSupportResourceCount")
     public record AdminUserSupportResourceCount(ResourceType type,
-            @Schema(description = "조회 가능한 기관의 종류별 행 수. 종료된 이력을 포함하며 도메인은 모든 종류를 셉니다.")
+            @Schema(description = "기관 필터를 적용한 종류별 행 수. 종료된 이력을 포함하며 도메인은 모든 종류를 셉니다.")
             long count) { }
 
     @Schema(name = "AdminUserSupportMembership")

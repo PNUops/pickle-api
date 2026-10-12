@@ -50,6 +50,8 @@ public class AdminUserProfileImpactService {
             AdminUserProfileImpactRequest request) {
         User user = support.requireUser(actor, userId);
         boolean enabling = request.action() == AdminUserProfileImpactRequest.AdminUserProfileImpactAction.ENABLE;
+        if (enabling) { StudentSupportPolicy.requireEnableImpact(actor); }
+        else { StudentSupportPolicy.requireProfileCorrection(actor, user.getRole()); }
         String studentNo = user.getStudentNo();
         UserStatus status = user.getStatus();
         if (enabling) {

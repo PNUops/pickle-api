@@ -84,21 +84,15 @@ public class AdminUserService {
     }
 
     /**
-     * SYS_ADMIN profile correction ({@code PATCH /admin/users/{userId}/profile}).
-     *
-     * <p>The counterpart of the write-once lock on {@code PUT /me/profile}: the
-     * holder fills 직책·학번·소속 once and an administrator is who moves them
-     * after that. Kept to SYS_ADMIN like every other write on another account —
-     * 학번 identifies a real person and a wrong one is not the holder's to fix,
-     * so widening this later is a decision, not an oversight.
-     *
-     * <p>Unlike the holder's path this may clear a value, because the case it
-     * exists for is a value that should never have been there.
+     * Global non-system account profile correction by institution managers and
+     * administrators; system administrators may correct any account. The holder's
+     * write-once fields may be replaced or cleared through the existing domain mutator.
      */
     @Transactional
     public UserAdminDetailResponse updateProfile(AuthenticatedUser actor, UUID userId,
             AdminUpdateProfileRequest request, String ip) {
         User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
+        StudentSupportPolicy.requireProfileCorrection(actor, user.getRole());
         AdminUserProfileChanges.Candidate candidate = profileChanges.candidate(user, request);
         UserPosition position = candidate.position();
         String storedStudentNo = candidate.studentNo();

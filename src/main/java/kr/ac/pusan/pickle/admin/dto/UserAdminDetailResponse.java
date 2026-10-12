@@ -28,15 +28,11 @@ public record UserAdminDetailResponse(
         List<AdminMembershipResponse> memberships,
         int activeVmCount,
         List<UserStatusChangeResponse> statusChanges,
-        /*
-         * 직책·학번·소속, readable here since 2026-08-27 because they became
-         * write-once for the holder and an administrator now corrects them.
-         * They are on the detail only, not the list: the list is a search
-         * surface and 학번 is a personal identifier that six roles can reach.
-         */
+        // Profile fields are visible to every support reader for the displayed account.
         @Nullable UserPosition position,
         @Nullable String studentNo,
         @Nullable String departmentCode,
         @Nullable String departmentName,
-        @Nullable String departmentOther) {
+        @Nullable String departmentOther,
+        AdminUserSupportCapabilitiesResponse supportCapabilities) {
 }

@@ -198,10 +198,9 @@ class AdminLlmUsageBreakdownTest {
     }
 
     @Test
-    void aKeyOutsideTheReadersInstitutionsIsAnsweredAsMissing() throws Exception {
-        // The 404 alone proves nothing: a scope check that refuses everything
-        // passes it too. The pair is the assertion — the same reader reaches
-        // its own institution's key and not the other one.
+    void keyUsageAggregatesAreReadableAcrossInstitutions() throws Exception {
+        // Key aggregates share the global metadata boundary; provider-account
+        // usage below retains its separate actual-institution read boundary.
         event(keyOne.id(), "pickle-general", "chat", null, 1, 1, hoursAgo(2));
         event(keyOther.id(), "pickle-general", "chat", null, 1, 1, hoursAgo(2));
         rollupService.refresh();
@@ -209,7 +208,9 @@ class AdminLlmUsageBreakdownTest {
         adminKeyUsage(orgBAdminToken, keyOther.publicId())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.trend.points").isArray());
-        adminKeyUsage(orgBAdminToken, keyOne.publicId()).andExpect(status().isNotFound());
+        adminKeyUsage(orgBAdminToken, keyOne.publicId()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.trend.points").isArray())
+                .andExpect(jsonPath("$.endpointKinds[0].endpoint").value("chat"));
     }
 
     @Test

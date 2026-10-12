@@ -118,7 +118,7 @@ class ApprovalTest {
     }
 
     @Test
-    void queueIsOrgScopedAndStatusFilterable() throws Exception {
+    void queueIsGlobalAndStatusFilterable() throws Exception {
         long workspaceId = createTeam(userToken, "appr-queue-x1");
         long submitted = submit(userToken, workspaceId);
         long canceled = submit(userToken, workspaceId);
@@ -141,18 +141,17 @@ class ApprovalTest {
                 .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).exists())
                 .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", canceled))).doesNotExist());
 
-        // other-org admin sees an empty queue and 404s on the request itself
+        // Another institution reads the same support queue and detail.
         mockMvc.perform(get("/api/v1/admin/requests")
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).doesNotExist());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).exists());
         mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", submitted))
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", submitted) + "/context")
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
         postJson("/api/v1/admin/requests/" + pub("requests", submitted) + "/approve", otherOrgAdminToken,
                 approveBody())
                 .andExpect(status().isNotFound());
@@ -160,12 +159,10 @@ class ApprovalTest {
                 Map.of("comment", "타 기관 반려 시도"))
                 .andExpect(status().isNotFound());
 
-        // Naming an org outside the caller's own answers 404, the same as every
-        // other admin list. It used to pin silently to the caller's org, which
-        // said "here is your queue" to a request that asked for another's.
+        // Institution selection filters support reads without requiring a role there.
         mockMvc.perform(get("/api/v1/admin/requests?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
 
         // SYS_ADMIN sees all orgs and may filter by orgId
         mockMvc.perform(get("/api/v1/admin/requests").header("Authorization", "Bearer " + sysAdminToken))

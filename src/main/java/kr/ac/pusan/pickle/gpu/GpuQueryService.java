@@ -66,7 +66,7 @@ public class GpuQueryService {
     public PageResponse<GpuAllocationView> adminList(AuthenticatedUser actor, UUID orgId, UUID workspaceId, GpuAllocationStatus status, int page, int size) {
         Long selected = orgId == null ? null : orgs.findByPublicId(orgId).map(o -> o.getId()).orElse(-1L);
         Long selectedWorkspace = workspaceId == null ? null : workspaces.findByPublicId(workspaceId).map(w -> w.getId()).orElse(-1L);
-        var rows = store.all().stream().filter(a -> actor.role().isSysTier() || actor.reads(a.orgId()))
+        var rows = store.all().stream().filter(a -> kr.ac.pusan.pickle.admin.StudentSupportPolicy.canRead(actor))
                 .filter(a -> selectedWorkspace == null || a.workspaceId() == selectedWorkspace)
                 .filter(a -> status == null || a.status() == status)
                 .filter(a -> selected == null || a.orgId() == selected)
@@ -104,7 +104,7 @@ public class GpuQueryService {
     }
 
     public void requireAdminRead(AuthenticatedUser actor, GpuAllocation a) {
-        if (!actor.role().isSysTier() && !actor.reads(a.orgId())) { throw GpuErrors.notFound(); }
+        kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireRead(actor);
     }
 
     public GpuAllocationView view(AuthenticatedUser actor, GpuAllocation a, boolean admin) {

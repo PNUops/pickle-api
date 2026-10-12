@@ -42,7 +42,7 @@ class AdminRequestGeneratedResources {
                 """, rs -> {
                     UserRole targetRole = UserRole.valueOf(rs.getString("role"));
                     flags.put(rs.getObject("public_id", UUID.class),
-                            !actor.role().isOrgTier() || !targetRole.isSysTier());
+                            StudentSupportPolicy.canReadUser(actor, targetRole));
                 }, request.getId());
         return Map.copyOf(flags);
     }

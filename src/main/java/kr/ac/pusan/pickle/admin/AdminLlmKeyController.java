@@ -50,7 +50,7 @@ public class AdminLlmKeyController {
 
     @GetMapping
     @Operation(summary = "관리자 LLM API 키 목록",
-            description = "기관과 워크스페이스, 발급 신청, 상태, 검색어로 키를 조회합니다. 키 평문과 해시, 평문 앞부분은 반환하지 않습니다.")
+            description = "학생 지원 권한으로 키 metadata를 전역 조회하며 기관과 워크스페이스, 발급 신청, 상태, 검색어는 필터입니다. 키 평문과 해시, 평문 앞부분은 반환하지 않습니다.")
     public PageResponse<AdminLlmKeySummaryResponse> listAdminLlmKeys(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
@@ -69,7 +69,7 @@ public class AdminLlmKeyController {
 
     @GetMapping("/{keyId}")
     @Operation(summary = "관리자 LLM API 키 상세",
-            description = "기관 범위 안의 키 운영 상태와 한도를 조회합니다. 인증 비밀이나 기록된 본문은 반환하지 않습니다.")
+            description = "학생 지원 권한으로 키 운영 상태와 한도 metadata를 전역 조회합니다. 인증 비밀이나 기록된 본문은 반환하지 않습니다.")
     public AdminLlmKeyDetailResponse getAdminLlmKey(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId) {
@@ -78,7 +78,7 @@ public class AdminLlmKeyController {
 
     @GetMapping("/{keyId}/usage")
     @Operation(summary = "관리자 LLM API 키 사용량",
-            description = "이 키의 일별 사용량과, 키 소유자 화면에는 없는 분해 셋입니다. "
+            description = "학생 지원 권한으로 전역 조회하는 이 키의 일별 사용량과, 키 소유자 화면에는 없는 분해 셋입니다. "
                     + "일별 사용량은 소유자가 보는 것과 같은 값이고 같은 계산을 씁니다. "
                     + "분해 셋은 일별 금액, 경로별 사용, 공급자가 요청과 다른 모델로 응답한 사례입니다. "
                     + "하루는 한국 시간 기준이고 호출이 없던 날도 0으로 채워집니다. "
@@ -93,7 +93,7 @@ public class AdminLlmKeyController {
 
     @GetMapping("/{keyId}/models")
     @Operation(summary = "관리자 LLM API 키로 호출할 수 있는 모델",
-            description = "이 키로 부를 수 있는 모델입니다. 키 소유자가 보는 것과 같은 값이고 같은 계산을 씁니다. "
+            description = "학생 지원 권한으로 전역 조회하는 이 키로 부를 수 있는 모델입니다. 키 소유자가 보는 것과 같은 값이고 같은 계산을 씁니다. "
                     + "허용 목록을 정할 때 그 목록이 실제로 무엇을 남기는지 확인하는 자리입니다. "
                     + "최종 판정은 호출 시점에 이뤄지므로 여기 있는 모델이 항상 응답한다는 보장은 아닙니다.")
     public LlmKeyModelsResponse listAdminLlmKeyModels(

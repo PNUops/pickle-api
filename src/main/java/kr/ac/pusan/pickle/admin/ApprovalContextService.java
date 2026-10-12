@@ -193,12 +193,12 @@ public class ApprovalContextService {
                             review != null ? review.getDecision() : null,
                             review != null ? review.getComment() : null,
                             reviewerName(review, reviewer), orgs.get(r.getOrgId()).getPublicId(),
-                            !actor.role().isOrgTier() || actor.reads(r.getOrgId()));
+                            StudentSupportPolicy.canRead(actor));
                 })
                 .toList();
     }
 
     private static boolean canReadUser(AuthenticatedUser actor, User user) {
-        return !actor.role().isOrgTier() || !user.getRole().isSysTier();
+        return StudentSupportPolicy.canReadUser(actor, user.getRole());
     }
 }
