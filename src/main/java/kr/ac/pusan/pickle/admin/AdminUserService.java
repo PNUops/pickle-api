@@ -2,7 +2,6 @@ package kr.ac.pusan.pickle.admin;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminUpdateProfileRequest;
@@ -12,12 +11,10 @@ import kr.ac.pusan.pickle.auth.RefreshTokenService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.profile.ProfileLock;
-import kr.ac.pusan.pickle.profile.ProfileValidator;
 import kr.ac.pusan.pickle.profile.StudentNoUniqueness;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
@@ -53,15 +50,14 @@ public class AdminUserService {
     private final AdminUserQueryService adminUserQueryService;
     private final MfaService mfaService;
     private final RefreshTokenService refreshTokenService;
-    private final ProfileValidator profileValidator;
-    private final StudentNoUniqueness studentNoUniqueness;
+    private final AdminUserProfileChanges profileChanges;
     private final InvitationClaimService invitationClaimService;
 
     public AdminUserService(UserRepository userRepository,
             UserStatusChangeRepository userStatusChangeRepository, AuditService auditService,
             NotificationService notificationService, AdminUserQueryService adminUserQueryService,
             MfaService mfaService, RefreshTokenService refreshTokenService,
-            ProfileValidator profileValidator, StudentNoUniqueness studentNoUniqueness,
+            AdminUserProfileChanges profileChanges,
             InvitationClaimService invitationClaimService) {
         this.userRepository = userRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
@@ -70,8 +66,7 @@ public class AdminUserService {
         this.adminUserQueryService = adminUserQueryService;
         this.mfaService = mfaService;
         this.refreshTokenService = refreshTokenService;
-        this.profileValidator = profileValidator;
-        this.studentNoUniqueness = studentNoUniqueness;
+        this.profileChanges = profileChanges;
         this.invitationClaimService = invitationClaimService;
     }
 
@@ -104,34 +99,18 @@ public class AdminUserService {
     public UserAdminDetailResponse updateProfile(AuthenticatedUser actor, UUID userId,
             AdminUpdateProfileRequest request, String ip) {
         User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
-        if (request.isEmpty()) {
-            throw ApiException.validationFailed(List.of(
-                    new FieldValidationError("position", "수정할 값을 하나 이상 보내 주세요.")));
-        }
-
-        UserPosition position = request.isPositionSet() ? request.getPosition() : user.getPosition();
-        String studentNo = request.isStudentNoSet() ? request.getStudentNo() : user.getStudentNo();
-        String departmentCode = request.isDepartmentCodeSet()
-                ? request.getDepartmentCode() : user.getDepartmentCode();
-        String departmentOther = request.isDepartmentOtherSet()
-                ? request.getDepartmentOther() : user.getDepartmentOther();
-        // The same value rules the holder's path runs. An administrator may
-        // correct a profile, not store one the CHECK constraints refuse.
-        boolean codeIsNew = request.isDepartmentCodeSet()
-                && !java.util.Objects.equals(user.getDepartmentCode(), departmentCode);
-        profileValidator.validate(position, studentNo, departmentCode, departmentOther, codeIsNew);
-        // One account per 학번 binds the administrator too (V131). Correcting
-        // a number two accounts claim means clearing it on the wrong one first.
-        String storedStudentNo = ProfileValidator.normalizeStudentNo(position, studentNo);
-        studentNoUniqueness.requireAvailable(storedStudentNo, user.getId());
+        AdminUserProfileChanges.Candidate candidate = profileChanges.candidate(user, request);
+        UserPosition position = candidate.position();
+        String storedStudentNo = candidate.studentNo();
+        String departmentCode = candidate.departmentCode();
+        String departmentOther = candidate.departmentOther();
 
         UserPosition previousPosition = user.getPosition();
         String previousStudentNo = user.getStudentNo();
         String previousDepartmentCode = user.getDepartmentCode();
         boolean droppedStudentNo =
                 ProfileLock.positionChangeDropsStudentNo(previousPosition, position, previousStudentNo);
-        user.setProfile(position, storedStudentNo,
-                departmentCode, ProfileValidator.normalizeDepartmentOther(departmentOther));
+        user.setProfile(position, storedStudentNo, departmentCode, departmentOther);
         try {
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
@@ -239,10 +218,7 @@ public class AdminUserService {
 
         // Restore the pre-disable status (ACTIVE or PENDING_VERIFICATION) so
         // enable never bypasses email verification.
-        UserStatus restored = userStatusChangeRepository
-                .findFirstByUserIdAndToStatusOrderByChangedAtDescIdDesc(user.getId(), UserStatus.DISABLED)
-                .map(UserStatusChange::getFromStatus)
-                .orElse(UserStatus.ACTIVE);
+        UserStatus restored = AdminUserProfileChanges.restoredStatus(user, userStatusChangeRepository);
         user.setStatus(restored);
         user.clearDisabled();
         userStatusChangeRepository.save(new UserStatusChange(user.getId(), UserStatus.DISABLED,

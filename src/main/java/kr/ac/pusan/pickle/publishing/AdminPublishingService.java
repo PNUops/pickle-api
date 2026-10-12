@@ -165,9 +165,11 @@ public class AdminPublishingService {
      */
     @Transactional(readOnly = true)
     public PageResponse<AdminDomainView> listDomains(AuthenticatedUser actor, UUID orgId,
-            DomainKind kind, DomainStatus status, int page, int size) {
+            UUID workspaceId, DomainKind kind, DomainStatus status, int page, int size) {
         OrgScope scope = scopedOrgId(actor, orgId);
-        Page<Domain> domains = domainRepository.findAdmin(orgFilter(scope), name(kind), name(status),
+        Long internalWorkspace = workspaceId == null ? null : workspaceRepository.findByPublicId(workspaceId)
+                .map(Workspace::getId).orElse(-1L);
+        Page<Domain> domains = domainRepository.findAdmin(orgFilter(scope), internalWorkspace, name(kind), name(status),
                 page(page, size));
         Context ctx = context(domains.getContent());
         List<AdminDomainView> content = domains.getContent().stream()

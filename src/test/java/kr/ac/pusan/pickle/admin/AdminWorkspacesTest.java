@@ -110,6 +110,27 @@ class AdminWorkspacesTest {
     }
 
     @Test
+    void memberSupportLinksFollowTheSameSystemAccountBoundaryAsSupportDetail() throws Exception {
+        User sysAdmin = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow();
+        jdbcTemplate.update("insert into workspace_members (workspace_id, user_id, role) "
+                + "values (?, ?, 'MEMBER'::workspace_member_role)", workspaceId, sysAdmin.getId());
+
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", workspaceId))
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.members[?(@.userId == '%s')].supportDetailVisible"
+                        .formatted(sysAdmin.getPublicId())).value(false))
+                .andExpect(jsonPath("$.members[?(@.userId == '%s')].supportDetailVisible"
+                        .formatted(pub("users", ownerId))).value(true));
+
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", workspaceId))
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.members[?(@.userId == '%s')].supportDetailVisible"
+                        .formatted(sysAdmin.getPublicId())).value(true));
+    }
+
+    @Test
     void unknownAndDeletedWorkspacesAnswer404AndOthersAreRead() throws Exception {
         mockMvc.perform(get("/api/v1/admin/workspaces/" + SeedFixtures.UNKNOWN_ID)
                         .header("Authorization", "Bearer " + sysAdminToken))
