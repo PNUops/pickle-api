@@ -172,6 +172,31 @@ public class RateLimitService {
     }
 
     /**
+     * Whether a request worth {@code weight} units would fit the hourly budget
+     * {@link #hitHourly(String, String, int, int)} keeps, without recording
+     * anything: throws the same 429 it would. A pre-check only — two requests
+     * can both pass it, so the charge that follows is what holds the line.
+     */
+    @Transactional(readOnly = true)
+    public void checkHourly(String scope, String subject, int limitPerHour, int weight) {
+        WindowState window = jdbcTemplate.queryForObject("""
+                select coalesce(sum(request_count), 0) as total, min(window_start) as oldest
+                  from auth_rate_limits
+                 where scope = ? and subject = ? and window_start > now() - interval '60 minutes'
+                """,
+                (rs, rowNum) -> new WindowState(rs.getLong("total"),
+                        rs.getObject("oldest", OffsetDateTime.class)),
+                scope, subject);
+        if (window.total() + weight > limitPerHour) {
+            long retryAfter = window.oldest() == null
+                    ? Duration.ofMinutes(60).toSeconds()
+                    : Math.max(1, Duration.between(Instant.now(),
+                            window.oldest().toInstant().plus(Duration.ofMinutes(75))).toSeconds());
+            throw ApiException.rateLimited(retryAfter);
+        }
+    }
+
+    /**
      * Throws 429 when this account is under an escalating login lockout <em>from
      * this client address</em>. The lock is keyed on the pair rather than the
      * account alone because this check runs before the password is verified:

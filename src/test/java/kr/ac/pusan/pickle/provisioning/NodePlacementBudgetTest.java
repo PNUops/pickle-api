@@ -53,6 +53,40 @@ class NodePlacementBudgetTest {
         assertThatThrownBy(() -> NodePlacementBudget.from(node, NOW)).isInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    void sharedCpuUsesTheRemainingVcpuBudgetWithoutSubtractingExternalIntentTwice() {
+        Node node = sharedCpuNode();
+        NodePlacementBudget budget = NodePlacementBudget.from(node, NOW);
+        assertThat(budget.reservationAware()).isTrue();
+        // 56 shared vCPUs minus 15 external commitments leaves 41 platform vCPUs.
+        assertThat(budget.fits(new VmPlacementResources(25, 1, 1), new VmPlacementResources(16, 1, 1))).isTrue();
+        assertThat(budget.fits(new VmPlacementResources(26, 1, 1), new VmPlacementResources(16, 1, 1))).isFalse();
+        assertThat(budget.fits(new VmPlacementResources(0, 57344, 0), new VmPlacementResources(1, 1, 1))).isFalse();
+        assertThat(budget.fits(new VmPlacementResources(0, 0, 800), new VmPlacementResources(1, 1, 1))).isFalse();
+        assertThat(budget.score(new VmPlacementResources(41, 0, 0))).isEqualTo(0.6);
+        assertThat(node.getCpuThreads()).isEqualTo(32);
+        assertThat(node.getMemoryMb()).isEqualTo(57344);
+    }
+
+    @Test
+    void malformedSharedPolicyDoesNotFallBackToUnboundedLegacyCpu() {
+        Node node = sharedCpuNode();
+        ReflectionTestUtils.setField(node, "labels", Map.of("placement_capacity",
+                Map.of("schema_version", 2, "cpu_policy", Map.of("allocation_ratio", 2))));
+        assertThatThrownBy(() -> NodePlacementBudget.from(node, NOW)).isInstanceOf(IllegalStateException.class);
+    }
+
+    private Node sharedCpuNode() {
+        Node node = node(false);
+        ReflectionTestUtils.setField(node, "labels", Map.of("placement_capacity", Map.of(
+                "schema_version", 2, "measured_at", NOW.toString(),
+                "physical", Map.of("cpu_threads", 32, "memory_mb", 65536, "disk_gb", 1000),
+                "reserved", Map.of("cpu_threads", 4, "memory_mb", 8192, "disk_gb", 200),
+                "allocatable", Map.of("cpu_threads", 41, "memory_mb", 57344, "disk_gb", 800),
+                "cpu_policy", Map.of("allocation_ratio", 2, "committed_vcpu", 15))));
+        return node;
+    }
+
     private Node node(boolean reserved) {
         Node node = org.springframework.beans.BeanUtils.instantiateClass(Node.class);
         ReflectionTestUtils.setField(node, "cpuThreads", 32);

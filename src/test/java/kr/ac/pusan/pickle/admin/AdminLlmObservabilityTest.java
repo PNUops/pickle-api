@@ -387,7 +387,8 @@ class AdminLlmObservabilityTest {
                 values ('LLM_API_KEY', ?, ?, ?, '관측 테스트', ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requester.getId(), name + " 신청");
-        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)", requestId);
+        jdbcTemplate.update("insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')", requestId);
         String hash = (UUID.randomUUID().toString() + UUID.randomUUID()).replace("-", "");
         return jdbcTemplate.queryForObject("""
                 insert into llm_api_keys (workspace_id, org_id, request_id, name, purpose,

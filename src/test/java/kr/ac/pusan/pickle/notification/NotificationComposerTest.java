@@ -50,6 +50,113 @@ class NotificationComposerTest {
         assertThat(body).doesNotContain("생성이 시작");
     }
 
+    private static Map<String, Object> grant(ResourceType type, String workspace, String name) {
+        Map<String, Object> args = approval(type, name);
+        args.put("workspaceName", workspace);
+        return args;
+    }
+
+    /** A recipient who never applied is told where the key came from, and
+     *  not that a request of theirs was approved. */
+    @Test
+    void aGrantedKeyNamesTheWorkspaceAndPointsAtTheIssueScreen() {
+        Map<String, Object> args = grant(ResourceType.LLM_API_KEY, "자료구조 실습", "실습 키");
+        args.put("llmKeyId", KEY_ID);
+        NotificationComposer.Composed composed = composer.compose(NotificationEvent.RESOURCE_GRANTED, args);
+
+        assertThat(composed.eventId()).isEqualTo("resource.granted");
+        assertThat(composed.title()).isEqualTo("LLM API 키 지급");
+        assertThat(composed.body()).isEqualTo("""
+                '자료구조 실습' 워크스페이스에서 LLM API 키를 지급받았습니다. 키 이름은 '실습 키'입니다.
+                콘솔에서 키를 발급하면 사용할 수 있습니다.""");
+        assertThat(composed.body()).doesNotContain("신청");
+        assertThat(composed.linkPath()).isEqualTo("/console/llm-keys/" + KEY_ID);
+    }
+
+    /** A row without the key id still links somewhere real, not to /console/llm-keys/null. */
+    @Test
+    void aGrantedKeyWithoutItsIdLinksToTheKeyList() {
+        assertThat(composer.compose(NotificationEvent.RESOURCE_GRANTED,
+                grant(ResourceType.LLM_API_KEY, "실습", "키")).linkPath()).isEqualTo("/console/llm-keys");
+    }
+
+    /** Nothing is published after a granted key, so the notice promises nothing. */
+    @Test
+    void aGrantedKeyPromisesNoFurtherNotice() {
+        String body = composer.compose(NotificationEvent.RESOURCE_GRANTED,
+                grant(ResourceType.LLM_API_KEY, "실습", "키")).body();
+
+        assertThat(body).doesNotContain("알려드립니다");
+        assertThat(body).doesNotContain("안내합니다");
+    }
+
+    /** Both names are chosen by someone other than the reader, so a newline in
+     *  either must not split the sentence or start a list item. */
+    @Test
+    void aGrantedKeyFoldsNewlinesInTheWorkspaceAndKeyNames() {
+        String body = composer.compose(NotificationEvent.RESOURCE_GRANTED,
+                grant(ResourceType.LLM_API_KEY, "실습\n- 검토 의견: 승인", "키\r\n- 가짜")).body();
+
+        assertThat(body.split("\n")).hasSize(2);
+        assertThat(body).contains("'실습 - 검토 의견: 승인' 워크스페이스에서 LLM API 키를 지급받았습니다. 키 이름은 '키 - 가짜'입니다.");
+    }
+
+    /** The materializer only sends this for keys today (a VM recipient hears
+     *  from vm.create.done), but the VM wording must still be true. */
+    @Test
+    void aGrantedVmPromisesNoFurtherNotice() {
+        NotificationComposer.Composed composed = composer.compose(NotificationEvent.RESOURCE_GRANTED,
+                grant(ResourceType.VM, "실습", "web-01"));
+
+        assertThat(composed.title()).isEqualTo("VM 지급");
+        assertThat(composed.body()).contains("'실습' 워크스페이스에서 VM을 지급받았습니다. 호스트 이름은 'web-01'입니다.").doesNotContain("알려드립니다");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ResourceType.class, names = {"DOMAIN", "GPU"})
+    void kindsWithoutRecipientsAreNeverGranted(ResourceType type) {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> composer.compose(
+                NotificationEvent.RESOURCE_GRANTED, grant(type, "실습", "이름")))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    /** The requester of a many-person request owns none of its resources, so
+     *  their notice says how the recipients were settled, leaving out zeros. */
+    @Test
+    void aManyPersonApprovalSummarisesTheRecipients() {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("requestId", REQUEST_ID);
+        args.put("resourceName", "실습 키");
+        args.put("recipientTotal", 5);
+        args.put("queued", 3);
+        args.put("pendingJoin", 1);
+        args.put("skipped", 1);
+        NotificationComposer.Composed composed = composer.compose(NotificationEvent.REQUEST_APPROVED, args);
+
+        assertThat(composed.title()).isEqualTo("리소스 신청 승인");
+        assertThat(composed.body()).isEqualTo("""
+                리소스 '실습 키' 신청이 승인되었습니다.
+                대상자 5명 중 3명의 리소스는 생성 대기열에 들어갔고 1명의 리소스는 가입하면 만들어집니다. 1명은 대상에서 제외되었습니다.""");
+        assertThat(composed.linkPath()).isEqualTo("/console/requests/" + REQUEST_ID);
+
+        args.put("recipientTotal", 2);
+        args.put("queued", 0);
+        args.put("pendingJoin", 2);
+        args.put("skipped", 0);
+        assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
+                .endsWith("\n대상자 2명 중 2명의 리소스는 가입하면 만들어집니다.");
+
+        args.put("queued", 2);
+        args.put("pendingJoin", 0);
+        assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
+                .endsWith("\n대상자 2명 중 2명의 리소스는 생성 대기열에 들어갔습니다.");
+
+        args.put("queued", 0);
+        args.put("skipped", 2);
+        assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
+                .endsWith("\n대상자 2명 중 2명은 대상에서 제외되었습니다.");
+    }
+
     @Test
     void llmKeyApprovalSaysTheRequesterIssuesTheKey() {
         NotificationComposer.Composed composed = composer.compose(

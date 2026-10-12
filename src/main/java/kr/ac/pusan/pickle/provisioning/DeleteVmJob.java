@@ -234,7 +234,7 @@ public class DeleteVmJob {
             taskRepository.complete(task.getId(), now);
             if (updated == 1) {
                 vmEventRepository.save(new VmEvent(vmId, VmEventType.DELETE, null, VmActorKind.SYSTEM, "VM 파기 완료"));
-                notifyOrgAdmins(vm);
+                notifyOwners(vm);
                 log.info("Delete pipeline completed for vm {} (vmid {})", vmId, vm.getProxmoxVmid());
             }
         } catch (DestroyTargetMismatchException e) {
@@ -435,10 +435,9 @@ public class DeleteVmJob {
         return RETRY_BACKOFFS.get(Math.clamp(attempts - 1, 0, RETRY_BACKOFFS.size() - 1));
     }
 
-    /** Contract: the final destruction is notified to the org's admins. */
-    private void notifyOrgAdmins(Vm vm) {
-        List<Long> admins = notificationService.orgAdminIds(vm.getOrgId());
-        notificationService.publishToAdmins(admins, NotificationEvent.VM_DELETE_COMPLETED,
+    /** Successful destruction is notified to the VM and workspace owners. */
+    private void notifyOwners(Vm vm) {
+        notificationService.publish(notificationService.vmOwnerIds(vm), NotificationEvent.VM_DELETE_COMPLETED,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()),
                 "vm_delete_completed:" + vm.getId());
     }

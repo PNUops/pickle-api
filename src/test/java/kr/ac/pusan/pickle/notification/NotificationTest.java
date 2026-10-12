@@ -243,6 +243,20 @@ class NotificationTest {
                 .doesNotContain("콘솔에서 확인")
                 .contains("https://pickle.pusan.ac.kr/console/llm-keys/" + keyPublicId);
 
+        // A key granted to someone on another person's request goes to the
+        // same screen and asks for the same action.
+        String grantedKeyId = UUID.randomUUID().toString();
+        notificationService.publish(alice.getId(), NotificationEvent.RESOURCE_GRANTED,
+                Map.of("requestId", UUID.randomUUID(), "type", "LLM_API_KEY", "workspaceName", "실습",
+                        "resourceName", "실습 키", "llmKeyId", grantedKeyId),
+                null);
+
+        dispatchJob.dispatch();
+
+        assertThat(mockMailSender.lastMessageTo(alice.getEmail()).htmlBody())
+                .contains("키 발급하기")
+                .contains("https://pickle.pusan.ac.kr/console/llm-keys/" + grantedKeyId);
+
         // A stage-rendered id (vm.expiry.d7) is not a catalog id, so it must
         // fall through to the default rather than resolving to nothing.
         notificationService.publish(alice.getId(), NotificationEvent.VM_EXPIRY_NOTICE,

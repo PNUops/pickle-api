@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import kr.ac.pusan.pickle.admin.dto.OpenRouterCatalogueResponse;
+import kr.ac.pusan.pickle.llm.openrouter.ModelPricings;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCatalogueRefreshJob;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCatalogueRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCreditsFreshness;
@@ -46,7 +47,8 @@ public class AdminOpenRouterCatalogueService {
         List<OpenRouterCatalogueResponse.OpenRouterCatalogueModel> models = catalogue.listed().stream()
                 .map(row -> new OpenRouterCatalogueResponse.OpenRouterCatalogueModel(
                         row.modelId(), row.displayName(), perMillion(row.promptPrice()),
-                        perMillion(row.completionPrice()), row.contextLength()))
+                        perMillion(row.completionPrice()), row.contextLength(),
+                        ModelPricings.read(row.pricing())))
                 .toList();
         return new OpenRouterCatalogueResponse(models, freshness(state.lastSuccessAt()),
                 state.lastSuccessAt(), state.lastAttemptAt(), state.lastError(),

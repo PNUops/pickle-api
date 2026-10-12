@@ -114,6 +114,8 @@ public record LlmKeyModelsResponse(
             @Schema(description = "출력 100만 토큰당 USD. 모르면 비어 있습니다")
             @Nullable BigDecimal completionPricePerMillion,
             @Schema(description = "컨텍스트 길이. 모르면 비어 있습니다")
-            @Nullable Integer contextLength) {
+            @Nullable Integer contextLength,
+            @Schema(description = "입력과 출력을 포함한 가격 축 전체. 목록이 아직 이 정보를 받지 않았으면 비어 있습니다")
+            @Nullable ModelPricing pricing) {
     }
 }

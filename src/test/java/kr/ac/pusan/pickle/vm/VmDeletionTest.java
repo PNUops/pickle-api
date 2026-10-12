@@ -179,6 +179,7 @@ class VmDeletionTest {
     @Test
     void selfDeleteSchedulesGraceShutdownAndMails() throws Exception {
         long vmId = createVm(VmStatus.RUNNING);
+        List<Long> noticeOwners = addDeletionNoticeAudience(vmId);
         Instant before = Instant.now();
 
         String body = mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
@@ -207,12 +208,11 @@ class VmDeletionTest {
                 Long.class);
         assertThat(enqueued).isPositive();
 
-        // notifications were inserted in-tx; the dispatcher emails them:
-        // workspace members + org admins, with both policy notices
+        assertDeletionNoticeOwners(vmId, "vm.delete.accepted", noticeOwners);
+        // Only the VM and workspace owners receive the policy notices.
         notificationDispatchJob.dispatch();
         List<MailMessage> mails = mockMailSender.getMessages();
-        assertThat(mails).extracting(MailMessage::to)
-                .contains(owner.getEmail(), member.getEmail(), SeedFixtures.ORGADMIN_EMAIL);
+        assertThat(mails).extracting(MailMessage::to).contains(owner.getEmail());
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody())
                 .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다")
                 .contains("삭제 취소는 관리자만 가능합니다");
@@ -422,6 +422,7 @@ class VmDeletionTest {
     @Test
     void adminScheduleDeleteEnforcesNoticeAndMailsReason() throws Exception {
         long vmId = createVm(VmStatus.RUNNING);
+        List<Long> noticeOwners = addDeletionNoticeAudience(vmId);
 
         // past instant → 422 with errors[] (the only remaining date rule —
         // the minimum-notice floor was dropped 2026-07-27)
@@ -472,6 +473,7 @@ class VmDeletionTest {
         assertThat(column(vmId, "delete_kind")).isEqualTo("ADMIN");
         assertThat(eventTypes(vmId)).contains("SCHEDULE_DELETE");
         assertThat(auditCount("vm.schedule_delete", vmId)).isEqualTo(1);
+        assertDeletionNoticeOwners(vmId, "vm.delete.scheduled", noticeOwners);
         notificationDispatchJob.dispatch();
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody())
                 .contains("사용 종료일이 지난 VM 정리")
@@ -508,6 +510,7 @@ class VmDeletionTest {
     void cancelIsKindAwareAndAdminOnly() throws Exception {
         // SELF: pending grace → cancel returns the VM to STOPPED
         long selfVm = createVm(VmStatus.DELETING);
+        List<Long> noticeOwners = addDeletionNoticeAudience(selfVm);
         markPendingDeletion(selfVm, "SELF", Instant.now().plus(Duration.ofDays(5)));
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", selfVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
@@ -517,6 +520,7 @@ class VmDeletionTest {
         assertThat(column(selfVm, "delete_kind")).isNull();
         assertThat(eventTypes(selfVm)).contains("CANCEL_SCHEDULED_DELETE");
         assertThat(auditCount("vm.cancel_scheduled_delete", selfVm)).isEqualTo(1);
+        assertDeletionNoticeOwners(selfVm, "vm.delete.canceled", noticeOwners);
         notificationDispatchJob.dispatch();
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("취소");
 
@@ -605,6 +609,7 @@ class VmDeletionTest {
     @Test
     void forceDeleteConfirmsNameAuditsAndEnqueues() throws Exception {
         long vmId = createVm(VmStatus.RUNNING);
+        List<Long> noticeOwners = addDeletionNoticeAudience(vmId);
         String vmName = jdbcTemplate.queryForObject("select name from vms where id = ?",
                 String.class, vmId);
 
@@ -642,6 +647,7 @@ class VmDeletionTest {
                 "select count(*) from jobrunr_jobs where jobsignature like '%DeleteVmJob.deleteVm(%'",
                 Long.class);
         assertThat(enqueued).isPositive();
+        assertDeletionNoticeOwners(vmId, "vm.delete.force", noticeOwners);
         notificationDispatchJob.dispatch();
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("관리자");
 
@@ -688,6 +694,7 @@ class VmDeletionTest {
     @Test
     void deleteJobShutsDownWithForceFallbackDestroysAndReleases() {
         long vmId = createVm(VmStatus.DELETING);
+        List<Long> noticeOwners = addDeletionNoticeAudience(vmId);
         long allocationId = allocateIp(vmId);
         markPendingDeletion(vmId, "SELF", Instant.now().minus(Duration.ofMinutes(1)));
         // an unviewed plaintext initial password must not survive destruction
@@ -743,9 +750,10 @@ class VmDeletionTest {
                 .map(event -> event.getRequest().getMethod().getName())
                 .toList();
         assertThat(ordered).containsExactly("PUT", "DELETE");
-        // org admin notified of the final destruction
+        // Owners remain available after destruction and receive the completion.
+        assertDeletionNoticeOwners(vmId, "vm.delete.completed", noticeOwners);
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo(SeedFixtures.ORGADMIN_EMAIL).textBody()).contains("파기");
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("파기");
     }
 
     @Test
@@ -1164,6 +1172,38 @@ class VmDeletionTest {
         mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/shutdown")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
+    }
+
+    private List<Long> addDeletionNoticeAudience(long vmId) {
+        User resourceOwner = ensureUser("vmdel.resource-owner@example.com", "Resource owner");
+        User workspaceOwner = ensureUser("vmdel.workspace-owner@example.com", "Workspace owner");
+        User editor = ensureUser("vmdel.editor@example.com", "Editor");
+        User viewer = ensureUser("vmdel.viewer@example.com", "Viewer");
+        User inactiveOwner = ensureUser("vmdel.inactive-owner@example.com", "Inactive owner");
+        inactiveOwner.setStatus(UserStatus.DISABLED);
+        userRepository.save(inactiveOwner);
+        grantVmToUser(jdbcTemplate, vmId, resourceOwner.getId(), "OWNER");
+        grantVmToUser(jdbcTemplate, vmId, editor.getId(), "EDITOR");
+        grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
+        grantVmToUser(jdbcTemplate, vmId, inactiveOwner.getId(), "OWNER");
+        jdbcTemplate.update("""
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, 'OWNER')
+                """, workspaceId, workspaceOwner.getId());
+        // The original owner holds both OWNER positions; the original member
+        // holds MEMBER, while the org admin is outside the VM access list.
+        return List.of(owner.getId(), resourceOwner.getId(), workspaceOwner.getId());
+    }
+
+    private void assertDeletionNoticeOwners(long vmId, String event, List<Long> owners) {
+        List<Long> recipients = jdbcTemplate.queryForList("""
+                select user_id from notifications where event = ? and payload ->> 'vmId' = ?
+                """, Long.class, event, pub("vms", vmId).toString());
+        assertThat(recipients).containsExactlyInAnyOrderElementsOf(owners);
+        assertThat(jdbcTemplate.queryForObject("""
+                select bool_and(not bundle and status = 'PENDING' and channel = 'EMAIL')
+                  from notifications where event = ? and payload ->> 'vmId' = ?
+                """, Boolean.class, event, pub("vms", vmId).toString())).isTrue();
     }
 
     private void stubConfigPut(int vmid) {

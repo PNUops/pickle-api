@@ -7,6 +7,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.request.RosterService;
+import kr.ac.pusan.pickle.request.dto.ResolveRosterRequest;
+import kr.ac.pusan.pickle.request.dto.ResolveRosterResponse;
 import kr.ac.pusan.pickle.workspace.dto.CreateWorkspaceRequest;
 import kr.ac.pusan.pickle.workspace.dto.InviteWorkspaceMembersRequest;
 import kr.ac.pusan.pickle.workspace.dto.InviteWorkspaceMembersResponse;
@@ -36,10 +39,13 @@ public class WorkspaceController {
 
     private final WorkspaceService workspaceService;
     private final WorkspaceInvitationService invitationService;
+    private final RosterService rosterService;
 
-    public WorkspaceController(WorkspaceService workspaceService, WorkspaceInvitationService invitationService) {
+    public WorkspaceController(WorkspaceService workspaceService, WorkspaceInvitationService invitationService,
+            RosterService rosterService) {
         this.workspaceService = workspaceService;
         this.invitationService = invitationService;
+        this.rosterService = rosterService;
     }
 
     @GetMapping
@@ -112,6 +118,20 @@ public class WorkspaceController {
             @PathVariable UUID invitationId,
             HttpServletRequest httpRequest) {
         invitationService.cancel(principal, workspaceId, invitationId, clientIp(httpRequest));
+    }
+
+    @PostMapping("/{workspaceId}/roster/resolve")
+    @Operation(summary = "학번 명단 확인",
+            description = "신청 대상자로 지정할 학번 명단을 제출하기 전에 확인합니다. 학번마다 이미 구성원인지, 활성 계정이 "
+                    + "있지만 구성원이 아닌지, 대기 중인 초대가 있는지, 계정도 초대도 없는지를 요청과 같은 순서로 "
+                    + "돌려줍니다. 아무것도 기록하지 않으며, 구성원 추가와 초대는 학번 대상자로 신청을 제출할 때 "
+                    + "일어납니다. 워크스페이스 소유자나, orgId로 지정한 기관의 신청을 승인할 수 있는 관리자만 "
+                    + "호출할 수 있고 개인 워크스페이스에는 쓸 수 없습니다. 한 번에 500건까지, 1분에 10번까지, 한 시간에 2000건까지입니다.")
+    public ResolveRosterResponse resolveWorkspaceRoster(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID workspaceId,
+            @Valid @RequestBody ResolveRosterRequest request) {
+        return rosterService.resolve(principal, workspaceId, request);
     }
 
     @PatchMapping("/{workspaceId}/members/{userId}")

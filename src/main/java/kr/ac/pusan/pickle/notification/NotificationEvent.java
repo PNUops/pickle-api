@@ -18,6 +18,9 @@ public enum NotificationEvent {
     REQUEST_SUBMITTED("request.submitted", NotificationImportance.NORMAL),
     REQUEST_APPROVED("request.approved", NotificationImportance.NORMAL),
     REQUEST_REJECTED("request.rejected", NotificationImportance.NORMAL),
+    // A resource made for someone named on another person's request. They did
+    // not apply, so "your request was approved" is not true for them.
+    RESOURCE_GRANTED("resource.granted", NotificationImportance.NORMAL),
     VM_CREATE_DONE("vm.create.done", NotificationImportance.NORMAL),
     VM_CREATE_FAILED("vm.create.failed", NotificationImportance.HIGH),
     VM_DELETE_ACCEPTED("vm.delete.accepted", NotificationImportance.NORMAL),

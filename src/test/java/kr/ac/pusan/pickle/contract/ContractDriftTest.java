@@ -108,6 +108,7 @@ class ContractDriftTest {
             "POST /workspaces/{workspaceId}/invitations",
             "GET /workspaces/{workspaceId}/invitations",
             "DELETE /workspaces/{workspaceId}/invitations/{invitationId}",
+            "POST /workspaces/{workspaceId}/roster/resolve",
             "PATCH /workspaces/{workspaceId}/members/{userId}",
             "DELETE /workspaces/{workspaceId}/members/{userId}",
             "GET /resources",

@@ -26,6 +26,7 @@ class PlacementCapacityTest {
         assertThat(capacity.reserved()).isEqualTo(new PlacementCapacity.CapacityAmounts(4, 8192, 200));
         assertThat(capacity.allocatable()).isEqualTo(new PlacementCapacity.CapacityAmounts(28, 57344, 800));
         assertThat(capacity.measuredAt()).isEqualTo(NOW);
+        assertThat(capacity.cpuPolicy()).isEqualTo(new PlacementCapacity.CpuPolicy(1, 0));
     }
 
     @Test
@@ -48,7 +49,7 @@ class PlacementCapacityTest {
 
     static Stream<Arguments> invalidDocuments() {
         return Stream.of(
-                scenario("unknown schema", d -> d.put("schema_version", 2)),
+                scenario("unknown schema", d -> d.put("schema_version", 3)),
                 scenario("text schema", d -> d.put("schema_version", "1")),
                 scenario("decimal schema", d -> d.put("schema_version", 1.0)),
                 scenario("unknown document field", d -> d.put("effective", 1)),
@@ -93,6 +94,80 @@ class PlacementCapacityTest {
                 32, 57344, 1000L, NOW)).isPresent();
     }
 
+    @Test
+    void sharesOnlyUnreservedCpuAndSubtractsExternalCommitmentInVcpuUnits() {
+        Map<String, Object> document = sharedCpuDocument();
+        PlacementCapacity capacity = read(document);
+        assertThat(capacity.cpuPolicy()).isEqualTo(new PlacementCapacity.CpuPolicy(2, 15));
+        assertThat(capacity.physical().cpuThreads()).isEqualTo(32);
+        assertThat(capacity.reserved().cpuThreads()).isEqualTo(4);
+        assertThat(capacity.allocatable()).isEqualTo(new PlacementCapacity.CapacityAmounts(41, 57344, 800));
+    }
+
+    @Test
+    void explicitRatioOneKeepsCommitmentSeparateFromPhysicalReserve() {
+        Map<String, Object> document = sharedCpuDocument();
+        group(document, "cpu_policy").put("allocation_ratio", 1);
+        group(document, "allocatable").put("cpu_threads", 13);
+        assertThat(read(document).allocatable().cpuThreads()).isEqualTo(13);
+        group(document, "cpu_policy").put("committed_vcpu", 0);
+        group(document, "allocatable").put("cpu_threads", 28);
+        assertThat(read(document).allocatable()).isEqualTo(read(document()).allocatable());
+    }
+
+    @Test
+    void sharedCpuBudgetSupportsLongAmountsWithoutChangingPhysicalIntegerColumns() {
+        Map<String, Object> document = sharedCpuDocument();
+        group(document, "physical").put("cpu_threads", Integer.MAX_VALUE);
+        group(document, "reserved").put("cpu_threads", 0);
+        group(document, "cpu_policy").put("allocation_ratio", BigInteger.valueOf(2));
+        group(document, "cpu_policy").put("committed_vcpu", BigInteger.ZERO);
+        group(document, "allocatable").put("cpu_threads", 2L * Integer.MAX_VALUE);
+        PlacementCapacity capacity = PlacementCapacity.read(Map.of("placement_capacity", document),
+                Integer.MAX_VALUE, 57344, 1000L, NOW).orElseThrow();
+        assertThat(capacity.allocatable().cpuThreads()).isEqualTo(4294967294L);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidSharedCpuDocuments")
+    void rejectsInvalidSharedPolicyAndMixedVersionMetadata(String name, Consumer<Map<String, Object>> change) {
+        Map<String, Object> document = sharedCpuDocument();
+        change.accept(document);
+        assertThatThrownBy(() -> read(document)).isInstanceOf(IllegalStateException.class);
+    }
+
+    static Stream<Arguments> invalidSharedCpuDocuments() {
+        return Stream.of(
+                scenario("missing policy", d -> d.remove("cpu_policy")),
+                scenario("legacy version with shared policy", d -> d.put("schema_version", 1)),
+                scenario("unknown top-level field", d -> d.put("available_cpu", 41)),
+                scenario("missing committed amount", d -> group(d, "cpu_policy").remove("committed_vcpu")),
+                scenario("unknown policy field", d -> group(d, "cpu_policy").put("weight", 1)),
+                scenario("boolean ratio", d -> group(d, "cpu_policy").put("allocation_ratio", true)),
+                scenario("floating ratio", d -> group(d, "cpu_policy").put("allocation_ratio", 2.0)),
+                scenario("text ratio", d -> group(d, "cpu_policy").put("allocation_ratio", "2")),
+                scenario("unsupported ratio", d -> group(d, "cpu_policy").put("allocation_ratio", 3)),
+                scenario("zero ratio", d -> group(d, "cpu_policy").put("allocation_ratio", 0)),
+                scenario("negative ratio", d -> group(d, "cpu_policy").put("allocation_ratio", -1)),
+                scenario("overflow ratio", d -> group(d, "cpu_policy").put("allocation_ratio", BigInteger.ONE.shiftLeft(64))),
+                scenario("negative committed amount", d -> group(d, "cpu_policy").put("committed_vcpu", -1)),
+                scenario("boolean committed amount", d -> group(d, "cpu_policy").put("committed_vcpu", false)),
+                scenario("decimal committed amount", d -> group(d, "cpu_policy").put("committed_vcpu", new BigDecimal("15"))),
+                scenario("text committed amount", d -> group(d, "cpu_policy").put("committed_vcpu", "15")),
+                scenario("overflow committed amount", d -> group(d, "cpu_policy").put("committed_vcpu", BigInteger.ONE.shiftLeft(64))),
+                scenario("commitment consumes shared budget", d -> {
+                    group(d, "cpu_policy").put("committed_vcpu", 56);
+                    group(d, "allocatable").put("cpu_threads", 0);
+                }),
+                scenario("commitment exceeds shared budget", d -> group(d, "cpu_policy").put("committed_vcpu", Long.MAX_VALUE)),
+                scenario("host reserve consumes physical cpu", d -> group(d, "reserved").put("cpu_threads", 32)),
+                scenario("wrong external commitment accounting", d -> group(d, "allocatable").put("cpu_threads", 26)),
+                scenario("memory cannot be overcommitted", d -> group(d, "allocatable").put("memory_mb", 114688)),
+                scenario("disk cannot be overcommitted", d -> group(d, "allocatable").put("disk_gb", 1600)),
+                scenario("overflow allocation", d -> group(d, "allocatable").put("cpu_threads", BigInteger.ONE.shiftLeft(64))),
+                scenario("unknown capacity dimension", d -> group(d, "reserved").put("external_cpu", 15)));
+    }
+
     private static Arguments scenario(String name, Consumer<Map<String, Object>> change) {
         return Arguments.of(name, change);
     }
@@ -107,6 +182,14 @@ class PlacementCapacityTest {
                 "physical", new HashMap<>(Map.of("cpu_threads", 32, "memory_mb", 65536, "disk_gb", 1000L)),
                 "reserved", new HashMap<>(Map.of("cpu_threads", 4, "memory_mb", 8192, "disk_gb", 200L)),
                 "allocatable", new HashMap<>(Map.of("cpu_threads", 28, "memory_mb", 57344, "disk_gb", 800L))));
+    }
+
+    private static Map<String, Object> sharedCpuDocument() {
+        Map<String, Object> value = document();
+        value.put("schema_version", 2);
+        value.put("cpu_policy", new HashMap<>(Map.of("allocation_ratio", 2, "committed_vcpu", 15)));
+        group(value, "allocatable").put("cpu_threads", 41);
+        return value;
     }
 
     private static PlacementCapacity read(Map<String, Object> document) {

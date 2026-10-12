@@ -38,6 +38,17 @@ public record LlmKeyRequestSpecResponse(
         @Schema(description = "신청자가 요청한 금액 한도(USD). 유료를 쓰지 않는 신청은 비어 있습니다.")
         @Nullable BigDecimal reqCreditLimit,
 
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
+                PassthroughEndpoints.WEB_SEARCH, PassthroughEndpoints.PDF_OCR,
+                PassthroughEndpoints.CONTAINERS, PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS, PassthroughEndpoints.RERANK,
+                PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
+                PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
+                PassthroughEndpoints.FILES}),
+                arraySchema = @Schema(description = "신청자가 고른 기능 권한. 승인 화면의 "
+                        + "초깃값입니다. 이 항목이 생기기 전의 신청은 [\"chat\"]으로 이관되었습니다."))
+        List<String> reqPassthroughEndpoints,
+
         @Schema(description = "부여 분당 요청 수. 비어 있으면 서비스 기본값입니다.")
         @Nullable Integer grantedRpm,
 
@@ -66,18 +77,24 @@ public record LlmKeyRequestSpecResponse(
                 + "허용 목록과 함께 걸리면 차단이 이깁니다."
                 + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         List<String> grantedCreditDeniedModels,
-        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
-                PassthroughEndpoints.EMBEDDINGS}),
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
+                PassthroughEndpoints.WEB_SEARCH, PassthroughEndpoints.PDF_OCR,
+                PassthroughEndpoints.CONTAINERS, PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS, PassthroughEndpoints.RERANK,
+                PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
+                PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
+                PassthroughEndpoints.FILES}),
                 arraySchema = @Schema(description = "승인자가 부여한 기능 권한. 빈 배열이면 "
-                        + "부여된 기능이 없습니다."))
+                        + "부여된 기능이 없습니다. 검토 전 신청은 빈 배열입니다."))
         List<String> grantedPassthroughEndpoints) {
 
     public static LlmKeyRequestSpecResponse from(LlmKeyRequestDetail detail,
-            List<String> grantedCreditAllowedModels, List<String> grantedCreditDeniedModels,
+            List<String> reqPassthroughEndpoints, List<String> grantedCreditAllowedModels, List<String> grantedCreditDeniedModels,
             List<String> grantedPassthroughEndpoints) {
         return new LlmKeyRequestSpecResponse(detail.getReqRpm(),
                 detail.getReqTpm(), detail.getReqDailyTokens(), detail.isReqUseCampus(),
-                detail.isReqUseCommercial(), detail.getReqCreditLimit(), detail.getGrantedRpm(),
+                detail.isReqUseCommercial(), detail.getReqCreditLimit(), reqPassthroughEndpoints,
+                detail.getGrantedRpm(),
                 detail.getGrantedTpm(), detail.getGrantedConcurrency(),
                 detail.getGrantedDailyTokens(), detail.getGrantedCreditLimit(),
                 detail.getGrantedCreditLimitReset(), grantedCreditAllowedModels,

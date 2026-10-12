@@ -109,7 +109,7 @@ public final class LlmKeyLimitRules {
                         "creditDeniedModels", listErrors)
                 : stored(limits.creditDeniedModels());
         List<String> passthroughEndpoints = normalizePassthrough
-                ? PassthroughEndpoints.normalize(limits.passthroughEndpoints(),
+                ? PassthroughEndpoints.normalizeGrant(limits.passthroughEndpoints(),
                         "passthroughEndpoints", listErrors)
                 : stored(limits.passthroughEndpoints());
         if (!listErrors.isEmpty()) {

@@ -111,7 +111,7 @@ public record CreateRequestRequest(
                 + "VM과 LLM API 키에만 쓸 수 있고, 워크스페이스 소유자나 이 기관의 신청을 승인할 수 있는 관리자만 지정할 수 있습니다. "
                 + "대상자마다 리소스를 하나씩 만들며, 가입 전인 초대 대상자는 가입할 때 만듭니다.")
         @Size(max = 200, message = "대상자는 한 번에 200명까지 지정할 수 있습니다.")
-        @Nullable List<CreateRequestRecipient> recipients,
+        @Valid @Nullable List<CreateRequestRecipient> recipients,
 
         /**
          * Present when the submitter is an approver who decides in the same

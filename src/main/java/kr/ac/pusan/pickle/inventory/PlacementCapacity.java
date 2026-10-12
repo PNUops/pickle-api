@@ -12,19 +12,36 @@ import java.util.Set;
  * parser does not enable placement or change the legacy monitoring denominators.
  */
 public record PlacementCapacity(CapacityAmounts physical, CapacityAmounts reserved,
-        CapacityAmounts allocatable, Instant measuredAt) {
+        CapacityAmounts allocatable, Instant measuredAt, CpuPolicy cpuPolicy) {
 
     private static final Set<String> DOCUMENT_FIELDS = Set.of(
             "schema_version", "physical", "reserved", "allocatable", "measured_at");
+    private static final Set<String> SHARED_CPU_DOCUMENT_FIELDS = Set.of(
+            "schema_version", "physical", "reserved", "allocatable", "measured_at", "cpu_policy");
     private static final Set<String> RESOURCE_FIELDS = Set.of("cpu_threads", "memory_mb", "disk_gb");
+    private static final Set<String> CPU_POLICY_FIELDS = Set.of("allocation_ratio", "committed_vcpu");
+
+    public PlacementCapacity(CapacityAmounts physical, CapacityAmounts reserved,
+            CapacityAmounts allocatable, Instant measuredAt) {
+        this(physical, reserved, allocatable, measuredAt, new CpuPolicy(1, 0));
+    }
 
     public PlacementCapacity {
-        if (physical == null || reserved == null || allocatable == null || measuredAt == null
+        if (physical == null || reserved == null || allocatable == null || measuredAt == null || cpuPolicy == null
                 || physical.cpuThreads() > Integer.MAX_VALUE || physical.memoryMb() > Integer.MAX_VALUE
-                || !consistent(physical.cpuThreads(), reserved.cpuThreads(), allocatable.cpuThreads())
+                || !consistentCpu(physical.cpuThreads(), reserved.cpuThreads(), allocatable.cpuThreads(), cpuPolicy)
                 || !consistent(physical.memoryMb(), reserved.memoryMb(), allocatable.memoryMb())
                 || !consistent(physical.diskGb(), reserved.diskGb(), allocatable.diskGb())) {
             throw invalid();
+        }
+    }
+
+    /** Host CPU reserve is physical; external commitments are already allocated vCPUs. */
+    public record CpuPolicy(long allocationRatio, long committedVcpu) {
+        public CpuPolicy {
+            if ((allocationRatio != 1 && allocationRatio != 2) || committedVcpu < 0) {
+                throw invalid();
+            }
         }
     }
 
@@ -46,8 +63,20 @@ public record PlacementCapacity(CapacityAmounts physical, CapacityAmounts reserv
         if (labels == null || !labels.containsKey("placement_capacity")) {
             return Optional.empty();
         }
-        Map<?, ?> document = exactMap(labels.get("placement_capacity"), DOCUMENT_FIELDS);
-        if (integer(document.get("schema_version")) != 1 || observedAt == null) {
+        if (!(labels.get("placement_capacity") instanceof Map<?, ?> candidate) || observedAt == null) {
+            throw invalid();
+        }
+        long version = integer(candidate.get("schema_version"));
+        Map<?, ?> document;
+        CpuPolicy cpuPolicy;
+        if (version == 1) {
+            document = exactMap(candidate, DOCUMENT_FIELDS);
+            cpuPolicy = new CpuPolicy(1, 0);
+        } else if (version == 2) {
+            document = exactMap(candidate, SHARED_CPU_DOCUMENT_FIELDS);
+            Map<?, ?> policy = exactMap(document.get("cpu_policy"), CPU_POLICY_FIELDS);
+            cpuPolicy = new CpuPolicy(integer(policy.get("allocation_ratio")), integer(policy.get("committed_vcpu")));
+        } else {
             throw invalid();
         }
         Instant measuredAt;
@@ -60,7 +89,7 @@ public record PlacementCapacity(CapacityAmounts physical, CapacityAmounts reserv
             throw invalid();
         }
         PlacementCapacity result = new PlacementCapacity(resources(document.get("physical")),
-                resources(document.get("reserved")), resources(document.get("allocatable")), measuredAt);
+                resources(document.get("reserved")), resources(document.get("allocatable")), measuredAt, cpuPolicy);
         if (measuredAt.isAfter(observedAt)
                 || result.physical().cpuThreads() != nodeCpuThreads
                 || result.allocatable().memoryMb() != nodeMemoryMb
@@ -99,6 +128,19 @@ public record PlacementCapacity(CapacityAmounts physical, CapacityAmounts reserv
 
     private static boolean consistent(long physical, long reserved, long allocatable) {
         return physical > 0 && reserved < physical && allocatable == physical - reserved;
+    }
+
+    private static boolean consistentCpu(long physical, long reserved, long allocatable, CpuPolicy policy) {
+        if (physical <= 0 || reserved >= physical) {
+            return false;
+        }
+        try {
+            long available = Math.subtractExact(Math.multiplyExact(physical - reserved, policy.allocationRatio()),
+                    policy.committedVcpu());
+            return available > 0 && allocatable == available;
+        } catch (ArithmeticException e) {
+            return false;
+        }
     }
 
     private static IllegalStateException invalid() {

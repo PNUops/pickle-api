@@ -14,6 +14,7 @@ import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -130,6 +131,7 @@ public class AdminWorkspaceQueryService {
         AdminWorkspaceDetailResponse base = rows.getFirst();
         List<AdminWorkspaceMemberResponse> members = jdbcTemplate.query("""
                 select u.public_id as user_public_id, u.name, u.email, gm.role, u.status,
+                       u.role as user_role,
                        gm.created_at
                   from workspace_members gm
                   join users u on u.id = gm.user_id
@@ -141,6 +143,7 @@ public class AdminWorkspaceQueryService {
                         rs.getString("name"), rs.getString("email"),
                         WorkspaceMemberRole.valueOf(rs.getString("role")),
                         UserStatus.valueOf(rs.getString("status")),
+                        !actor.role().isOrgTier() || !UserRole.valueOf(rs.getString("user_role")).isSysTier(),
                         rs.getTimestamp("created_at").toInstant()),
                 workspaceId);
         return new AdminWorkspaceDetailResponse(base.id(), base.kind(), base.name(),

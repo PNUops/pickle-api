@@ -264,7 +264,8 @@ class OpenRouterClientTest {
                                 {"total_count": 3, "data": [
                                   {"id": "openai/gpt-4o-mini", "name": "Mini",
                                    "context_length": 128000,
-                                   "pricing": {"prompt": "0.00000015", "completion": "0.0000006"}},
+                                   "pricing": {"prompt": "0.00000015", "completion": "0.0000006",
+                                               "web_search": "0.01"}},
                                   {"id": "vendor/free", "name": "Free",
                                    "pricing": {"prompt": "0", "completion": "0"}},
                                   {"id": "openrouter/auto", "name": "Auto",
@@ -282,6 +283,8 @@ class OpenRouterClientTest {
                 .describedAs("a negative sentinel is unknown, not a price")
                 .isNull();
         assertThat(models.get(2).promptPrice()).isNull();
+        // The whole object is carried, not only the two prices lifted out of it.
+        assertThat(models.get(0).pricing()).contains("\"web_search\"");
     }
 
     @Test

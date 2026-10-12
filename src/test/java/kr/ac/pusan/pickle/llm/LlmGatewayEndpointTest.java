@@ -221,6 +221,25 @@ class LlmGatewayEndpointTest {
         assertThat(body).doesNotContain("\"limits\"");
     }
 
+    /**
+     * Chat is a capability since V139 and has to reach the gateway, which will
+     * refuse chat to a key whose list lacks it. Every name in the vocabulary
+     * travels, granted yet or not; a name outside it is still dropped.
+     */
+    @Test
+    void theDocumentCarriesChatAndEveryNameInTheVocabulary() throws Exception {
+        KeyFixture key = newKey("chat-grant");
+        jdbcTemplate.update("""
+                update llm_api_keys
+                   set passthrough_endpoints = '["chat", "web_search", "videos"]'::jsonb
+                 where id = ?
+                """, key.id());
+        syncFrom(SOURCE, TOKEN, poll(0))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.keys[0].passthroughEndpoints")
+                        .value(org.hamcrest.Matchers.contains("chat", "web_search", "videos")));
+    }
+
     @Test
     void configuredLimitsAndExpiryAppearOnTheKeyEntry() throws Exception {
         KeyFixture key = newKey("limits");

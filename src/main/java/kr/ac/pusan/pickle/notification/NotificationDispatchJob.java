@@ -448,7 +448,8 @@ public class NotificationDispatchJob {
         if (path == null) {
             return DEFAULT_CTA_LABEL;
         }
-        if ("request.approved".equals(mail.event()) && path.startsWith("/console/llm-keys/")) {
+        if (("request.approved".equals(mail.event()) || "resource.granted".equals(mail.event()))
+                && path.startsWith("/console/llm-keys/")) {
             return "키 발급하기";
         }
         if (path.startsWith("/admin/")) {

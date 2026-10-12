@@ -56,7 +56,8 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 - **드리프트 감시**: 기록된 상태와 하이퍼바이저의 실제 상태가 어긋나면 찾아내 관리자
   화면에 올립니다. 스스로 고치거나 지우지 않습니다.
 - **알림**: 승인, 만료 임박, 프로비저닝 결과 같은 사건을 콘솔 알림함에 쌓고 메일로도
-  내보냅니다.
+  내보냅니다. VM 삭제 알림은 접수와 예약, 취소, 강제 삭제, 완료 시점에 활성 VM 소유자와
+  워크스페이스 소유자에게 보냅니다. 두 범위에 겹치는 소유자는 한 번만 수신합니다.
 - **공지사항**: 팝업으로 띄울지가 로그인 없이 보이는지까지 함께 정합니다. 팝업으로 올린
   공지는 방문자에게 바로 열리고, 나머지는 로그인한 사용자의 게시판에 남습니다. 볼 수 없는
   공지는 거절이 아니라 404로 답합니다. 본문 이미지는 클라이언트가 선언한 형식이 아니라
@@ -325,6 +326,35 @@ mapping 중단·삭제와 VM 소유권 종료의 resource retirement에만 사�
 직접 손대지 않습니다. 관리 대상 VM은 하이퍼바이저 `protection` 플래그를 상시 켜 두고,
 의도된 삭제 직전에만 내립니다.
 
+### 노드의 CPU 배치 예산
+
+노드 `labels.placement_capacity`의 schema1은 물리 용량에서 예약량을 뺀 CPU, 메모리,
+디스크 예산을 사용합니다. schema2는 `cpu_policy`의 `allocation_ratio`(1 또는 2)와
+`committed_vcpu`를 함께 검증합니다. CPU 예산은 `(physical.cpu_threads -
+reserved.cpu_threads) × allocation_ratio - committed_vcpu`입니다. `reserved.cpu_threads`는
+호스트가 사용하는 물리 CPU 예약량이며, `committed_vcpu`는 플랫폼 VM 목록 밖에서 이미
+사용하거나 별도로 확보한 vCPU입니다. 플랫폼에 기록된 VM의 할당량과 새 요청은 남은
+예산에 대해 노드를 잠근 상태에서 함께 확인합니다. 외부 vCPU를 다시 빼지 않습니다.
+
+메모리와 디스크는 두 schema 모두 `physical - reserved`로 계산합니다. 노드의 CPU
+column은 물리 thread 수를 유지하며 CPU 공유 비율은 VM 개수나 성능 보장 비율이 아닙니다.
+메타데이터가 없는 기존 노드는 기존 배치 동작을 유지합니다. 메타데이터가 있는데 version,
+정수 값, 필드 구성이나 계산 결과가 맞지 않으면 배치를 거부합니다.
+
+아래 예시는 16 physical threads 중 호스트용 4개를 예약하고 외부 vCPU 6개를 확보한
+설정입니다. 플랫폼 VM에 할당할 수 있는 CPU 예산은 18 vCPU입니다.
+
+```json
+{
+  "schema_version": 2,
+  "physical": {"cpu_threads": 16, "memory_mb": 65536, "disk_gb": 512},
+  "reserved": {"cpu_threads": 4, "memory_mb": 8192, "disk_gb": 128},
+  "allocatable": {"cpu_threads": 18, "memory_mb": 57344, "disk_gb": 384},
+  "cpu_policy": {"allocation_ratio": 2, "committed_vcpu": 6},
+  "measured_at": "2026-01-01T00:00:00Z"
+}
+```
+
 ## GPU 할당 API
 
 GPU 할당은 가상머신과 별도 리소스입니다. `GPU` 종류로 임대 시간을 직접 신청하고
@@ -386,6 +416,9 @@ GPU 양쪽의 편집 권한 및 중단 동의를 확인합니다. `detach`는 �
 공개된 이메일로 연결한 초대만 제공하며, 저장 학번으로 대기 초대를 계정과 연결하는
 조회는 시스템 관리자에게 제한합니다. 이미 수락된 가입과 신청 대상자 연결은 실제
 사용자 ID를 따릅니다. 신청과 도메인 관리자 목록은 `workspaceId`로 같은 대상을 조회합니다.
+관리자 워크스페이스 상세의 구성원 응답은 `supportDetailVisible`로 현재 관리자가 해당
+사용자의 지원 상세를 열 수 있는지 알려 줍니다. 기관 계층에는 시스템 계층 계정의
+지원 상세를 열지 않습니다.
 
 `GET /api/v1/admin/users/{userId}/support/access?type=VM&resourceId=...`는 지정 리소스의
 구성원 자격과 개인 부여, 워크스페이스 전체 부여 및 계정 상태를 읽습니다. 워크스페이스

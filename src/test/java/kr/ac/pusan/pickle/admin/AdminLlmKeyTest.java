@@ -802,21 +802,23 @@ class AdminLlmKeyTest {
         base.put("displayName", "axis-key");
 
         Map<String, Object> noAxis = new java.util.LinkedHashMap<>(base);
-        noAxis.put("llmKey", Map.of("useCampusModels", false, "useCommercialModels", false));
+        noAxis.put("llmKey", Map.of("useCampusModels", false, "useCommercialModels", false,
+                "reqPassthroughEndpoints", java.util.List.of("chat")));
         postJson("/api/v1/requests", requesterToken, noAxis)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("llmKey.useCampusModels"));
 
         Map<String, Object> amountWithoutAxis = new java.util.LinkedHashMap<>(base);
         amountWithoutAxis.put("llmKey",
-                Map.of("useCommercialModels", false, "reqCreditLimit", 20));
+                Map.of("useCommercialModels", false, "reqCreditLimit", 20,
+                        "reqPassthroughEndpoints", java.util.List.of("chat")));
         postJson("/api/v1/requests", requesterToken, amountWithoutAxis)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("llmKey.reqCreditLimit"));
 
         Map<String, Object> both = new java.util.LinkedHashMap<>(base);
         both.put("llmKey", Map.of("useCampusModels", true, "useCommercialModels", true,
-                "reqCreditLimit", 20));
+                "reqCreditLimit", 20, "reqPassthroughEndpoints", java.util.List.of("chat")));
         postJson("/api/v1/requests", requesterToken, both)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.llmKey.useCommercialModels").value(true))
@@ -834,7 +836,8 @@ class AdminLlmKeyTest {
         create.put("displayName", "vertical-flow-key");
         // 축을 비우면 자체 서빙 모델만 쓰는 보통의 신청이다.
         create.put("llmKey", Map.of("reqRpm", 30,
-                "reqTpm", 3000, "reqDailyTokens", 30000));
+                "reqTpm", 3000, "reqDailyTokens", 30000,
+                "reqPassthroughEndpoints", java.util.List.of("chat", "web_search")));
         String created = postJson("/api/v1/requests", requesterToken, create)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.type").value("LLM_API_KEY"))
@@ -1056,6 +1059,173 @@ class AdminLlmKeyTest {
                 .isEqualTo("[\"images\"]");
     }
 
+    /**
+     * Chat spans both axes, so it is outside the money gate: a SYS_MANAGER may
+     * grant or withdraw chat alone. Any other capability moved in the same
+     * write is still a money change.
+     */
+    @Test
+    void systemManagerMayChangeChatAlone() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "운영자 chat 키", "ACTIVE", null);
+        Map<String, Object> chat = limits(60, "1.00");
+        chat.put("passthroughEndpoints", java.util.List.of("chat"));
+        putLimits(key.publicId(), sysManagerToken, chat).andExpect(status().isOk());
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints"))
+                .isEqualTo("[\"chat\"]");
+
+        Map<String, Object> both = limits(60, "1.00");
+        both.put("passthroughEndpoints", java.util.List.of("chat", "images"));
+        putLimits(key.publicId(), sysAdminToken, both).andExpect(status().isOk());
+
+        // Withdrawing chat alone, images untouched: allowed.
+        Map<String, Object> imagesOnly = limits(60, "1.00");
+        imagesOnly.put("passthroughEndpoints", java.util.List.of("images"));
+        putLimits(key.publicId(), sysManagerToken, imagesOnly).andExpect(status().isOk());
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints"))
+                .isEqualTo("[\"images\"]");
+
+        // Swapping images for chat moves images: refused.
+        putLimits(key.publicId(), sysManagerToken, chat).andExpect(status().isForbidden());
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints"))
+                .isEqualTo("[\"images\"]");
+    }
+
+    /**
+     * The vocabulary is twelve names but only what the gateway serves may be
+     * granted, and a feature of chat may not be granted without it.
+     */
+    @Test
+    void ungrantableAndOrphanCapabilitiesAreRefused() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "부여 불가 키", "ACTIVE", null);
+        Map<String, Object> notYet = limits(60, "5.00");
+        notYet.put("passthroughEndpoints", java.util.List.of("chat", "videos"));
+        putLimits(key.publicId(), sysAdminToken, notYet)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("passthroughEndpoints[1]"));
+
+        Map<String, Object> files = limits(60, "5.00");
+        files.put("passthroughEndpoints", java.util.List.of("files"));
+        putLimits(key.publicId(), sysAdminToken, files)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("passthroughEndpoints[0]"));
+
+        Map<String, Object> orphan = limits(60, "5.00");
+        orphan.put("passthroughEndpoints", java.util.List.of("web_search", "images"));
+        putLimits(key.publicId(), sysAdminToken, orphan)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("passthroughEndpoints"));
+
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints")).isEqualTo("[]");
+
+        Map<String, Object> withChat = limits(60, "5.00");
+        withChat.put("passthroughEndpoints", java.util.List.of("chat", "web_search", "pdf_ocr"));
+        putLimits(key.publicId(), sysAdminToken, withChat).andExpect(status().isOk());
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints"))
+                .isEqualTo("[\"chat\", \"web_search\", \"pdf_ocr\"]");
+    }
+
+    /**
+     * The request says which capabilities it wants, always: a missing list is
+     * refused rather than read as some default, and the list meets the same
+     * rules a grant does.
+     */
+    @Test
+    void theRequestMustNameItsCapabilities() throws Exception {
+        Map<String, Object> base = new java.util.LinkedHashMap<>();
+        base.put("type", "LLM_API_KEY");
+        base.put("workspaceId", pub("workspaces", workspaceA));
+        base.put("orgId", orgA.getPublicId());
+        base.put("purpose", "기능 권한 신청");
+        base.put("reqEndDate", LocalDate.now(ClockConfig.KST).plusMonths(4).toString());
+        base.put("displayName", "feature-request-key");
+
+        Map<String, Object> missing = new java.util.LinkedHashMap<>(base);
+        missing.put("llmKey", Map.of("reqRpm", 30));
+        postJson("/api/v1/requests", requesterToken, missing)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("llmKey.reqPassthroughEndpoints"));
+
+        Map<String, Object> notYet = new java.util.LinkedHashMap<>(base);
+        notYet.put("llmKey", Map.of("reqPassthroughEndpoints", java.util.List.of("rerank")));
+        postJson("/api/v1/requests", requesterToken, notYet)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field")
+                        .value("llmKey.reqPassthroughEndpoints[0]"));
+
+        Map<String, Object> orphan = new java.util.LinkedHashMap<>(base);
+        orphan.put("llmKey", Map.of("reqPassthroughEndpoints", java.util.List.of("pdf_ocr")));
+        postJson("/api/v1/requests", requesterToken, orphan)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("llmKey.reqPassthroughEndpoints"));
+
+        // An empty list is an answer: nothing asked for.
+        Map<String, Object> nothing = new java.util.LinkedHashMap<>(base);
+        nothing.put("llmKey", Map.of("reqPassthroughEndpoints", java.util.List.of()));
+        postJson("/api/v1/requests", requesterToken, nothing)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.llmKey.reqPassthroughEndpoints.length()").value(0));
+    }
+
+    /**
+     * An approval that leaves its list out grants what was requested; an
+     * explicit empty list grants nothing, chat included. A list the reviewer
+     * writes meets the whole-grant rules.
+     */
+    @Test
+    void approvalWithoutAListGrantsTheRequestedOne() throws Exception {
+        UUID asRequested = submitLlmRequest("as-requested-key",
+                java.util.List.of("chat", "images"));
+        Map<String, Object> noList = new java.util.LinkedHashMap<>();
+        noList.put("grantedCreditLimit", "0");
+        postJson("/api/v1/admin/requests/" + asRequested + "/approve", orgManagerToken,
+                Map.of("llmKey", noList))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.llmKey.reqPassthroughEndpoints[0]").value("chat"))
+                .andExpect(jsonPath("$.llmKey.grantedPassthroughEndpoints.length()").value(2));
+        assertThat(keyListForRequest(asRequested)).isEqualTo("[\"chat\", \"images\"]");
+
+        UUID none = submitLlmRequest("none-granted-key", java.util.List.of("chat"));
+        Map<String, Object> empty = new java.util.LinkedHashMap<>();
+        empty.put("grantedPassthroughEndpoints", java.util.List.of());
+        postJson("/api/v1/admin/requests/" + none + "/approve", orgManagerToken,
+                Map.of("llmKey", empty))
+                .andExpect(status().isOk());
+        assertThat(keyListForRequest(none)).isEqualTo("[]");
+
+        UUID orphan = submitLlmRequest("orphan-granted-key", java.util.List.of("chat"));
+        Map<String, Object> orphanGrant = new java.util.LinkedHashMap<>();
+        orphanGrant.put("grantedPassthroughEndpoints", java.util.List.of("web_search"));
+        postJson("/api/v1/admin/requests/" + orphan + "/approve", orgManagerToken,
+                Map.of("llmKey", orphanGrant))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field")
+                        .value("llmKey.grantedPassthroughEndpoints"));
+    }
+
+    private UUID submitLlmRequest(String displayName, java.util.List<String> capabilities)
+            throws Exception {
+        Map<String, Object> create = new java.util.LinkedHashMap<>();
+        create.put("type", "LLM_API_KEY");
+        create.put("workspaceId", pub("workspaces", workspaceA));
+        create.put("orgId", orgA.getPublicId());
+        create.put("purpose", "기능 권한 승인");
+        create.put("reqEndDate", LocalDate.now(ClockConfig.KST).plusMonths(4).toString());
+        create.put("displayName", displayName);
+        create.put("llmKey", Map.of("reqPassthroughEndpoints", capabilities));
+        String created = postJson("/api/v1/requests", requesterToken, create)
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return UUID.fromString(objectMapper.readTree(created).get("id").asString());
+    }
+
+    private String keyListForRequest(UUID requestPublicId) {
+        return jdbcTemplate.queryForObject("""
+                select k.passthrough_endpoints::text from llm_api_keys k
+                  join requests r on r.id = k.request_id
+                 where r.public_id = ?
+                """, String.class, requestPublicId);
+    }
+
     /** The three per-key list columns as the gateway would read them. */
     private String storedModels(UUID keyPublicId, String column) {
         return jdbcTemplate.queryForObject(
@@ -1110,7 +1280,8 @@ class AdminLlmKeyTest {
                 values ('LLM_API_KEY', ?, ?, ?, '테스트', ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requester.getId(), displayName);
-        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)", requestId);
+        jdbcTemplate.update("insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')", requestId);
         return requestId;
     }
 

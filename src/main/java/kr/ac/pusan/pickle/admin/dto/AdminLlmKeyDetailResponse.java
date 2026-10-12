@@ -52,10 +52,15 @@ public record AdminLlmKeyDetailResponse(
                 + "허용 목록과 함께 걸리면 차단이 이긴다."
                 + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         List<String> creditDeniedModels,
-        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
-                PassthroughEndpoints.EMBEDDINGS}),
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
+                PassthroughEndpoints.WEB_SEARCH, PassthroughEndpoints.PDF_OCR,
+                PassthroughEndpoints.CONTAINERS, PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS, PassthroughEndpoints.RERANK,
+                PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
+                PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
+                PassthroughEndpoints.FILES}),
                 arraySchema = @Schema(description = "이 키에 부여된 기능 권한. 빈 배열은 "
-                        + "부여 없음. 모델 목록 둘과 반대로 채워야 열린다."))
+                        + "부여 없음(chat 포함). 모델 목록 둘과 반대로 채워야 열린다."))
         List<String> passthroughEndpoints) {
 
     public static AdminLlmKeyDetailResponse from(LlmApiKey key, UUID workspaceId,

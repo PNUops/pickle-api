@@ -906,11 +906,22 @@ components:
         orgName:
           type: "string"
         passthroughEndpoints:
-          description: "이 키에 부여된 기능 권한. 빈 배열은 부여 없음. 모델 목록 둘과 반대로 채워야 열린다."
+          description: "이 키에 부여된 기능 권한. 빈 배열은 부여 없음(chat 포함). 모델 목록 둘과 반대로 채워야 열린다\
+            ."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           type: "array"
         purpose:
@@ -1030,12 +1041,24 @@ components:
           - "string"
           - "null"
         passthroughEndpoints:
-          description: "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 하나도 쓸 수 없습니다. 모델 목록 둘과 반\
-            대로 이 목록은 채워야 열립니다. 채팅과 모델 조회는 이 값에 영향을 받지 않습니다."
+          description: "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 하나도 쓸 수 없습니다(chat 포함). 모\
+            델 목록 둘과 반대로 이 목록은 채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr,\
+            \ images, embeddings이고, web_search와 pdf_ocr은 chat과 함께 부여해야 합니다. 모델 조회는\
+            \ 이 값에 영향을 받지 않습니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           maxItems: 20
           minItems: 0
@@ -2274,6 +2297,9 @@ components:
           type: "string"
         name:
           type: "string"
+        supportDetailVisible:
+          description: "현재 관리자에게 이 구성원의 사용자 관계·지원 상세를 열람할 권한이 있는지 여부"
+          type: "boolean"
         userId:
           format: "uuid"
           type: "string"
@@ -2285,6 +2311,7 @@ components:
       - "email"
       - "joinedAt"
       - "name"
+      - "supportDetailVisible"
       - "userId"
       - "userStatus"
       - "workspaceRole"
@@ -2620,12 +2647,24 @@ components:
           - "integer"
           - "null"
         grantedPassthroughEndpoints:
-          description: "이 키에 부여할 기능 권한. 비우면 기능을 하나도 쓸 수 없습니다. 모델 목록과 반대로 이 목록은 채워야\
-            \ 열립니다. 채팅과 모델 조회는 이 목록과 무관합니다."
+          description: "이 키에 부여할 기능 권한. 생략하면 신청자가 고른 목록(reqPassthroughEndpoints)으로\
+            \ 승인하고, 빈 배열이면 기능을 하나도 쓸 수 없습니다(chat도 포함). 모델 목록과 반대로 이 목록은 채워야 열립니다.\
+            \ 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, images, embeddings이고, web_search와\
+            \ pdf_ocr은 chat과 함께 부여해야 합니다. 모델 조회는 이 목록과 무관합니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           maxItems: 20
           minItems: 0
@@ -3155,6 +3194,28 @@ components:
           type:
           - "integer"
           - "null"
+        reqPassthroughEndpoints:
+          description: "신청자가 고른 기능 권한. 필수이며 빈 배열도 받습니다. 승인 화면의 초깃값이 되고, 무엇을 부여할지는\
+            \ 승인자가 정합니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, images, embeddings이\
+            고 나머지는 422로 거절합니다. web_search와 pdf_ocr은 chat과 함께 골라야 합니다."
+          items:
+            enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
+            - "images"
+            - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
+            type: "string"
+          maxItems: 20
+          minItems: 0
+          type: "array"
         reqRpm:
           description: "희망 분당 요청 수. 비우면 서비스 기본값을 받습니다."
           format: "int32"
@@ -3180,6 +3241,8 @@ components:
           type:
           - "boolean"
           - "null"
+      required:
+      - "reqPassthroughEndpoints"
       type: "object"
     CreateOpenRouterAccountRequest:
       properties:
@@ -3215,18 +3278,6 @@ components:
           items:
             type: "string"
           maxItems: 50
-          minItems: 0
-          type:
-          - "array"
-          - "null"
-        defaultPassthroughEndpoints:
-          description: "승인 화면 프리필에 쓸 기능 권한 기본값. 비우면 아무 기능도 부여되지 않은 상태가 기본이 됩니다."
-          items:
-            enum:
-            - "images"
-            - "embeddings"
-            type: "string"
-          maxItems: 20
           minItems: 0
           type:
           - "array"
@@ -3308,11 +3359,23 @@ components:
       - "name"
       type: "object"
     CreateRequestRecipient:
-      description: "리소스를 받을 대상자 한 명. userId와 invitationId 중 정확히 하나를 보냅니다."
+      description: "리소스를 받을 대상자 한 명. userId, invitationId, studentNo 중 정확히 하나를 보냅니\
+        다."
       properties:
         invitationId:
           description: "워크스페이스의 대기 중인 초대. 초대받은 사람이 가입하면 그때 리소스를 만듭니다."
           format: "uuid"
+          type:
+          - "string"
+          - "null"
+        studentNo:
+          description: "대상자의 학번. 그 학번의 활성 계정이 구성원이면 그 사람이 대상자가 되고, 구성원이 아니면 제출할 때\
+            \ 구성원으로 추가합니다. 계정이 없으면 대기 중인 초대를 쓰거나 제출할 때 새로 초대하며, 그 사람이 가입하면 리소스를 만듭\
+            니다. 추가와 초대는 신청이 나중에 반려되거나 취소되어도 남고, 신청자의 시간당 초대 인원 한도에 포함됩니다. 개인 워크스페이\
+            스에는 쓸 수 없습니다."
+          example: "209900001"
+          maxLength: 64
+          minLength: 0
           type:
           - "string"
           - "null"
@@ -5211,12 +5274,22 @@ components:
           description: "키 이름"
           type: "string"
         passthroughEndpoints:
-          description: "이 키에 부여된 기능 권한. 빈 배열이면 기능을 하나도 쓸 수 없습니다. 모델 목록 둘과 반대로 이 목록\
-            은 채워야 열립니다. 채팅과 모델 조회는 이 목록과 무관합니다."
+          description: "이 키에 부여된 기능 권한. 빈 배열이면 기능을 하나도 쓸 수 없습니다(chat 포함). 모델 목록 둘과\
+            \ 반대로 이 목록은 채워야 열립니다. 모델 조회는 이 목록과 무관합니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           type: "array"
         purpose:
@@ -5472,11 +5545,21 @@ components:
           - "integer"
           - "null"
         grantedPassthroughEndpoints:
-          description: "승인자가 부여한 기능 권한. 빈 배열이면 부여된 기능이 없습니다."
+          description: "승인자가 부여한 기능 권한. 빈 배열이면 부여된 기능이 없습니다. 검토 전 신청은 빈 배열입니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           type: "array"
         grantedRpm:
@@ -5502,6 +5585,25 @@ components:
           type:
           - "integer"
           - "null"
+        reqPassthroughEndpoints:
+          description: "신청자가 고른 기능 권한. 승인 화면의 초깃값입니다. 이 항목이 생기기 전의 신청은 [\"chat\"]으\
+            로 이관되었습니다."
+          items:
+            enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
+            - "images"
+            - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
+            type: "string"
+          type: "array"
         reqRpm:
           description: "희망 분당 요청 수"
           format: "int32"
@@ -5524,6 +5626,7 @@ components:
       - "grantedCreditAllowedModels"
       - "grantedCreditDeniedModels"
       - "grantedPassthroughEndpoints"
+      - "reqPassthroughEndpoints"
       - "useCampusModels"
       - "useCommercialModels"
       type: "object"
@@ -6444,7 +6547,8 @@ components:
     LlmUsagePassthroughGrantResponse:
       properties:
         capability:
-          description: "기능 권한 값. images 또는 embeddings입니다."
+          description: "기능 권한 값. chat, images, embeddings 중 하나입니다. 요청 본문으로 판정하는 기능\
+            (web_search, pdf_ocr)은 사용량 이벤트가 경로만 기록해 사용을 셀 수 없으므로 행이 없습니다."
           type: "string"
         grantedKeys:
           description: "지금 이 기능을 부여받은 키 수"
@@ -6907,6 +7011,94 @@ components:
       required:
       - "otpauthUri"
       - "secret"
+      type: "object"
+    ModelPriceAxis:
+      description: "가격 축 하나."
+      properties:
+        axis:
+          description: "벤더가 쓰는 축 이름."
+          example: "input_cache_read"
+          type: "string"
+        price:
+          description: "가격(USD). 단위는 unit을 따릅니다."
+          type: "number"
+        unit:
+          $ref: "#/components/schemas/ModelPriceUnit"
+          description: "가격 단위."
+      required:
+      - "axis"
+      - "price"
+      - "unit"
+      type: "object"
+    ModelPriceTier:
+      description: "구간 가격 하나. 값이 있는 조건이 모두 맞을 때 적용됩니다."
+      properties:
+        axes:
+          description: "이 구간에서 바뀌는 가격 축."
+          items:
+            $ref: "#/components/schemas/ModelPriceAxis"
+          type: "array"
+        minPromptTokens:
+          description: "입력 토큰이 이 값을 넘는 요청에 적용됩니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        otherConditions:
+          description: "해석하지 못한 조건의 벤더 이름. 비어 있지 않으면 위 조건만으로는 적용 범위를 다 알 수 없습니다."
+          items:
+            type: "string"
+          type: "array"
+        utcDays:
+          description: "적용 요일(UTC, 영어 소문자). 비어 있으면 요일 조건이 없습니다."
+          example:
+          - "saturday"
+          - "sunday"
+          items:
+            type: "string"
+          type: "array"
+        utcEndMinute:
+          description: "적용 끝 시각(제외). UTC 자정부터 센 분이고 1440은 자정입니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        utcStartMinute:
+          description: "적용 시작 시각. UTC 자정부터 센 분입니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "axes"
+      - "otherConditions"
+      - "utcDays"
+      type: "object"
+    ModelPriceUnit:
+      description: "가격 단위. PER_MILLION_TOKENS는 100만 토큰당, PER_CALL은 그 축이 세는 호출 1회당\
+        \ USD입니다(web_search는 검색 1회, request는 API 요청 1회). UNKNOWN은 단위를 알 수 없어 벤더 값을\
+        \ 그대로 담은 것입니다."
+      enum:
+      - "PER_MILLION_TOKENS"
+      - "PER_CALL"
+      - "UNKNOWN"
+      type: "string"
+    ModelPricing:
+      description: "모델의 가격 축 전체. 벤더가 공시한 축을 모두 담으며 입력과 출력도 포함합니다."
+      properties:
+        axes:
+          description: "기본 가격 축. 0은 그 축이 무료라는 뜻입니다."
+          items:
+            $ref: "#/components/schemas/ModelPriceAxis"
+          type: "array"
+        tiers:
+          description: "조건이 맞을 때 기본 가격 대신 적용되는 구간 가격. 없으면 비어 있습니다."
+          items:
+            $ref: "#/components/schemas/ModelPriceTier"
+          type: "array"
+      required:
+      - "axes"
+      - "tiers"
       type: "object"
     NodeLiveResponse:
       properties:
@@ -7652,15 +7844,6 @@ components:
           items:
             type: "string"
           type: "array"
-        defaultPassthroughEndpoints:
-          description: "승인 화면이 프리필에 쓰는 기능 권한 기본값. 복사 원본이지 상속원이 아니라서 여기를 바꿔도 이미 발급된\
-            \ 키는 그대로입니다."
-          items:
-            enum:
-            - "images"
-            - "embeddings"
-            type: "string"
-          type: "array"
         eligibleForBinding:
           description: "현재 positive-credit key binding에 선택할 수 있는지"
           type: "boolean"
@@ -7703,7 +7886,6 @@ components:
       - "credits"
       - "defaultCreditAllowedModels"
       - "defaultCreditDeniedModels"
-      - "defaultPassthroughEndpoints"
       - "eligibleForBinding"
       - "id"
       - "name"
@@ -7737,6 +7919,11 @@ components:
         name:
           description: "벤더가 표시하는 이름."
           type: "string"
+        pricing:
+          anyOf:
+          - $ref: "#/components/schemas/ModelPricing"
+          - type: "null"
+          description: "입력과 출력을 포함한 가격 축 전체. 목록이 아직 이 정보를 받지 않았으면 비어 있습니다."
         promptPricePerMillion:
           description: "백만 토큰당 입력 가격(USD). 모르면 비어 있고, 0은 무료를 뜻합니다."
           type:
@@ -8778,6 +8965,11 @@ components:
         name:
           description: "표시 이름"
           type: "string"
+        pricing:
+          anyOf:
+          - $ref: "#/components/schemas/ModelPricing"
+          - type: "null"
+          description: "입력과 출력을 포함한 가격 축 전체. 목록이 아직 이 정보를 받지 않았으면 비어 있습니다"
         promptPricePerMillion:
           description: "입력 100만 토큰당 USD. 모르면 비어 있습니다"
           type:
@@ -9458,6 +9650,38 @@ components:
           minLength: 0
           type: "string"
       type: "object"
+    ResolveRosterRequest:
+      properties:
+        orgId:
+          description: "신청을 낼 기관. 워크스페이스 소유자가 아니라 이 기관의 신청을 승인할 수 있는 관리자로서 확인할 때 보\
+            냅니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        studentNos:
+          description: "확인할 학번 목록. 1건에서 500건까지이며, 결과는 같은 순서로 옵니다. 한 시간에 확인할 수 있는 학\
+            번은 모두 합쳐 2000건입니다."
+          items:
+            maxLength: 64
+            minLength: 0
+            type: "string"
+          maxItems: 500
+          minItems: 1
+          type: "array"
+      required:
+      - "studentNos"
+      type: "object"
+    ResolveRosterResponse:
+      properties:
+        results:
+          description: "요청한 학번마다 한 건씩, 요청과 같은 순서입니다."
+          items:
+            $ref: "#/components/schemas/RosterEntryResult"
+          type: "array"
+      required:
+      - "results"
+      type: "object"
     Resource:
       properties:
         allocatedDiskGb:
@@ -9654,6 +9878,48 @@ components:
       enum:
       - "APPROVE"
       - "REJECT"
+      type: "string"
+    RosterEntryResult:
+      properties:
+        invitationId:
+          description: "그 학번으로 대기 중인 초대. INVITED일 때만 있습니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        name:
+          description: "그 구성원의 이름. MEMBER일 때만 있고, 구성원이 아닌 REGISTERED에는 없습니다."
+          type:
+          - "string"
+          - "null"
+        status:
+          $ref: "#/components/schemas/RosterEntryStatus"
+          description: "확인 결과."
+        studentNo:
+          description: "요청에 쓴 학번(앞뒤 공백 제거)."
+          type: "string"
+        userId:
+          description: "그 학번의 구성원 계정. MEMBER일 때만 있고, 구성원이 아닌 REGISTERED에는 없습니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "status"
+      - "studentNo"
+      type: "object"
+    RosterEntryStatus:
+      description: "명단의 학번 한 건이 워크스페이스에서 어떤 상태인지.\nMEMBER: 그 학번의 활성 계정이 이미 구성원입니다\
+        .\nREGISTERED: 그 학번의 활성 계정이 있지만 구성원이 아닙니다. 대상자로 신청하면 구성원으로 추가됩니다.\nINVITED:\
+        \ 그 학번으로 대기 중인 초대가 있습니다.\nNEW: 계정도 대기 중인 초대도 없습니다. 대상자로 신청하면 초대를 만듭니다.\nINVALID:\
+        \ 학번 형식이 아닙니다.\nDUPLICATE: 같은 학번이 앞에 이미 있습니다."
+      enum:
+      - "MEMBER"
+      - "REGISTERED"
+      - "INVITED"
+      - "NEW"
+      - "INVALID"
+      - "DUPLICATE"
       type: "string"
     RouteStatus:
       enum:
@@ -10328,19 +10594,6 @@ components:
           items:
             type: "string"
           maxItems: 50
-          minItems: 0
-          type:
-          - "array"
-          - "null"
-        defaultPassthroughEndpoints:
-          description: "새 기능 권한 기본값. 생략하면 유지하고, null이나 빈 배열이면 기본값을 지웁니다. 이 쓰기는 게이트\
-            웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 영향이 없습니다."
-          items:
-            enum:
-            - "images"
-            - "embeddings"
-            type: "string"
-          maxItems: 20
           minItems: 0
           type:
           - "array"
@@ -11862,7 +12115,7 @@ components:
           - "string"
           - "null"
         userId:
-          description: "구성원이 된 계정의 공개 식별자. ADDED일 때만 있습니다."
+          description: "구성원 계정의 공개 식별자. ADDED와 ALREADY_MEMBER일 때만 있습니다."
           format: "uuid"
           type:
           - "string"
@@ -11979,7 +12232,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.96.0"
+  version: "0.99.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -20439,6 +20692,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "workspace-controller"
+  /workspaces/{workspaceId}/roster/resolve:
+    post:
+      description: "신청 대상자로 지정할 학번 명단을 제출하기 전에 확인합니다. 학번마다 이미 구성원인지, 활성 계정이 있지만 구성\
+        원이 아닌지, 대기 중인 초대가 있는지, 계정도 초대도 없는지를 요청과 같은 순서로 돌려줍니다. 아무것도 기록하지 않으며, 구성원 추\
+        가와 초대는 학번 대상자로 신청을 제출할 때 일어납니다. 워크스페이스 소유자나, orgId로 지정한 기관의 신청을 승인할 수 있는 관\
+        리자만 호출할 수 있고 개인 워크스페이스에는 쓸 수 없습니다. 한 번에 500건까지, 1분에 10번까지, 한 시간에 2000건까지입니\
+        다."
+      operationId: "resolveWorkspaceRoster"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveRosterRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResolveRosterResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "학번 명단 확인"
       tags:
       - "workspace-controller"
 security:
