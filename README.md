@@ -652,12 +652,13 @@ JobRunr 작업 실패로 드러납니다. 기본 보존 설정은 0으로, 원�
 JDK 25와 Maven, 로컬 PostgreSQL 18이 필요합니다.
 
 ```bash
-# 기본 접속 정보가 가리키는 역할과 데이터베이스를 먼저 만듭니다.
+# 로컬 또는 별도 개발 PostgreSQL에 역할과 데이터베이스를 먼저 만듭니다.
 sudo -u postgres psql -c "create role pickle login password '<직접 정한 값>'"
 sudo -u postgres createdb -O pickle pickle_dev
 
 # 자격증명에는 커밋된 기본값이 없습니다. 로컬 기동 전에 직접 export 하세요.
 export PICKLE_DB_PASSWORD=...            # 위에서 역할에 준 값
+export PICKLE_DB_URL=jdbc:postgresql://127.0.0.1:5432/pickle_dev
 export PICKLE_JWT_SECRET=...             # 32바이트 이상
 export PICKLE_CREDENTIALS_KEY=...        # base64 32바이트
 export PICKLE_SEED_SYSADMIN_PASSWORD=...
@@ -676,6 +677,10 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
   회원가입 인증 링크는 거기서 꺼내면 됩니다.
 - `users.email` 컬럼이 `citext` 확장을 쓰므로 마이그레이션 역할에 확장 생성 권한이
   필요합니다.
+- dev 프로파일은 loopback PostgreSQL을 사용하거나 원격 개발 DB의 기대값을
+  `PICKLE_DEV_DB_HOST`, `_NAME`, `_USER`로 지정합니다. 원격 접속에는
+  `sslmode=verify-full`과 절대 경로의 `sslrootcert`가 필요합니다. 실제 접속 설정과
+  DB의 개발 표시를 context 생성과 Flyway 실행 전에 검사합니다.
 
 ## 구성
 
@@ -861,6 +866,54 @@ V100은 contract migration이라 `openrouter_legacy` 컬럼을 지우며, 그 �
 잡습니다. 롤백 경로는 forward-fix 또는 DB restore입니다.
 
 ### 시드 계정 (dev/test 전용, 멱등)
+
+새 dev DB의 노드, IP 풀, relay, 루트 도메인, OS 이미지의 template VMID와 사용자 VMID
+시작값은 `PICKLE_DEV_*` 변수로 지정합니다. 기본값은 `.invalid` 호스트와 문서 전용
+`192.0.2.0/24` 주소를 사용하므로 실제 인프라 작업에 쓸 수 없습니다. 시더는 빈 표만
+채우고 새 DB에 개발 표시를 기록합니다. 기동 시 실제 Spring datasource 설정을 검사한 뒤,
+context 생성과 Flyway 실행 전에 읽기 전용 연결로 기존 DB의 개발 표시를 확인합니다.
+사용자 테이블이나 시퀀스가 있는데 표시가 없으면 거부합니다. 마이그레이션 뒤 시드 전에
+첫 기동이 실패한 DB도 이 조건에 해당하므로 자동으로 개발 표시를 추가하지 않습니다.
+새 개발 DB는 비어 있는 상태에서 시작해야 합니다. 별도 Flyway URL·자격증명, Hikari의
+연결 대상·자격증명 재정의 및 추가 JDBC driver 속성은 허용하지 않습니다. JDBC URL의
+query는 중복 없는 `sslmode`와 `sslrootcert`만 허용합니다. 이미 할당한 VMID가 지정한 시작값보다 낮으면 기동을 거부하며,
+시퀀스를 되감지 않습니다.
+
+| 변수 | 용도 | 기본값 |
+|---|---|---|
+| `PICKLE_DEV_ROOT_DOMAIN` | 시드 루트 도메인 | `dev.pickle.test` |
+| `PICKLE_DEV_NODE_NAME` / `_API_HOST` / `_CPU_THREADS` / `_MEMORY_MB` / `_VM_BRIDGE` / `_STORAGE` | 시드 Proxmox 노드의 이름, API URL, 자원 및 배치 경로 | `dev-pve` / `https://dev-proxmox.invalid:8006` / `4` / `4096` / `vmbr-dev` / `dev-storage` |
+| `PICKLE_DEV_IP_POOL_NAME` / `_CIDR` / `_GATEWAY` / `_DNS` / `_RESERVED_RANGES` | 개발 게스트 전용 주소와 예약 범위. 마지막 값은 JSON 배열 | `dev-guest` / `192.0.2.0/24` / `192.0.2.1` / `192.0.2.53` / `[]` |
+| `PICKLE_DEV_TEMPLATE_VMID` / `_VMID_START` | 시드 이미지의 template VMID와 새 VM 번호의 시작값 | `9001` / `900000000` |
+| `PICKLE_DEV_RELAY_NAME` / `_SOURCE_IP` / `_PUBLIC_HOST` / `_PORT_START` / `_PORT_END` | 시드 relay의 식별자와 별도 접속 범위 | `dev-relay` / `192.0.2.2` / `relay.invalid` / `30000` / `30999` |
+| `PICKLE_DEV_ENABLE_GATEWAYS` | 새 개발 DB의 SSH와 웹 터미널 전역 스위치 | `false` |
+| `PICKLE_DEV_JOBRUNR_ENABLED` | 개발 DB의 background worker | `false` |
+| `PICKLE_DEV_REAL_INTEGRATIONS_ENABLED` | 별도 토큰과 실제 연동을 사용하는 개발 검증의 명시적 선택 | `false` |
+
+dev 프로파일은 mock 메일, noop DNS, `.invalid` agent와 OpenRouter URL을 기본으로
+선택합니다. 실제 Proxmox 검증에는 전용 토큰, 확인된 node URL, 별도 IP 풀과 예약 범위,
+충돌하지 않는 VMID 시작값을 설정합니다. `PICKLE_DEV_REAL_INTEGRATIONS_ENABLED=true`도
+함께 지정해야 외부 자격증명이나 worker를 사용할 수 있습니다. 내부 agent·gateway 토큰은
+loopback 또는 `.invalid` mock endpoint와 문서 전용 출발지 주소에 연결할 때 이 선택 없이
+사용할 수 있습니다. mock 단계의 임의 외부 endpoint와 일반 네트워크 주소는 기동에서
+거부합니다. synthetic publishing의 루트 도메인도 `.test` 또는 `.invalid`를 사용해야 합니다.
+공개 개발 콘솔의 도메인은 별도 `PICKLE_CONSOLE_BASE_URL`로 설정합니다. 실제 연동을
+선택하기 전에 대상 endpoint와 저장된 inventory의 격리를 확인합니다.
+SMTP 자격증명과 직접 OpenRouter polling은 dev 프로파일에서 허용하지 않습니다.
+
+로컬 DB는 loopback 주소를 사용합니다. 원격 개발 DB는 `PICKLE_DEV_DB_HOST`,
+`PICKLE_DEV_DB_NAME`, `PICKLE_DEV_DB_USER`를 기대값으로 지정해야 하며, 실제
+Spring datasource의 host·DB 이름·사용자가 이 값과 일치해야 합니다.
+`PICKLE_DEV_DB_PORT`를 지정하면 port도 대조합니다. 원격 URL에는
+`sslmode=verify-full`과 절대 경로의 `sslrootcert`가 필요합니다.
+이 변수들은 기대값을 선언하므로 기존 `PICKLE_DB_URL`, `_USER`, `_PASSWORD`도
+실제 연결 값으로 함께 설정합니다. 개발 DB 기대값은 각 환경에서 관리합니다.
+
+개발용 공개 콘솔을 사용할 때에는 `PICKLE_CONSOLE_BASE_URL`,
+`PICKLE_VERIFICATION_BASE_URL`, `PICKLE_PASSWORD_RESET_BASE_URL`,
+`PICKLE_GOOGLE_REDIRECT_URI`를 그 도메인으로 지정합니다. 기본값은 모두
+`dev.pickle.test`이며, 로그인에 Google OAuth를 사용할 경우 개발 전용 client를
+별도로 설정합니다.
 
 | 계정 | 환경 변수 | 기본값 |
 |---|---|---|
