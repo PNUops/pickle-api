@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.99.0, 277 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.100.0, 279 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -42,6 +42,7 @@
 # 2026-08-26.
 
 operations:
+  - { id: previewAdminVmPlacement, method: POST, path: "/admin/vm-placement/preview", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
 
   # ── 3.1 Auth & public meta (no authentication) ────────────────────────────
   - { id: signup,               method: POST,   path: "/auth/signup",                        roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
@@ -264,6 +265,7 @@ operations:
   # ── 3.12 Admin — publishing / routes (resync SYS tier) ────────────────────
   - { id: listAdminRoutes,       method: GET,  path: "/admin/routes",          roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listAdminDomains,      method: GET,  path: "/admin/domains",         roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminDomain,        method: GET,  path: "/admin/domains/{domainId}", roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listAdminDomainRecords, method: GET, path: "/admin/domains/{domainId}/records", roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateDomainRenewal,   method: PATCH, path: "/admin/domains/{domainId}/renewal", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listDomainRoots,       method: GET,  path: "/admin/domain-roots",    roles: { USER: deny, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }

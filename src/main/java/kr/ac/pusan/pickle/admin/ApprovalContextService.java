@@ -1,6 +1,8 @@
 package kr.ac.pusan.pickle.admin;
 
 import java.util.List;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -20,6 +22,9 @@ import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.orgs.Org;
+import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestRepository;
 import kr.ac.pusan.pickle.request.RequestReview;
@@ -57,12 +62,16 @@ public class ApprovalContextService {
     private final UserRepository userRepository;
     private final Map<ResourceType, ApprovalContextContributor> contributors;
     private final VmApprovalContextContributor vmContributor;
+    private final OrgRepository orgRepository;
+    private final AdminRequestGeneratedResources generatedResources;
+    private final Clock clock;
 
     public ApprovalContextService(ApprovalService approvalService, RequestRepository requestRepository,
             RequestReviewRepository reviewRepository,
             WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
             UserRepository userRepository, List<ApprovalContextContributor> contributors,
-            VmApprovalContextContributor vmContributor) {
+            VmApprovalContextContributor vmContributor, OrgRepository orgRepository,
+            AdminRequestGeneratedResources generatedResources, Clock clock) {
         this.approvalService = approvalService;
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
@@ -72,6 +81,9 @@ public class ApprovalContextService {
         this.contributors = contributors.stream().collect(Collectors.toUnmodifiableMap(
                 ApprovalContextContributor::type, Function.identity()));
         this.vmContributor = vmContributor;
+        this.orgRepository = orgRepository;
+        this.generatedResources = generatedResources;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -84,7 +96,7 @@ public class ApprovalContextService {
         Workspace workspace = workspaceRepository.findById(request.getWorkspaceId()).orElseThrow();
 
         List<Long> applicantWorkspaceIds = applicantWorkspaceIds(request.getRequesterId());
-        VmContext legacyVm = vmContributor.contribute(request, applicantWorkspaceIds).vm();
+        VmContext legacyVm = vmContributor.contribute(request, applicantWorkspaceIds, actor).vm();
         ApprovalContextContributor contributor = contributors.get(request.getResourceType());
         if (contributor == null) {
             throw new IllegalStateException("approval context contributor is missing for "
@@ -92,27 +104,32 @@ public class ApprovalContextService {
         }
         ApprovalContextContributor.Contribution contribution = request.getResourceType() == ResourceType.VM
                 ? ApprovalContextContributor.Contribution.vm(legacyVm)
-                : contributor.contribute(request, applicantWorkspaceIds);
+                : contributor.contribute(request, applicantWorkspaceIds, actor);
+        Org org = orgRepository.findById(request.getOrgId()).orElseThrow();
+        Instant observedAt = clock.instant();
         return new ApprovalContextResponse(
                 request.getResourceType(),
-                applicantPanel(request, applicant),
+                applicantPanel(request, applicant, actor),
                 legacyVm.applicantResources(),
-                workspacePanel(workspace, legacyVm.workspaceResources()),
-                history(request),
+                workspacePanel(workspace, legacyVm.workspaceResources(), actor),
+                history(request, actor),
                 legacyVm.orgHeadroom(),
                 legacyVm.guidance(),
                 contribution.vm(),
-                contribution.llmKey(), contribution.gpu(), contribution.domain());
+                contribution.llmKey(), contribution.gpu(), contribution.domain(), org.getPublicId(), org.getName(),
+                observedAt, generatedResources.of(request, observedAt),
+                generatedResources.recipientUserReadFlags(request, actor));
     }
 
-    private Applicant applicantPanel(Request request, User applicant) {
+    private Applicant applicantPanel(Request request, User applicant, AuthenticatedUser actor) {
         return new Applicant(
                 applicant.getPublicId(),
                 applicant.getName(),
                 applicant.getEmail(),
                 applicant.getCreatedAt(),
                 requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), RequestStatus.APPROVED),
-                requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), RequestStatus.REJECTED));
+                requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), RequestStatus.REJECTED),
+                canReadUser(actor, applicant));
     }
 
     private List<Long> applicantWorkspaceIds(Long userId) {
@@ -121,7 +138,7 @@ public class ApprovalContextService {
                 .toList();
     }
 
-    private WorkspacePanel workspacePanel(Workspace workspace, Resources resources) {
+    private WorkspacePanel workspacePanel(Workspace workspace, Resources resources, AuthenticatedUser actor) {
         List<WorkspaceMember> members = workspaceMemberRepository.findByWorkspaceIdOrderByIdAsc(workspace.getId());
         Map<Long, User> users = userRepository
                 .findAllById(members.stream().map(WorkspaceMember::getUserId).toList())
@@ -130,10 +147,11 @@ public class ApprovalContextService {
                 .map(m -> new MemberBrief(
                         users.containsKey(m.getUserId()) ? users.get(m.getUserId()).getPublicId() : null,
                         users.containsKey(m.getUserId()) ? users.get(m.getUserId()).getName() : "탈퇴 회원",
-                        m.getRole()))
+                        m.getRole(), users.containsKey(m.getUserId()) ? users.get(m.getUserId()).getStatus() : UserStatus.WITHDRAWN,
+                        users.containsKey(m.getUserId()) && canReadUser(actor, users.get(m.getUserId()))))
                 .toList();
         return new WorkspacePanel(workspace.getPublicId(), workspace.getName(), workspace.getKind(), memberBriefs,
-                resources.activeVms(), resources.totals());
+                resources.activeVms(), resources.totals(), workspace.getDeletedAt() == null);
     }
 
     /** The same three states the request detail reports, for the history panel. */
@@ -147,7 +165,7 @@ public class ApprovalContextService {
         return reviewer != null ? reviewer.getName() : "탈퇴 회원";
     }
 
-    private List<HistoryEntry> history(Request request) {
+    private List<HistoryEntry> history(Request request, AuthenticatedUser actor) {
         List<Request> prior = requestRepository.findHistory(request.getRequesterId(), request.getWorkspaceId(),
                 request.getId(), PageRequest.of(0, HISTORY_LIMIT, Sort.by(Sort.Direction.DESC, "id")));
         if (prior.isEmpty()) {
@@ -163,6 +181,8 @@ public class ApprovalContextService {
                 .findAllById(reviews.values().stream().map(RequestReview::getReviewerId)
                         .filter(java.util.Objects::nonNull).toList())
                 .stream().collect(Collectors.toMap(User::getId, Function.identity()));
+        Map<Long, Org> orgs = orgRepository.findAllById(prior.stream().map(Request::getOrgId).distinct().toList())
+                .stream().collect(Collectors.toMap(Org::getId, Function.identity()));
         return prior.stream()
                 .map(r -> {
                     RequestReview review = reviews.get(r.getId());
@@ -172,8 +192,13 @@ public class ApprovalContextService {
                             r.getCreatedAt(), r.getStatus(),
                             review != null ? review.getDecision() : null,
                             review != null ? review.getComment() : null,
-                            reviewerName(review, reviewer));
+                            reviewerName(review, reviewer), orgs.get(r.getOrgId()).getPublicId(),
+                            !actor.role().isOrgTier() || actor.reads(r.getOrgId()));
                 })
                 .toList();
+    }
+
+    private static boolean canReadUser(AuthenticatedUser actor, User user) {
+        return !actor.role().isOrgTier() || !user.getRole().isSysTier();
     }
 }

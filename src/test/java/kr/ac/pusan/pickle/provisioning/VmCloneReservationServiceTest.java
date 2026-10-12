@@ -5,6 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyInt;
 
 import java.time.Instant;
 import java.util.List;
@@ -118,6 +123,34 @@ class VmCloneReservationServiceTest {
 
         assertThatThrownBy(() -> service.reserve(canonical.getPublicId(), null,
                 new NodePlacementBudget.VmPlacementResources(1, 1024, 10)))
+                .isInstanceOf(VmCloneReservationService.NoCapacityException.class);
+    }
+
+    @Test
+    void pureObservationMatchesReservationWithoutTakingItsLocks() {
+        when(images.findAllInDisplayOrder()).thenReturn(List.of(canonical, replica));
+        when(nodes.findAllById(List.of(second.getId()))).thenReturn(List.of(second));
+        var resources = new NodePlacementBudget.VmPlacementResources(2, 2048, 20);
+        var observed = service.observe(canonical.getPublicId(), resources, Instant.now());
+        assertThat(observed.image()).isSameAs(canonical);
+        assertThat(observed.selectableNow()).isTrue();
+        assertThat(observed.candidates()).hasSize(1);
+        assertThat(observed.candidates().getFirst().fitsOneNow()).isTrue();
+        verify(images, never()).findRevisionForUpdate(anyString(), anyInt());
+        verify(nodes, never()).findAllByIdForUpdate(any());
+        assertThat(service.reserve(canonical.getPublicId(), null, resources).node())
+                .isSameAs(observed.candidates().getFirst().node());
+    }
+
+    @Test
+    void anAvailableLogicalImageDoesNotPromiseEvenOneVmWillFit() {
+        when(images.findAllInDisplayOrder()).thenReturn(List.of(canonical, replica));
+        when(nodes.findAllById(List.of(second.getId()))).thenReturn(List.of(second));
+        var oversized = new NodePlacementBudget.VmPlacementResources(29, 1024, 20);
+        var observed = service.observe(canonical.getPublicId(), oversized, Instant.now());
+        assertThat(observed.selectableNow()).isTrue();
+        assertThat(observed.candidates().getFirst().fitsOneNow()).isFalse();
+        assertThatThrownBy(() -> service.reserve(canonical.getPublicId(), null, oversized))
                 .isInstanceOf(VmCloneReservationService.NoCapacityException.class);
     }
 

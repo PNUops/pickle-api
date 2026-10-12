@@ -12,6 +12,9 @@ import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
 import kr.ac.pusan.pickle.request.Request;
+import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.orgs.Org;
+import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import org.springframework.stereotype.Component;
@@ -25,11 +28,13 @@ public class LlmKeyApprovalContextContributor implements ApprovalContextContribu
 
     private final LlmApiKeyRepository keyRepository;
     private final WorkspaceRepository workspaceRepository;
+    private final OrgRepository orgRepository;
 
     public LlmKeyApprovalContextContributor(LlmApiKeyRepository keyRepository,
-            WorkspaceRepository workspaceRepository) {
+            WorkspaceRepository workspaceRepository, OrgRepository orgRepository) {
         this.keyRepository = keyRepository;
         this.workspaceRepository = workspaceRepository;
+        this.orgRepository = orgRepository;
     }
 
     @Override
@@ -38,7 +43,7 @@ public class LlmKeyApprovalContextContributor implements ApprovalContextContribu
     }
 
     @Override
-    public Contribution contribute(Request request, List<Long> applicantWorkspaceIds) {
+    public Contribution contribute(Request request, List<Long> applicantWorkspaceIds, AuthenticatedUser actor) {
         Instant now = Instant.now();
         List<LlmApiKey> applicant = applicantWorkspaceIds.isEmpty()
                 ? List.of()
@@ -49,19 +54,21 @@ public class LlmKeyApprovalContextContributor implements ApprovalContextContribu
                         java.util.stream.Stream.concat(applicant.stream(), workspace.stream())
                                 .map(LlmApiKey::getWorkspaceId).distinct().toList())
                 .stream().collect(Collectors.toMap(Workspace::getId, Function.identity()));
+        Map<Long, Org> orgs = orgRepository.findAllById(java.util.stream.Stream.concat(applicant.stream(), workspace.stream())
+                .map(LlmApiKey::getOrgId).distinct().toList()).stream().collect(Collectors.toMap(Org::getId, Function.identity()));
         List<LlmKeyBrief> applicantKeys = applicant.stream()
-                .map(key -> brief(key, workspaces.get(key.getWorkspaceId()), now)).toList();
+                .map(key -> brief(key, workspaces.get(key.getWorkspaceId()), orgs.get(key.getOrgId()), actor, now)).toList();
         List<LlmKeyBrief> workspaceKeys = workspace.stream()
-                .map(key -> brief(key, workspaces.get(key.getWorkspaceId()), now)).toList();
+                .map(key -> brief(key, workspaces.get(key.getWorkspaceId()), orgs.get(key.getOrgId()), actor, now)).toList();
         return Contribution.llmKey(new LlmKeyContext(applicantKeys, workspaceKeys));
     }
 
-    private static LlmKeyBrief brief(LlmApiKey key, Workspace workspace, Instant now) {
+    private static LlmKeyBrief brief(LlmApiKey key, Workspace workspace, Org org, AuthenticatedUser actor, Instant now) {
         return new LlmKeyBrief(key.getPublicId(), key.getName(),
                 workspace == null ? null : workspace.getPublicId(),
                 workspace == null ? "" : workspace.getName(), key.effectiveStatus(now),
                 key.getExpiresAt(), key.getRpm(), key.getTpm(), key.getConcurrency(),
                 key.getDailyTokens(), key.getCreditLimit(), key.getCreditLimitReset(),
-                key.isCreditAxisConnected());
+                key.isCreditAxisConnected(), org.getPublicId(), !actor.role().isOrgTier() || actor.reads(key.getOrgId()));
     }
 }
