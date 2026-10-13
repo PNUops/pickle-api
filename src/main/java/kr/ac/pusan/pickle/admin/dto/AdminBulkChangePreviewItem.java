@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin.dto;
 
+import kr.ac.pusan.pickle.access.dto.ActorAccessImpact;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.UUID;
@@ -17,5 +18,11 @@ public record AdminBulkChangePreviewItem(
         List<AdminBulkChangeFieldDiff> fields,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                 description = "이 대상의 현재 값을 요약한 값. 적용 요청에 그대로 돌려보냅니다.")
-        String fingerprint) {
+        String fingerprint,
+        @Nullable ActorAccessImpact actorAccessImpact) {
+    public AdminBulkChangePreviewItem(UUID targetId, @Nullable String name, boolean applicable,
+            @Nullable AdminBulkChangeReason reason, List<AdminBulkChangeFieldDiff> fields, String fingerprint) {
+        this(targetId, name, applicable, reason, fields, fingerprint, null);
+    }
+
 }

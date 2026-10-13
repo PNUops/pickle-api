@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.access;
 
+import kr.ac.pusan.pickle.access.dto.AccessConfirmation;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ResourceAccessGrantService {
+    private final kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock;
+    private final ActorAccessImpacts impacts;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private final Map<ResourceType, ResourceTypeAdapter> adapters;
     private final ResourceAccessResolver resolver;
@@ -63,11 +67,12 @@ public class ResourceAccessGrantService {
     private final AuditService auditService;
     private final AuditIds auditIds;
 
-    public ResourceAccessGrantService(List<ResourceTypeAdapter> adapters,
+    public ResourceAccessGrantService(kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock, ActorAccessImpacts impacts, org.springframework.jdbc.core.JdbcTemplate jdbc, List<ResourceTypeAdapter> adapters,
             ResourceAccessResolver resolver, ResourceAccessGrantRepository grantRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
             WorkspaceRepository workspaceRepository, UserRepository userRepository,
             AuditService auditService, AuditIds auditIds) {
+        this.administrationLock = administrationLock; this.impacts = impacts; this.jdbc = jdbc;
         this.adapters = adapters.stream()
                 .collect(Collectors.toMap(ResourceTypeAdapter::type, Function.identity()));
         this.resolver = resolver;
@@ -82,65 +87,104 @@ public class ResourceAccessGrantService {
     @Transactional(readOnly = true)
     public ResourceAccessListResponse list(AuthenticatedUser actor, ResourceType type,
             UUID resourceId) {
-        Managed managed = requireManager(actor, type, resourceId);
+        return list(actor, type, resourceId, false);
+    }
+
+    @Transactional(readOnly = true)
+    public ResourceAccessListResponse list(AuthenticatedUser actor, ResourceType type, UUID resourceId, boolean support) {
+        Managed managed = requireManager(actor, type, resourceId, support, true);
         Workspace workspace = workspaceRepository.findById(managed.resource().workspaceId())
                 .orElse(null);
         return ResourceAccessListResponse.of(type, managed.resource(),
                 workspace == null ? null : workspace.getPublicId(),
                 workspace == null ? "" : workspace.getName(),
-                views(type, managed.resource().id()));
+                views(type, managed.resource().id()), !support || kr.ac.pusan.pickle.admin.StudentSupportPolicy.canWriteWorkspaceAccess(actor));
     }
 
     @Transactional
     public ResourceAccessGrantView add(AuthenticatedUser actor, ResourceType type, UUID resourceId,
             AddResourceAccessGrantRequest request, String ip) {
-        Managed managed = requireManager(actor, type, resourceId);
+        return add(actor, type, resourceId, request, ip, false);
+    }
+
+    @Transactional
+    public ResourceAccessGrantView add(AuthenticatedUser actor, ResourceType type, UUID resourceId,
+            AddResourceAccessGrantRequest request, String ip, boolean support) {
+        administrationLock.acquire();
+        Managed managed = requireManager(actor, type, resourceId, support, false);
         long id = managed.resource().id();
         ResourceAccessGrant grant = request.granteeType() == AccessGranteeType.WORKSPACE
                 ? ResourceAccessGrant.forOwningWorkspace(type, id,
                         requireWorkspaceWideRole(request.role()))
                 : ResourceAccessGrant.forUser(type, id,
                         requireEligibleMember(managed, request.userId()), request.role());
+        var impact = impact(actor, managed, "ADD", null, grant.getGranteeType(), grant.getUserId(), grant.getRole());
+        ActorAccessImpacts.requireConfirmed(impact, request.confirmation());
         ResourceAccessGrant saved;
         try {
             saved = grantRepository.saveAndFlush(grant);
         } catch (DataIntegrityViolationException alreadyListed) {
             throw managed.messages().alreadyListed();
         }
-        audit(actor, managed, GrantChange.ADD, saved, null, ip);
+        audit(actor, managed, GrantChange.ADD, saved, null, ip, impact, request.confirmation(), support, null);
         return view(saved);
     }
 
     @Transactional
     public ResourceAccessGrantView update(AuthenticatedUser actor, ResourceType type,
             UUID resourceId, UUID grantId, UpdateResourceAccessGrantRequest request, String ip) {
-        Managed managed = requireManager(actor, type, resourceId);
+        return update(actor, type, resourceId, grantId, request, ip, false);
+    }
+
+    @Transactional
+    public ResourceAccessGrantView update(AuthenticatedUser actor, ResourceType type, UUID resourceId,
+            UUID grantId, UpdateResourceAccessGrantRequest request, String ip, boolean support) {
+        administrationLock.acquire();
+        Managed managed = requireManager(actor, type, resourceId, support, false);
         ResourceAccessGrant grant = requireGrant(managed, grantId);
+        if (support && grant.getUserId() != null) {
+            requireEligibleMember(managed, auditIds.user(grant.getUserId()));
+        }
+        ResourceRole requested = grant.getGranteeType() == AccessGranteeType.WORKSPACE
+                ? requireWorkspaceWideRole(request.role()) : request.role();
+        var impact = impact(actor, managed, "UPDATE", grantId, grant.getGranteeType(), grant.getUserId(), requested);
+        ActorAccessImpacts.requireConfirmed(impact, request.confirmation());
         ResourceRole previous = grant.getRole();
         grant.setRole(grant.getGranteeType() == AccessGranteeType.WORKSPACE
                 ? requireWorkspaceWideRole(request.role())
                 : request.role());
-        audit(actor, managed, GrantChange.UPDATE, grant, previous, ip);
+        audit(actor, managed, GrantChange.UPDATE, grant, previous, ip, impact, request.confirmation(), support, null);
         return view(grant);
     }
 
     @Transactional
     public void remove(AuthenticatedUser actor, ResourceType type, UUID resourceId, UUID grantId,
             String ip) {
-        Managed managed = requireManager(actor, type, resourceId);
+        remove(actor, type, resourceId, grantId, ip, false);
+    }
+
+    @Transactional
+    public void remove(AuthenticatedUser actor, ResourceType type, UUID resourceId, UUID grantId, String ip, boolean support) {
+        administrationLock.acquire();
+        Managed managed = requireManager(actor, type, resourceId, support, false);
         ResourceAccessGrant grant = requireGrant(managed, grantId);
+        var impact = impact(actor, managed, "REMOVE", grantId, grant.getGranteeType(), grant.getUserId(), null);
         grantRepository.delete(grant);
-        audit(actor, managed, GrantChange.REMOVE, grant, null, ip);
+        audit(actor, managed, GrantChange.REMOVE, grant, null, ip, impact, null, support, null);
     }
 
     /** Managing the list is a resource owner's right, or a workspace owner's standing one. */
-    private Managed requireManager(AuthenticatedUser actor, ResourceType type, UUID resourceId) {
+    private Managed requireManager(AuthenticatedUser actor, ResourceType type, UUID resourceId, boolean support, boolean read) {
+        if (support) {
+            if (read) { kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireRead(actor); }
+            else { kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireWorkspaceAccessWrite(actor); }
+        }
         ResourceTypeAdapter adapter = adapterFor(type);
         ResourceIdentity resource = adapter.identifyByPublicId(resourceId)
                 .orElseThrow(() -> adapter.accessMessages().notFound());
         ResourceStanding standing = resolver.standing(type, resource.id(), resource.workspaceId(),
                 actor.id());
-        if (!standing.manages()) {
+        if (!support && !standing.manages()) {
             // An outsider is not told the resource exists and a member without
             // a grant is refused in the open; only somebody who can already see
             // it is told that managing the list is a rung above theirs.
@@ -148,6 +192,77 @@ public class ResourceAccessGrantService {
             throw adapter.accessMessages().notGrantManager();
         }
         return new Managed(adapter, resource, standing);
+    }
+
+    @Transactional(readOnly = true)
+    public kr.ac.pusan.pickle.access.dto.ActorAccessImpact preview(AuthenticatedUser actor, ResourceType type,
+            UUID resourceId, kr.ac.pusan.pickle.access.dto.ResourceAccessChangePreviewRequest request, boolean support) {
+        Managed managed = requireManager(actor, type, resourceId, support, false);
+        if (request.action() != kr.ac.pusan.pickle.access.dto.ResourceAccessChangePreviewRequest.Action.ADD
+                && request.grantId() == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("grantId", "변경할 접근 권한 항목을 지정해 주세요.")));
+        }
+        ResourceAccessGrant grant = request.action() == kr.ac.pusan.pickle.access.dto.ResourceAccessChangePreviewRequest.Action.ADD
+                ? null : requireGrant(managed, request.grantId());
+        AccessGranteeType grantee = grant == null ? request.granteeType() : grant.getGranteeType();
+        if (grantee == null || request.action() != kr.ac.pusan.pickle.access.dto.ResourceAccessChangePreviewRequest.Action.REMOVE
+                && request.role() == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("role", "대상과 등급을 지정해 주세요.")));
+        }
+        Long userId = grant == null ? grantee == AccessGranteeType.WORKSPACE ? null
+                : requireEligibleMember(managed, request.userId()) : grant.getUserId();
+        if (support && userId != null && request.action() != kr.ac.pusan.pickle.access.dto.ResourceAccessChangePreviewRequest.Action.REMOVE) {
+            requireEligibleMember(managed, auditIds.user(userId));
+        }
+        ResourceRole role = request.role();
+        if (grantee == AccessGranteeType.WORKSPACE && role != null) { role = requireWorkspaceWideRole(role); }
+        return impact(actor, managed, request.action().name(), request.grantId(), grantee, userId, role);
+    }
+
+    private kr.ac.pusan.pickle.access.dto.ActorAccessImpact impact(AuthenticatedUser actor, Managed managed,
+            String action, UUID grantId, AccessGranteeType granteeType, Long userId, ResourceRole role) {
+        UUID workspaceId = workspaceRepository.findById(managed.resource().workspaceId()).orElseThrow().getPublicId();
+        return impacts.grant(actor, managed.adapter().type(), managed.resource(), workspaceId, action, grantId, granteeType, userId, role);
+    }
+
+    @Transactional(readOnly = true)
+    public kr.ac.pusan.pickle.access.dto.ActorAccessImpact bulkImpact(AuthenticatedUser actor, ResourceType type,
+            UUID resourceId, long userId, String action, ResourceRole role) {
+        Managed managed = requireManager(actor, type, resourceId, true, false);
+        ResourceAccessGrant existing = grantRepository.findByResourceTypeAndResourceIdAndUserId(type, managed.resource().id(), userId).orElse(null);
+        String operation = "GRANT".equals(action) ? "ADD" : "CHANGE".equals(action) ? "UPDATE" : "REMOVE";
+        return impact(actor, managed, operation, existing == null ? null : existing.getPublicId(), AccessGranteeType.USER, userId, role);
+    }
+
+    @Transactional
+    public boolean bulkChange(AuthenticatedUser actor, ResourceType type, UUID resourceId, long userId,
+            String action, ResourceRole role, UUID batchId, String ip,
+            AccessConfirmation confirmation) {
+        administrationLock.acquire();
+        Managed managed = requireManager(actor, type, resourceId, true, false);
+        ResourceAccessGrant existing = grantRepository.findByResourceTypeAndResourceIdAndUserId(type, managed.resource().id(), userId).orElse(null);
+        if (!"REVOKE".equals(action)) { requireEligibleMember(managed, auditIds.user(userId)); }
+        String operation = "GRANT".equals(action) ? "ADD" : "CHANGE".equals(action) ? "UPDATE" : "REMOVE";
+        var impact = impact(actor, managed, operation, existing == null ? null : existing.getPublicId(), AccessGranteeType.USER, userId, role);
+        ActorAccessImpacts.requireConfirmed(impact, confirmation);
+        if ("GRANT".equals(action)) {
+            List<Long> inserted = jdbc.queryForList("""
+                    insert into resource_access_grants (resource_type, resource_id, grantee_type, user_id, role)
+                    values (?::resource_type, ?, 'USER', ?, ?::resource_role)
+                    on conflict (resource_type, resource_id, user_id) where grantee_type = 'USER' do nothing returning id
+                    """, Long.class, type.name(), managed.resource().id(), userId, role.name());
+            if (inserted.isEmpty()) { return false; }
+            ResourceAccessGrant saved = grantRepository.findById(inserted.getFirst()).orElseThrow();
+            audit(actor, managed, GrantChange.ADD, saved, null, ip, impact, confirmation, true, batchId);
+        } else {
+            if (existing == null) { return false; }
+            ResourceRole previous = existing.getRole();
+            if ("CHANGE".equals(action)) { existing.setRole(role); }
+            else { grantRepository.delete(existing); }
+            audit(actor, managed, "CHANGE".equals(action) ? GrantChange.UPDATE : GrantChange.REMOVE,
+                    existing, previous, ip, impact, confirmation, true, batchId);
+        }
+        return true;
     }
 
     private ResourceTypeAdapter adapterFor(ResourceType type) {
@@ -203,7 +318,9 @@ public class ResourceAccessGrantService {
     }
 
     private void audit(AuthenticatedUser actor, Managed managed, GrantChange change,
-            ResourceAccessGrant grant, ResourceRole previousRole, String ip) {
+            ResourceAccessGrant grant, ResourceRole previousRole, String ip, kr.ac.pusan.pickle.access.dto.ActorAccessImpact impact,
+            @org.jspecify.annotations.Nullable AccessConfirmation confirmation, boolean support,
+            @org.jspecify.annotations.Nullable UUID batchId) {
         ResourceAccessAudit names = managed.adapter().accessAudit();
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("grantId", grant.getPublicId());
@@ -215,36 +332,16 @@ public class ResourceAccessGrantService {
         if (previousRole != null) {
             detail.put("previousRole", previousRole.name());
         }
+        detail.putAll(ActorAccessImpacts.auditDetail(impact, confirmation));
+        if (support) { detail.put("adminIntervention", true); }
+        if (batchId != null) { detail.put("batchId", batchId); }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), names.actionOf(change),
                 names.targetType(), managed.resource().publicId(), Map.copyOf(detail), ip);
-        if (opensTheDoorForActor(actor, managed, change, grant)) {
+        if (impact.increases().stream().anyMatch(gain -> gain.resourceType() != null
+                && ResourceRole.valueOf(gain.afterRole()).atLeast(ResourceRole.MEMBER))) {
             auditService.recordAfterCommit(actor.id(), actor.role().name(), names.breakGlass(),
                     names.targetType(), managed.resource().publicId(), Map.copyOf(detail), ip);
         }
-    }
-
-    /**
-     * True when this edit is what lets the actor inside a resource they could
-     * not reach before it — the case the break-glass record exists for.
-     *
-     * <p>Both sides of the comparison are needed. Looking only at the state
-     * after the write marks a resource owner who was already inside, and marks
-     * someone <em>lowering</em> their own rung, which would put a false
-     * emergency-access record in the trail; a signal that fires on ordinary
-     * edits is worth nothing to whoever reads the audit later.
-     */
-    private boolean opensTheDoorForActor(AuthenticatedUser actor, Managed managed,
-            GrantChange change, ResourceAccessGrant grant) {
-        if (change == GrantChange.REMOVE) {
-            return false;
-        }
-        boolean namesTheActor = grant.getGranteeType() == AccessGranteeType.WORKSPACE
-                || Long.valueOf(actor.id()).equals(grant.getUserId());
-        if (!namesTheActor || managed.standing().atLeast(ResourceRole.MEMBER)) {
-            return false;
-        }
-        return resolver.standing(managed.adapter().type(), managed.resource().id(),
-                managed.resource().workspaceId(), actor.id()).atLeast(ResourceRole.MEMBER);
     }
 
     private List<ResourceAccessGrantView> views(ResourceType type, long resourceId) {

@@ -17,7 +17,8 @@ import org.jspecify.annotations.Nullable;
 /** Claim candidates and projected queue states, never a resource-completion receipt. */
 public record AdminUserProfileImpactResponse(AdminUserProfileImpactRequest.AdminUserProfileImpactAction action,
         UUID userId, Instant observedAt, UserStatus candidateStatus, boolean claimsPossible,
-        boolean studentNoWillChange, List<AdminUserProfileInvitationImpact> invitations) {
+        boolean studentNoWillChange, List<AdminUserProfileInvitationImpact> invitations,
+        kr.ac.pusan.pickle.access.dto.ActorAccessImpact actorAccessImpact) {
 
     @Schema(name = "AdminUserProfileInvitationImpact")
     public record AdminUserProfileInvitationImpact(UUID id, UUID workspaceId, String workspaceName,

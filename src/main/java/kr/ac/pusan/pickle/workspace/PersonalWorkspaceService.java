@@ -10,17 +10,20 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class PersonalWorkspaceService {
+    private final kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock;
 
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
 
-    public PersonalWorkspaceService(WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository) {
+    public PersonalWorkspaceService(kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock, WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository) {
+        this.administrationLock = administrationLock;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
     }
 
     @Transactional
     public void ensurePersonalWorkspace(User user) {
+        administrationLock.acquire();
         if (workspaceMemberRepository.existsByUserIdAndWorkspaceKind(user.getId(), WorkspaceKind.PERSONAL)) {
             return;
         }

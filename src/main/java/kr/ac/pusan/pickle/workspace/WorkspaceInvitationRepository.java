@@ -97,4 +97,10 @@ public interface WorkspaceInvitationRepository extends JpaRepository<WorkspaceIn
                for update
             """, nativeQuery = true)
     List<WorkspaceInvitation> lockPendingByStudentNo(@Param("studentNo") String studentNo);
+    @Query(value = "select * from workspace_invitations where status = 'PENDING' and lower(invitee_email) = lower(:email) order by id", nativeQuery = true)
+    List<WorkspaceInvitation> pendingByEmail(@Param("email") String email);
+
+    @Query(value = "select * from workspace_invitations where status = 'PENDING' and upper(invitee_student_no) = upper(:studentNo) order by id", nativeQuery = true)
+    List<WorkspaceInvitation> pendingByStudentNo(@Param("studentNo") String studentNo);
+
 }

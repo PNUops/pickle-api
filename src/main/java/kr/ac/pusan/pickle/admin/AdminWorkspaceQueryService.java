@@ -28,11 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AdminWorkspaceQueryService {
     private final JdbcTemplate jdbcTemplate;
+    private final java.util.List<kr.ac.pusan.pickle.resource.ResourceTypeAdapter> adapters;
     private final kr.ac.pusan.pickle.workspace.WorkspaceInvitationService invitationService;
 
-    public AdminWorkspaceQueryService(JdbcTemplate jdbcTemplate,
+    public AdminWorkspaceQueryService(java.util.List<kr.ac.pusan.pickle.resource.ResourceTypeAdapter> adapters, JdbcTemplate jdbcTemplate,
             kr.ac.pusan.pickle.workspace.WorkspaceInvitationService invitationService) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.jdbcTemplate = jdbcTemplate; this.adapters = adapters;
         this.invitationService = invitationService;
     }
 
@@ -129,8 +130,19 @@ public class AdminWorkspaceQueryService {
                         StudentSupportPolicy.canReadUser(actor, UserRole.valueOf(rs.getString("user_role"))),
                         rs.getTimestamp("created_at").toInstant()),
                 workspaceId);
+        boolean writer = StudentSupportPolicy.canWriteWorkspaceAccess(actor);
+        boolean structure = writer && base.kind() != WorkspaceKind.PERSONAL;
+        long owners = members.stream().filter(m -> m.workspaceRole() == WorkspaceMemberRole.OWNER).count();
+        List<AdminWorkspaceMemberResponse> capableMembers = members.stream().map(m -> new AdminWorkspaceMemberResponse(
+                m.userId(), m.name(), m.email(), m.workspaceRole(), m.userStatus(), m.supportDetailVisible(), m.joinedAt(),
+                structure && (m.workspaceRole() != WorkspaceMemberRole.OWNER || owners > 1),
+                structure && (m.workspaceRole() != WorkspaceMemberRole.OWNER || owners > 1))).toList();
+        boolean remaining = adapters.stream().anyMatch(a -> a.countLiveInWorkspace(workspaceId) > 0);
+        String blocked = !writer ? "FORBIDDEN" : base.kind() == WorkspaceKind.PERSONAL ? "PERSONAL"
+                : remaining ? "REMAINING_RESOURCES" : null;
         return new AdminWorkspaceDetailResponse(base.id(), base.kind(), base.name(),
-                base.description(), base.createdAt(), base.memberCount(), base.vmCount(), members);
+                base.description(), base.createdAt(), base.memberCount(), base.vmCount(), capableMembers,
+                writer, structure, structure, structure, blocked == null, blocked);
     }
 
     /** Pending invitation metadata for all support readers; deleted workspaces remain unavailable. */

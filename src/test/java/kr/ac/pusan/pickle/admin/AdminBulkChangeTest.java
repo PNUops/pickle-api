@@ -729,11 +729,11 @@ class AdminBulkChangeTest {
         Map<String, Object> grant = request("VM", targets, access("GRANT", requester, "MEMBER"));
 
         assertThat(item(previewJson(orgManagerToken, grant), pub("vms", first))
-                .get("reason").asString()).isEqualTo("FORBIDDEN");
+                .get("applicable").asBoolean()).isTrue();
         assertThat(item(previewJson(sysManagerToken, grant), pub("vms", first))
                 .get("reason").asString()).isEqualTo("FORBIDDEN");
         assertThat(item(previewJson(otherOrgAdminToken, grant), pub("vms", first))
-                .get("reason").asString()).isEqualTo("NOT_FOUND");
+                .get("applicable").asBoolean()).isTrue();
         assertThat(item(previewJson(orgAdminToken, request("VM", targets,
                 access("GRANT", outsider, "MEMBER"))), pub("vms", first))
                 .get("reason").asString()).isEqualTo("NOT_MEMBER");
@@ -743,7 +743,7 @@ class AdminBulkChangeTest {
         assertThat(item(previewJson(orgAdminToken, request("VM", targets, nobody)),
                 pub("vms", first)).get("reason").asString()).isEqualTo("INELIGIBLE");
 
-        JsonNode granted = applyJson(orgAdminToken, grant);
+        JsonNode granted = applyJson(otherOrgAdminToken, grant);
         assertThat(item(granted, pub("vms", first)).get("result").asString()).isEqualTo("APPLIED");
         assertThat(item(granted, pub("vms", second)).get("result").asString()).isEqualTo("APPLIED");
         assertThat(grantRole(first, requester.getId())).isEqualTo("MEMBER");
@@ -759,7 +759,7 @@ class AdminBulkChangeTest {
                 access("GRANT", requester, "EDITOR"))), pub("vms", first))
                 .get("reason").asString()).isEqualTo("ALREADY_GRANTED");
 
-        JsonNode changed = applyJson(sysAdminToken, request("VM", targets,
+        JsonNode changed = applyJson(orgManagerToken, request("VM", targets,
                 access("CHANGE", requester, "EDITOR")));
         assertThat(item(changed, pub("vms", first)).get("result").asString()).isEqualTo("APPLIED");
         assertThat(grantRole(first, requester.getId())).isEqualTo("EDITOR");
@@ -808,9 +808,10 @@ class AdminBulkChangeTest {
         }
         JsonNode revoked = applyJson(orgAdminToken, request("VM", targets, access("REVOKE", disabled, null)));
         assertThat(item(revoked, pub("vms", first)).get("result").asString()).isEqualTo("APPLIED");
-        assertThat(item(revoked, pub("vms", foreign)).get("reason").asString()).isEqualTo("NOT_FOUND");
+        assertThat(item(revoked, pub("vms", foreign)).get("result").asString()).isEqualTo("APPLIED");
         assertThat(grantRole(first, disabled.getId())).isNull();
-        assertThat(grantRole(foreign, disabled.getId())).isEqualTo("EDITOR");
+        assertThat(grantRole(foreign, disabled.getId())).isNull();
+        assertThat(auditCount(pub("vms", foreign), "vm.access_grant_remove")).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from resource_access_grants where resource_type='VM' and resource_id=? and grantee_type='WORKSPACE'", Long.class, first)).isEqualTo(1);
         assertThat(auditDetail(pub("vms", first), "vm.access_grant_remove").get("granteeUserId")).isEqualTo(disabled.getPublicId().toString());
         jdbcTemplate.update("update users set status='ACTIVE' where id=?", disabled.getId());
@@ -1202,15 +1203,15 @@ class AdminBulkChangeTest {
                     "select fqdn from domains where id = ?", String.class, domain));
         }
         String constant = item(preview, SeedFixtures.UNKNOWN_ID).get("fingerprint").asString();
-        for (long domain : new long[] {removed, foreign}) {
+        for (long domain : new long[] {removed}) {
             JsonNode previewed = item(preview, pub("domains", domain));
             assertThat(previewed.get("reason").asString()).isEqualTo("NOT_FOUND");
             assertThat(previewed.get("name").isNull()).isTrue();
             assertThat(previewed.get("fingerprint").asString()).isEqualTo(constant);
         }
-        // Out of scope stays out of scope whatever the kind.
+        assertThat(item(preview, pub("domains", foreign)).get("applicable").asBoolean()).isTrue();
         assertThat(item(previewJson(otherOrgAdminToken, body), pub("domains", platform))
-                .get("reason").asString()).isEqualTo("NOT_FOUND");
+                .get("reason").asString()).isEqualTo("INELIGIBLE");
 
         JsonNode apply = apply(orgAdminToken, body, fingerprintsOf(preview));
         assertThat(item(apply, pub("domains", external)).get("result").asString())
@@ -1224,8 +1225,10 @@ class AdminBulkChangeTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from resource_access_grants
                  where resource_type = 'DOMAIN' and user_id = ? and resource_id in (?, ?, ?, ?)
-                """, Long.class, requester.getId(), platform, custom, removed, foreign)).isZero();
+                """, Long.class, requester.getId(), platform, custom, removed, foreign)).isEqualTo(1);
+        assertThat(item(apply, pub("domains", foreign)).get("result").asString()).isEqualTo("APPLIED");
         assertThat(auditCount(pub("domains", external), "dns_domain.access_grant_add")).isEqualTo(1);
+        assertThat(auditCount(pub("domains", foreign), "dns_domain.access_grant_add")).isEqualTo(1);
     }
 
     // ── the call as a whole ────────────────────────────────────────────────

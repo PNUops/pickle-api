@@ -90,4 +90,11 @@ public class DnsDomainAccessGrantController {
             HttpServletRequest httpRequest) {
         service.remove(principal, ResourceType.DOMAIN, domainId, grantId, clientIp(httpRequest));
     }
+    @PostMapping("/preview")
+    public kr.ac.pusan.pickle.access.dto.ActorAccessImpact previewDnsDomainAccessChange(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID domainId,
+            @Valid @RequestBody kr.ac.pusan.pickle.access.dto.ResourceAccessChangePreviewRequest request) {
+        return service.preview(actor, ResourceType.DOMAIN, domainId, request, false);
+    }
+
 }

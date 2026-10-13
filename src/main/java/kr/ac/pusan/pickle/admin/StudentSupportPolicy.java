@@ -17,6 +17,15 @@ public final class StudentSupportPolicy {
 
     public static boolean canRead(AuthenticatedUser actor) { return READERS.contains(actor.role()); }
 
+    public static boolean canWriteWorkspaceAccess(AuthenticatedUser actor) {
+        return actor.role() == UserRole.SYS_ADMIN || actor.role() == UserRole.ORG_ADMIN
+                || actor.role() == UserRole.ORG_MANAGER;
+    }
+
+    public static void requireWorkspaceAccessWrite(AuthenticatedUser actor) {
+        if (!canWriteWorkspaceAccess(actor)) { throw forbidden(); }
+    }
+
     public static boolean canReadUser(AuthenticatedUser actor, UserRole target) {
         return canRead(actor) && (!actor.role().isOrgTier() || !target.isSysTier());
     }
