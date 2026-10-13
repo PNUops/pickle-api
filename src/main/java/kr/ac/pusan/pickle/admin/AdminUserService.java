@@ -51,6 +51,8 @@ public class AdminUserService {
     private final MfaService mfaService;
     private final RefreshTokenService refreshTokenService;
     private final AdminUserProfileChanges profileChanges;
+    @org.springframework.beans.factory.annotation.Autowired
+    private AdminUserProfileImpactService profileImpacts;
     private final InvitationClaimService invitationClaimService;
 
     public AdminUserService(UserRepository userRepository,
@@ -91,6 +93,7 @@ public class AdminUserService {
     @Transactional
     public UserAdminDetailResponse updateProfile(AuthenticatedUser actor, UUID userId,
             AdminUpdateProfileRequest request, String ip) {
+        orgAdministrationLock.acquire();
         User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         StudentSupportPolicy.requireProfileCorrection(actor, user.getRole());
         AdminUserProfileChanges.Candidate candidate = profileChanges.candidate(user, request);
@@ -99,6 +102,9 @@ public class AdminUserService {
         String departmentCode = candidate.departmentCode();
         String departmentOther = candidate.departmentOther();
 
+        var actorImpact = profileImpacts.preview(actor, userId, new kr.ac.pusan.pickle.admin.dto.AdminUserProfileImpactRequest(
+                kr.ac.pusan.pickle.admin.dto.AdminUserProfileImpactRequest.AdminUserProfileImpactAction.PROFILE, request)).actorAccessImpact();
+        kr.ac.pusan.pickle.access.ActorAccessImpacts.requireConfirmed(actorImpact, request.getConfirmation());
         UserPosition previousPosition = user.getPosition();
         String previousStudentNo = user.getStudentNo();
         String previousDepartmentCode = user.getDepartmentCode();
@@ -126,7 +132,7 @@ public class AdminUserService {
         // droppedStudentNo is recorded because a 직책 change discards the 학번
         // without the request ever mentioning it, and an entry that does not
         // say so reads as if the value were still there.
-        Map<String, Object> payload = new LinkedHashMap<>();
+        Map<String, Object> payload = new LinkedHashMap<>(kr.ac.pusan.pickle.access.ActorAccessImpacts.auditDetail(actorImpact, request.getConfirmation()));
         payload.put("position", String.valueOf(position));
         payload.put("departmentCode", String.valueOf(departmentCode));
         payload.put("departmentOtherSet", String.valueOf(departmentOther != null));

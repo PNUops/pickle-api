@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin.bulk;
 
+import kr.ac.pusan.pickle.access.dto.ActorAccessImpact;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,21 @@ abstract class BulkChangeHandler<T> {
         boolean writes() {
             return reason == null && !fields.isEmpty();
         }
+    }
+
+    void prepareApply(AuthenticatedUser actor, AdminBulkChangeRequest request) { }
+
+    @Nullable ActorAccessImpact actorAccessImpact(AuthenticatedUser actor, T target,
+            AdminBulkChangeSpec change) { return null; }
+
+    Map<String, Object> fingerprintValues(AuthenticatedUser actor, T target, AdminBulkChangeSpec change) {
+        return fingerprintValues(target, change);
+    }
+
+    @Nullable AdminBulkChangeReason write(AuthenticatedUser actor, T target, Judgement judgement,
+            AdminBulkChangeSpec change, UUID batchId, String ip,
+            kr.ac.pusan.pickle.access.dto.AccessConfirmation confirmation) {
+        return write(actor, target, judgement, change, batchId, ip);
     }
 
     /** The kinds this handler serves. */

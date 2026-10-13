@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -626,7 +627,7 @@ class VmAccessGrantApiTest {
         return mockMvc.perform(post(accessPath(vmId))
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(body)));
+                .content(objectMapper.writeValueAsString(withGainConfirmation(token, vmId, body, null))));
     }
 
     /** Adds a grant that is expected to be accepted and returns its id. */
@@ -642,7 +643,24 @@ class VmAccessGrantApiTest {
         return mockMvc.perform(patch(accessPath(vmId) + "/" + grantPublicId)
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("role", role))));
+                .content(objectMapper.writeValueAsString(withGainConfirmation(token, vmId, Map.of("role", role), grantPublicId))));
+    }
+
+    private Map<String, Object> withGainConfirmation(String token, long vmId, Map<String, Object> body, UUID grantId) throws Exception {
+        Map<String, Object> previewBody = new LinkedHashMap<>(body);
+        previewBody.put("action", grantId == null ? "ADD" : "UPDATE");
+        if (grantId != null) { previewBody.put("grantId", grantId); }
+        var response = mockMvc.perform(post(accessPath(vmId) + "/preview")
+                .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(previewBody))).andReturn().getResponse();
+        Map<String, Object> result = new LinkedHashMap<>(body);
+        if (response.getStatus() == 200) {
+            var impact = objectMapper.readTree(response.getContentAsString());
+            if (!impact.path("increases").isEmpty()) {
+                result.put("confirmation", Map.of("purpose", "합성 소유자 권한 확인", "fingerprint", impact.get("fingerprint").asString(), "confirmed", true));
+            }
+        }
+        return result;
     }
 
     private ResultActions deleteGrant(String token, long vmId, UUID grantPublicId) throws Exception {

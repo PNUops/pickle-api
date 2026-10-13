@@ -21,5 +21,16 @@ public record AdminWorkspaceDetailResponse(
         Instant createdAt,
         long memberCount,
         long vmCount,
-        List<AdminWorkspaceMemberResponse> members) {
+        List<AdminWorkspaceMemberResponse> members,
+        boolean canUpdateInfo,
+        boolean canInviteMembers,
+        boolean canManageMembers,
+        boolean canManageOwners,
+        boolean canDelete,
+        @Nullable String deleteBlockedReason) {
+
+    public AdminWorkspaceDetailResponse(UUID id, WorkspaceKind kind, String name, @Nullable String description,
+            Instant createdAt, long memberCount, long vmCount, List<AdminWorkspaceMemberResponse> members) {
+        this(id, kind, name, description, createdAt, memberCount, vmCount, members, false, false, false, false, false, null);
+    }
 }

@@ -43,6 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class InvitationClaimService {
+    private final kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock;
 
     private final WorkspaceInvitationRepository invitationRepository;
     private final WorkspaceRepository workspaceRepository;
@@ -51,10 +52,11 @@ public class InvitationClaimService {
     private final InvitationLocks invitationLocks;
     private final RequestRecipientService recipientService;
 
-    public InvitationClaimService(WorkspaceInvitationRepository invitationRepository,
+    public InvitationClaimService(kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock, WorkspaceInvitationRepository invitationRepository,
             WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
             AuditService auditService, InvitationLocks invitationLocks,
             RequestRecipientService recipientService) {
+        this.administrationLock = administrationLock;
         this.recipientService = recipientService;
         this.invitationRepository = invitationRepository;
         this.workspaceRepository = workspaceRepository;
@@ -75,11 +77,12 @@ public class InvitationClaimService {
 
     @Transactional
     public void claimByEmail(User user, long actorId, String actorRole) {
+        administrationLock.acquire();
         if (user.getStatus() != UserStatus.ACTIVE) {
             return;
         }
         invitationLocks.lock(InvitationLocks.emailKey(user.getEmail()));
-        claimAll(user, invitationRepository.lockPendingByEmail(user.getEmail()), actorId, actorRole);
+        claimAll(user, emailCandidates(user.getEmail(), true), actorId, actorRole);
     }
 
     /** Claims every open invitation addressed to the account's 학번, if it holds one. */
@@ -90,13 +93,30 @@ public class InvitationClaimService {
 
     @Transactional
     public void claimByStudentNo(User user, long actorId, String actorRole) {
+        administrationLock.acquire();
         String studentNo = user.getStudentNo();
         if (user.getStatus() != UserStatus.ACTIVE || studentNo == null) {
             return;
         }
         invitationLocks.lock(InvitationLocks.emailKey(user.getEmail()));
         invitationLocks.lock(InvitationLocks.studentNoKey(studentNo));
-        claimAll(user, invitationRepository.lockPendingByStudentNo(studentNo), actorId, actorRole);
+        claimAll(user, studentNoCandidates(studentNo, true), actorId, actorRole);
+    }
+
+    /** The same candidate selection used by claim execution, without claim locks or writes. */
+    public List<WorkspaceInvitation> openCandidates(String email, String studentNo) {
+        java.util.LinkedHashMap<Long, WorkspaceInvitation> result = new java.util.LinkedHashMap<>();
+        if (email != null) { emailCandidates(email, false).forEach(i -> result.put(i.getId(), i)); }
+        if (studentNo != null) { studentNoCandidates(studentNo, false).forEach(i -> result.putIfAbsent(i.getId(), i)); }
+        return List.copyOf(result.values());
+    }
+
+    private List<WorkspaceInvitation> emailCandidates(String email, boolean locked) {
+        return locked ? invitationRepository.lockPendingByEmail(email) : invitationRepository.pendingByEmail(email);
+    }
+
+    private List<WorkspaceInvitation> studentNoCandidates(String studentNo, boolean locked) {
+        return locked ? invitationRepository.lockPendingByStudentNo(studentNo) : invitationRepository.pendingByStudentNo(studentNo);
     }
 
     private void claimAll(User user, List<WorkspaceInvitation> invitations, long actorId, String actorRole) {

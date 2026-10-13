@@ -61,6 +61,23 @@ class ContractDriftTest {
 
     /** The implemented surface ("METHOD path") — runtime must expose exactly this. */
     private static final Set<String> IMPLEMENTED = Set.of(
+            "GET /admin/resource-access/{resourceType}/{resourceId}",
+            "POST /admin/resource-access/{resourceType}/{resourceId}",
+            "POST /admin/resource-access/{resourceType}/{resourceId}/preview",
+            "PATCH /admin/resource-access/{resourceType}/{resourceId}/{grantId}",
+            "DELETE /admin/resource-access/{resourceType}/{resourceId}/{grantId}",
+            "PATCH /admin/workspaces/{workspaceId}",
+            "DELETE /admin/workspaces/{workspaceId}",
+            "POST /admin/workspaces/{workspaceId}/invitations",
+            "POST /admin/workspaces/{workspaceId}/invitations/preview",
+            "DELETE /admin/workspaces/{workspaceId}/invitations/{invitationId}",
+            "PATCH /admin/workspaces/{workspaceId}/members/{userId}",
+            "DELETE /admin/workspaces/{workspaceId}/members/{userId}",
+            "POST /admin/workspaces/{workspaceId}/members/{userId}/preview",
+            "POST /vms/{vmId}/access/preview",
+            "POST /llm-keys/{keyId}/access/preview",
+            "POST /dns-domains/{domainId}/access/preview",
+            "POST /gpu-allocations/{allocationId}/access/preview",
             "GET /gpus",
             "GET /gpu-allocations",
             "GET /gpu-allocations/{allocationId}",
@@ -418,6 +435,16 @@ class ContractDriftTest {
         assertThat(endpointsOf(fetchRuntimeSpec(), SERVER_PREFIX))
                 .as("springdoc runtime spec path+method set vs the implemented set")
                 .isEqualTo(new TreeSet<>(IMPLEMENTED));
+    }
+
+    @Test
+    void accessChangeActionPublishesItsOwnExactMutationVocabulary() throws Exception {
+        JsonNode schemas = fetchRuntimeSpec().path("components").path("schemas");
+        assertThat(schemas.path("ResourceAccessChangePreviewRequest").path("properties").path("action")
+                .path("$ref").asText()).isEqualTo("#/components/schemas/ResourceAccessChangeAction");
+        List<String> values = new ArrayList<>();
+        schemas.path("ResourceAccessChangeAction").path("enum").forEach(value -> values.add(value.asText()));
+        assertThat(values).containsExactly("ADD", "UPDATE", "REMOVE");
     }
 
     @Test

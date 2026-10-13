@@ -35,10 +35,13 @@ public class AdminUserProfileImpactService {
     private final UserStatusChangeRepository statusChanges;
     private final JdbcTemplate jdbc;
     private final Clock clock;
+    private final kr.ac.pusan.pickle.workspace.InvitationClaimService claims;
+    private final kr.ac.pusan.pickle.access.ActorAccessImpacts accessImpacts;
+    private final kr.ac.pusan.pickle.workspace.WorkspaceRepository workspaces;
 
-    public AdminUserProfileImpactService(AdminUserSupportQueryService support, AdminUserProfileChanges profiles,
+    public AdminUserProfileImpactService(kr.ac.pusan.pickle.workspace.InvitationClaimService claims, kr.ac.pusan.pickle.access.ActorAccessImpacts accessImpacts, kr.ac.pusan.pickle.workspace.WorkspaceRepository workspaces, AdminUserSupportQueryService support, AdminUserProfileChanges profiles,
             UserStatusChangeRepository statusChanges, JdbcTemplate jdbc, Clock clock) {
-        this.support = support;
+        this.claims = claims; this.support = support; this.accessImpacts = accessImpacts; this.workspaces = workspaces;
         this.profiles = profiles;
         this.statusChanges = statusChanges;
         this.jdbc = jdbc;
@@ -73,26 +76,57 @@ public class AdminUserProfileImpactService {
                 : user.getStudentNo() == null || !studentNo.equalsIgnoreCase(user.getStudentNo());
         boolean triggered = enabling || changed && studentNo != null;
         boolean claimsPossible = status == UserStatus.ACTIVE && triggered;
+        var invitations = triggered ? invitations(user, enabling ? user.getEmail() : null, studentNo, claimsPossible) : List.<AdminUserProfileImpactResponse.AdminUserProfileInvitationImpact>of();
+        var actorImpact = actorImpact(actor, user, request, status, studentNo, claimsPossible, invitations);
         return new AdminUserProfileImpactResponse(request.action(), userId, clock.instant(), status, claimsPossible,
-                changed, triggered ? invitations(user, enabling ? user.getEmail() : null, studentNo, claimsPossible) : List.of());
+                changed, invitations, actorImpact);
+    }
+
+    private kr.ac.pusan.pickle.access.dto.ActorAccessImpact actorImpact(AuthenticatedUser actor, User user,
+            AdminUserProfileImpactRequest request, UserStatus candidateStatus, String studentNo, boolean possible,
+            List<AdminUserProfileImpactResponse.AdminUserProfileInvitationImpact> invitations) {
+        String binding = "PROFILE:" + user.getPublicId() + ':' + request.action() + ':' + candidateStatus + ':'
+                + studentNo + ':' + user.getPosition() + ':' + user.getStudentNo() + ':' + user.getDepartmentCode() + ':'
+                + user.getDepartmentOther() + ':' + invitations;
+        if (request.profile() != null) { binding += ":" + profiles.candidate(user, request.profile()); }
+        var gains = new java.util.ArrayList<kr.ac.pusan.pickle.access.dto.ActorAccessImpact.AccessIncrease>();
+        var pending = new java.util.ArrayList<kr.ac.pusan.pickle.access.dto.ActorAccessImpact.PendingResourceOwner>();
+        if (possible && actor.id().equals(user.getId())) {
+            for (var workspaceId : invitations.stream().map(AdminUserProfileImpactResponse.AdminUserProfileInvitationImpact::workspaceId).distinct().toList()) {
+                var workspace = workspaces.findByPublicIdAndDeletedAtIsNull(workspaceId).orElseThrow();
+                var membership = accessImpacts.membership(actor, workspace, WorkspaceMemberRole.MEMBER, binding, List.of());
+                gains.addAll(membership.increases()); binding += ':' + membership.fingerprint();
+            }
+            for (var invitation : invitations) {
+                for (var recipient : invitation.recipients()) {
+                    if (recipient.requestStatus() == RequestStatus.APPROVED && recipient.projectedStatus() == RequestRecipientStatus.QUEUED) {
+                        pending.add(new kr.ac.pusan.pickle.access.dto.ActorAccessImpact.PendingResourceOwner(recipient.requestId(),
+                                invitation.workspaceId(), recipient.type(), "QUEUED", "OWNER"));
+                    }
+                }
+            }
+        }
+        return accessImpacts.bind(binding, gains, pending);
     }
 
     private List<AdminUserProfileImpactResponse.AdminUserProfileInvitationImpact> invitations(User user, @Nullable String email,
             @Nullable String studentNo, boolean claimsPossible) {
+        List<Long> candidateIds = claims.openCandidates(email, studentNo).stream().map(kr.ac.pusan.pickle.workspace.WorkspaceInvitation::getId).toList();
+        if (candidateIds.isEmpty()) { return List.of(); }
+        String placeholders = candidateIds.stream().map(id -> "?").collect(java.util.stream.Collectors.joining(","));
+        java.util.List<Object> params = new java.util.ArrayList<>(); params.add(email); params.add(user.getId());
+        params.addAll(candidateIds); params.add(email);
         List<InvitationRow> rows = jdbc.query("""
                 select i.id, i.public_id, w.public_id as workspace_public_id, w.name, w.kind, i.role,
                        case when lower(i.invitee_email) = lower(cast(? as text)) then 'EMAIL' else 'STUDENT_NO' end as matched_by,
                        exists(select 1 from workspace_members m where m.workspace_id = w.id and m.user_id = ?) as already_member
                   from workspace_invitations i join workspaces w on w.id = i.workspace_id
-                 where i.status = 'PENDING' and w.deleted_at is null and
-                       ((cast(? as text) is not null and lower(i.invitee_email) = lower(cast(? as text))) or
-                        (cast(? as text) is not null and upper(i.invitee_student_no) = upper(cast(? as text))))
-                 order by case when lower(i.invitee_email) = lower(cast(? as text)) then 0 else 1 end, i.id
-                """, (rs, row) -> new InvitationRow(rs.getLong("id"), rs.getObject("public_id", UUID.class),
+                 where i.status = 'PENDING' and w.deleted_at is null and i.id in (
+                """ + placeholders + ") order by case when lower(i.invitee_email) = lower(cast(? as text)) then 0 else 1 end, i.id",
+                (rs, row) -> new InvitationRow(rs.getLong("id"), rs.getObject("public_id", UUID.class),
                         rs.getObject("workspace_public_id", UUID.class), rs.getString("name"),
                         WorkspaceKind.valueOf(rs.getString("kind")), WorkspaceMemberRole.valueOf(rs.getString("role")),
-                        rs.getString("matched_by"), rs.getBoolean("already_member")),
-                email, user.getId(), email, email, studentNo, studentNo, email);
+                        rs.getString("matched_by"), rs.getBoolean("already_member")), params.toArray());
         List<AdminUserProfileImpactResponse.AdminUserProfileInvitationImpact> result = new ArrayList<>();
         // Claim processes invitations in identifier order: an earlier invitation can
         // name a recipient before a second invitation of the same request is reached.

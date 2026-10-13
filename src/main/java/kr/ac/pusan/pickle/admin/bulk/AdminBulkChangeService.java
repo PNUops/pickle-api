@@ -127,11 +127,11 @@ public class AdminBulkChangeService {
                 continue;
             }
             String fingerprint = BulkFingerprints.of(objectMapper,
-                    handler.fingerprintValues(target, change));
+                    handler.fingerprintValues(actor, target, change));
             BulkChangeHandler.Judgement judgement = handler.judge(actor, target, change, now);
             items.add(new AdminBulkChangePreviewItem(targetId, handler.name(target),
                     judgement.reason() == null, judgement.reason(), judgement.fields(),
-                    fingerprint));
+                    fingerprint, judgement.writes() ? handler.actorAccessImpact(actor, target, change) : null));
         }
         return items;
     }
@@ -140,6 +140,7 @@ public class AdminBulkChangeService {
             AuthenticatedUser actor, AdminBulkChangeRequest request, UUID batchId, String ip,
             Instant validatedAt) {
         AdminBulkChangeSpec change = request.change();
+        handler.prepareApply(actor, request);
         Map<UUID, String> fingerprints = request.fingerprints();
         Map<UUID, T> targets = handler.load(request);
         List<UUID> order = request.targetIds().stream()
@@ -162,7 +163,7 @@ public class AdminBulkChangeService {
             for (UUID targetId : reachable) {
                 T target = targets.get(targetId);
                 if (!fingerprints.get(targetId).equals(BulkFingerprints.of(objectMapper,
-                        handler.fingerprintValues(target, change)))) {
+                        handler.fingerprintValues(actor, target, change)))) {
                     continue;
                 }
                 if (handler.judge(actor, target, change, validatedAt).writes()) {
@@ -193,7 +194,7 @@ public class AdminBulkChangeService {
             }
             String name = handler.name(target);
             String fingerprint = BulkFingerprints.of(objectMapper,
-                    handler.fingerprintValues(target, change));
+                    handler.fingerprintValues(actor, target, change));
             if (!fingerprint.equals(fingerprints.get(targetId))) {
                 results.put(targetId, new AdminBulkChangeApplyItem(targetId, name,
                         AdminBulkChangeResult.STALE, null, List.of()));
@@ -211,7 +212,7 @@ public class AdminBulkChangeService {
                 continue;
             }
             AdminBulkChangeReason refused = handler.write(actor, target, judgement, change,
-                    batchId, ip);
+                    batchId, ip, request.accessConfirmations() == null ? null : request.accessConfirmations().get(targetId));
             results.put(targetId, refused == null
                     ? new AdminBulkChangeApplyItem(targetId, name, AdminBulkChangeResult.APPLIED,
                             null, judgement.fields())

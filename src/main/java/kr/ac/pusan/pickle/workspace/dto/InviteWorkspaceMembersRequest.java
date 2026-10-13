@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.workspace.dto;
 
+import kr.ac.pusan.pickle.access.dto.AccessConfirmation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -13,7 +14,10 @@ public record InviteWorkspaceMembersRequest(
         @NotNull(message = "초대할 사람을 한 명 이상 입력해 주세요.")
         @Size(min = 1, max = 200, message = "한 번에 1명에서 200명까지 초대할 수 있습니다.")
         @Valid
-        List<WorkspaceInvitationEntry> entries) {
+        List<WorkspaceInvitationEntry> entries,
+        @Valid @Nullable AccessConfirmation confirmation) {
+
+    public InviteWorkspaceMembersRequest(List<WorkspaceInvitationEntry> entries) { this(entries, null); }
 
     /** Contract schema {@code WorkspaceInvitationEntry}: one person, by email or by 학번. */
     public record WorkspaceInvitationEntry(

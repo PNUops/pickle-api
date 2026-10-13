@@ -43,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/me")
 public class MeController {
+    private final kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock;
 
     private final UserRepository userRepository;
     private final ManagedOrgQueryService managedOrgQueryService;
@@ -58,7 +59,7 @@ public class MeController {
     private final AuditService auditService;
     private final InvitationClaimService invitationClaimService;
 
-    public MeController(UserRepository userRepository,
+    public MeController(kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock, UserRepository userRepository,
             ManagedOrgQueryService managedOrgQueryService,
             WorkspaceMemberRepository workspaceMemberRepository,
             MfaService mfaService, TermsService termsService,
@@ -68,6 +69,7 @@ public class MeController {
             RateLimitService rateLimitService,
             AuditService auditService,
             InvitationClaimService invitationClaimService) {
+        this.administrationLock = administrationLock;
         this.userRepository = userRepository;
         this.managedOrgQueryService = managedOrgQueryService;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -113,6 +115,7 @@ public class MeController {
     @Transactional
     public UserProfileResponse updateMyProfile(@AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody UpdateProfileRequest request, HttpServletRequest httpRequest) {
+        administrationLock.acquire();
         rateLimitService.hit("profile_update", "user:" + principal.id(),
                 RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         User user = loadUser(principal);
