@@ -520,6 +520,6 @@ public class VmDeletionService {
 
     /** Same after-commit trade-off as ApprovalService/VmLifecycleService. */
     private void enqueueAfterCommit(String label, JobLambda job) {
-        AfterCommit.run(label, () -> jobScheduler.enqueue(job));
+        AfterCommit.queue(label, () -> jobScheduler.enqueue(job).toString());
     }
 }

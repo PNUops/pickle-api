@@ -468,6 +468,42 @@ true인 기관 운영자·관리자와 시스템 관리자만 지원 변경을 �
 생성 대기를 구분합니다. `QUEUED`는 생성 완료를 뜻하지 않습니다. 일반 가입과 활성화,
 첫 프로필 저장의 자동 초대 수락은 기존 흐름을 사용합니다.
 
+## 기간 변경과 일괄 변경 결과
+
+VM의 `endDate`는 KST 기준 해당 날짜까지 포함하며, 끝 날짜가 없으면 고정 종료일이
+없습니다. 만료만으로 연장을 거절하지 않지만 삭제에 들어간 VM은 기존 상태 보호를
+적용합니다. LLM 키의 끝 날짜는 다음 날 KST 00:00의 만료 시각으로 변환합니다.
+폐기된 키는 변경할 수 없으며 유료 제공자에 이미 발급된 키의 기존 만료 시각을 뒤로
+미룰 수 없습니다. 미발급 키와 교내 키의 만료 변경은 기존 재활성화 조건을 사용합니다.
+외부 도메인의 갱신 기한은 기존 도메인 유형과 해제 상태 조건을 유지합니다.
+
+`POST /api/v1/admin/bulk-changes/preview`는 최대 200개 대상의 판정과 확인값을 저장하고
+`previewId`·`createdAt`·`expiresAt`를 반환합니다. 대상 자원은 변경하지 않습니다.
+`POST /api/v1/admin/bulk-changes`는 같은 변경·대상·fingerprint에 `previewId`와
+클라이언트가 한 번 생성한 `operationId`를 추가합니다. `operationId`는 결과의
+`batchId`와 같고 응답 유실 뒤에도 유지합니다. 하나의 미리보기는 한 적용에만 사용하며,
+같은 적용 식별자에 다른 본문을 보내거나 새 식별자로 소비한 미리보기를 재사용하면
+409로 거절합니다. 새 적용은 미리보기 저장 후 24시간까지 허용합니다. 이미 커밋된
+동일 적용의 결과 조회와 정확한 재시도에는 이 제한을 적용하지 않습니다.
+
+본인의 미리보기는 `GET /api/v1/admin/bulk-changes/previews/{previewId}`, 결과는
+`GET /api/v1/admin/bulk-changes/operations/{operationId}`에서 다시 엽니다.
+미리보기의 `consumedOperationId`는 이미 저장된 결과로 연결합니다.
+`GET /api/v1/admin/bulk-changes/operations`는 본인의 최근 결과 최대 20개를 반환합니다.
+현재 계정의 역할과 대상별 변경 범위를 다시 검사하며 조회할 수 없는 이름·값·확인값과
+변경 내용, 후속 작업 참조는 가립니다. 조회는 변경이나 작업을 다시 실행하지 않습니다.
+응답 유실 뒤 결과 조회가 404이면 접수 여부를 확인할 수 없다는 뜻이며 새 식별자로
+자동 적용하지 않습니다.
+
+대상별 `APPLIED`·`STALE`·`SKIPPED`·`UNCHANGED`는 저장 당시 결과를 유지합니다.
+`APPLIED`와 `COMMITTED`는 DB 변경과 결과 저장의 커밋을 뜻합니다. `effects`의
+`REGISTERED`는 callback 등록, `ACCEPTED`는 실제 queue 접수 참조가 확인됐다는 뜻입니다.
+감사 callback의 `COMPLETED`, 현재 `queueState`의 `SUCCEEDED`도 외부 자원의 물리적
+완료를 대신하지 않습니다. 오류를 내부에서 처리해 접수 증거가 없으면 `UNKNOWN`으로
+남고 후기 관측 저장 실패가 기존 변경을 되돌리거나 재실행하지 않습니다.
+`observations`는 현재 DB가 알고 있는 공개 값과 현재 조회 거절을 별도로 제공합니다.
+현재 값이 요청과 같다는 이유만으로 이 적용의 외부 완료를 판정하지 않습니다.
+
 ## 신청 검토와 배치 조건
 
 `GET /api/v1/admin/requests/{requestId}/context`는 참고 자료의 실제 기관과 상세 조회

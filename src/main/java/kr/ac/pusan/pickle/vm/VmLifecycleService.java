@@ -362,6 +362,6 @@ public class VmLifecycleService {
      * poller/reconciler surfaces the drift).
      */
     private void enqueueAfterCommit(String label, JobLambda job) {
-        AfterCommit.run(label, () -> jobScheduler.enqueue(job));
+        AfterCommit.queue(label, () -> jobScheduler.enqueue(job).toString());
     }
 }

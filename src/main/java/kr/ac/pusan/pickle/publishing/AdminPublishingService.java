@@ -497,8 +497,8 @@ public class AdminPublishingService {
                     "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
         }
         long domainId = domain.getId();
-        runAfterCommit("enqueue verify " + domain.getPublicId(),
-                () -> domainVerificationJob.requestVerify(domainId));
+        AfterCommit.queue("enqueue verify " + domain.getPublicId(),
+                () -> domainVerificationJob.requestVerifyReceipt(domainId));
         Map<String, Object> args = new java.util.LinkedHashMap<>();
         args.put("fqdn", domain.getFqdn());
         Map<String, Object> old = new java.util.LinkedHashMap<>();

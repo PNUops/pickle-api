@@ -209,6 +209,31 @@ class DomainBulkChanges extends BulkChangeHandler<Domain> {
     }
 
     @Override
+    Map<String, Object> observationValues(Domain domain, AdminBulkChangeSpec change) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("kind", domain.getKind().name());
+        values.put("status", domain.getStatus().name());
+        switch (change.kind()) {
+            case DOMAIN_RENEWAL -> {
+                values.put("releasedAt", BulkFingerprints.plain(domain.getReleasedAt()));
+                values.put("renewDueAt", BulkFingerprints.plain(domain.getRenewDueAt()));
+            }
+            case DOMAIN_FORCE_RELEASE -> {
+                values.put("releasedAt", BulkFingerprints.plain(domain.getReleasedAt()));
+                values.put("dnsStatus", BulkFingerprints.plain(domain.getDnsStatus()));
+                values.put("recordCount", recordRepository.findByDomainIdAndStatusNotOrderByIdAsc(
+                        domain.getId(), DomainRecordStatus.REMOVED).size());
+                Route route = liveRoute(domain);
+                values.put("liveRouteStatus", route == null ? null : route.getStatus().name());
+                values.put("certificateCount", certificateRepository.findByDomainId(domain.getId()).size());
+            }
+            case DOMAIN_VERIFY -> { }
+            default -> throw new IllegalStateException("not a domain kind: " + change.kind());
+        }
+        return values;
+    }
+
+    @Override
     Judgement judge(AuthenticatedUser actor, Domain domain, AdminBulkChangeSpec change,
             Instant now) {
         return switch (change.kind()) {

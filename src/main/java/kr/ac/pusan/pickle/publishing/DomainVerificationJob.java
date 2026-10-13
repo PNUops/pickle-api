@@ -61,13 +61,15 @@ public class DomainVerificationJob {
      * trigger ({@code POST /domains/{id}/verify}) must not be able to stack
      * duplicate jobs onto the shared JobRunr pool.
      */
-    public void requestVerify(long domainId) {
+    public void requestVerify(long domainId) { requestVerifyReceipt(domainId); }
+
+    public @org.jspecify.annotations.Nullable String requestVerifyReceipt(long domainId) {
         if (!inFlight.add(domainId)) {
             log.debug("domain-verify {} already in flight — enqueue skipped", domainId);
-            return;
+            return null;
         }
         try {
-            jobScheduler.enqueue(() -> verify(domainId));
+            return jobScheduler.enqueue(() -> verify(domainId)).toString();
         } catch (RuntimeException e) {
             inFlight.remove(domainId);
             throw e;

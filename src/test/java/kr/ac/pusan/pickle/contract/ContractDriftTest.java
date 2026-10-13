@@ -61,6 +61,9 @@ class ContractDriftTest {
 
     /** The implemented surface ("METHOD path") — runtime must expose exactly this. */
     private static final Set<String> IMPLEMENTED = Set.of(
+            "GET /admin/bulk-changes/previews/{previewId}",
+            "GET /admin/bulk-changes/operations/{operationId}",
+            "GET /admin/bulk-changes/operations",
             "GET /admin/resource-access/{resourceType}/{resourceId}",
             "POST /admin/resource-access/{resourceType}/{resourceId}",
             "POST /admin/resource-access/{resourceType}/{resourceId}/preview",
@@ -428,6 +431,27 @@ class ContractDriftTest {
         reason.path("enum").forEach(value -> values.add(value.asText()));
         assertThat(values).containsExactly("quota_exhausted", "credit_exhausted",
                 "rate_limit_requests", "rate_limit_tokens", "rate_limit_concurrency");
+    }
+
+    @Test
+    void savedBulkLimitsKeepCreditOptionalAndNonNullableWithoutLosingClearableFields() throws Exception {
+        JsonNode schemas = fetchRuntimeSpec().path("components").path("schemas");
+        JsonNode limits = schemas.path("AdminBulkLlmKeyLimitsChange");
+        JsonNode credit = limits.path("properties").path("creditLimit");
+        assertThat(credit.path("type").toString()).contains("number").doesNotContain("null");
+        assertThat(limits.path("required").toString()).doesNotContain("creditLimit");
+        for (String field : List.of("rpm", "tpm", "concurrency", "dailyTokens")) {
+            assertThat(limits.path("properties").path(field).path("type").toString()).contains("null");
+        }
+        assertThat(limits.path("properties").path("creditLimitReset").path("anyOf").toString()).contains("null");
+        for (String hidden : List.of("rpmSet", "tpmSet", "creditLimitSet", "empty")) {
+            assertThat(limits.path("properties").has(hidden)).isFalse();
+        }
+        JsonNode preview = schemas.path("AdminBulkChangePreviewResponse");
+        assertThat(preview.path("required").toString()).contains("previewId", "createdAt", "expiresAt", "items");
+        assertThat(preview.path("properties").path("consumedOperationId").path("type").toString()).contains("null");
+        assertThat(schemas.path("AdminBulkChangeOperationResponse").path("required").toString())
+                .contains("operationId", "previewId", "committedAt", "result", "effects", "observations");
     }
 
     @Test

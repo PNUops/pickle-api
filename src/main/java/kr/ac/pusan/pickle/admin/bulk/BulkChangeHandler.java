@@ -102,6 +102,15 @@ abstract class BulkChangeHandler<T> {
     /** Every value the change kind could touch, in a stable order. */
     abstract Map<String, Object> fingerprintValues(T target, AdminBulkChangeSpec change);
 
+    /** Explicit public values; internal fingerprint inputs never define the read surface. */
+    abstract Map<String, Object> observationValues(T target, AdminBulkChangeSpec change);
+
+    static Map<String, Object> publicValues(Map<String, Object> values, Set<String> fields) {
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        values.forEach((field, value) -> { if (fields.contains(field)) { result.put(field, value); } });
+        return result;
+    }
+
     abstract Judgement judge(AuthenticatedUser actor, T target, AdminBulkChangeSpec change,
             Instant now);
 

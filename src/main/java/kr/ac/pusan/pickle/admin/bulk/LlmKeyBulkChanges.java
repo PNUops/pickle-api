@@ -185,6 +185,11 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
     }
 
     @Override
+    Map<String, Object> observationValues(LlmApiKey key, AdminBulkChangeSpec change) {
+        return publicValues(fingerprintValues(key, change), Set.of("status", "expiresAt", "rpm", "tpm", "concurrency", "dailyTokens", "creditLimit", "creditLimitReset", "creditAllowedModels", "creditDeniedModels", "passthroughEndpoints"));
+    }
+
+    @Override
     Judgement judge(AuthenticatedUser actor, LlmApiKey key, AdminBulkChangeSpec change,
             Instant now) {
         return switch (change.kind()) {

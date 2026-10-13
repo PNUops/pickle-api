@@ -213,6 +213,69 @@ components:
       - "batchId"
       - "items"
       type: "object"
+    AdminBulkChangeCurrentObservation:
+      properties:
+        observedAt:
+          format: "date-time"
+          type: "string"
+        refusal:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkChangeReason"
+          - type: "null"
+        targetId:
+          format: "uuid"
+          type: "string"
+        values:
+          additionalProperties: {}
+          description: "현재 DB가 알고 있는 대상 값입니다. 요청과 값이 같아도 이 적용의 외부 완료를 증명하지 않습니다."
+          type: "object"
+      required:
+      - "observedAt"
+      - "targetId"
+      - "values"
+      type: "object"
+    AdminBulkChangeEffect:
+      properties:
+        externalReference:
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        kind:
+          type: "string"
+        observedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        outcome:
+          type: "string"
+        queueObservedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        queueState:
+          description: "현재 JobRunr 상태 관측. SUCCEEDED도 외부 자원의 물리적 완료를 뜻하지 않습니다."
+          type:
+          - "string"
+          - "null"
+        registeredAt:
+          format: "date-time"
+          type: "string"
+        targetId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "id"
+      - "kind"
+      - "outcome"
+      - "registeredAt"
+      type: "object"
     AdminBulkChangeFieldDiff:
       properties:
         field:
@@ -240,6 +303,46 @@ components:
       - "DOMAIN_VERIFY"
       - "ACCESS"
       type: "string"
+    AdminBulkChangeOperationResponse:
+      properties:
+        change:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkChangeSpec"
+          - type: "null"
+        committedAt:
+          format: "date-time"
+          type: "string"
+        effects:
+          items:
+            $ref: "#/components/schemas/AdminBulkChangeEffect"
+          type: "array"
+        observations:
+          items:
+            $ref: "#/components/schemas/AdminBulkChangeCurrentObservation"
+          type: "array"
+        operationId:
+          format: "uuid"
+          type: "string"
+        previewId:
+          format: "uuid"
+          type: "string"
+        result:
+          $ref: "#/components/schemas/AdminBulkChangeApplyResponse"
+        status:
+          description: "COMMITTED는 DB 변경과 결과의 커밋입니다. 큐 접수나 외부 완료를 뜻하지 않습니다."
+          type: "string"
+        targetType:
+          $ref: "#/components/schemas/AdminBulkChangeTargetType"
+      required:
+      - "committedAt"
+      - "effects"
+      - "observations"
+      - "operationId"
+      - "previewId"
+      - "result"
+      - "status"
+      - "targetType"
+      type: "object"
     AdminBulkChangePreviewItem:
       properties:
         actorAccessImpact:
@@ -278,12 +381,37 @@ components:
       type: "object"
     AdminBulkChangePreviewResponse:
       properties:
+        change:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkChangeSpec"
+          - type: "null"
+        consumedOperationId:
+          description: "이 미리보기로 이미 커밋된 본인 적용의 ID. 새 적용을 만들지 않고 기존 결과를 여는 데 씁니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        expiresAt:
+          format: "date-time"
+          type: "string"
         items:
           items:
             $ref: "#/components/schemas/AdminBulkChangePreviewItem"
           type: "array"
+        previewId:
+          format: "uuid"
+          type: "string"
+        targetType:
+          $ref: "#/components/schemas/AdminBulkChangeTargetType"
       required:
+      - "createdAt"
+      - "expiresAt"
       - "items"
+      - "previewId"
+      - "targetType"
       type: "object"
     AdminBulkChangeReason:
       description: "대상 하나가 변경되지 않은 이유. NOT_FOUND: 대상이 없거나 이 계정의 범위 밖입니다. FORBIDDEN:\
@@ -321,6 +449,18 @@ components:
             \ 다시 계산해 다른 대상은 STALE로 답하고 쓰지 않습니다."
           type:
           - "object"
+          - "null"
+        operationId:
+          description: "적용에서 필수. 응답 유실 재시도에도 유지하는 클라이언트 생성 ID. batchId와 같습니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        previewId:
+          description: "적용에서 필수인 저장 미리보기 ID"
+          format: "uuid"
+          type:
+          - "string"
           - "null"
         targetIds:
           description: "대상의 공개 ID. 1개 이상 200개 이하, 중복 없이."
@@ -475,10 +615,14 @@ components:
           - "integer"
           - "null"
         creditAllowedModels:
-          $ref: "#/components/schemas/AdminBulkListChange"
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkListChange"
+          - type: "null"
           description: "유료 모델 허용 목록에 적용할 변경. 생략하면 그대로 둡니다."
         creditDeniedModels:
-          $ref: "#/components/schemas/AdminBulkListChange"
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkListChange"
+          - type: "null"
           description: "유료 모델 차단 목록에 적용할 변경. 생략하면 그대로 둡니다."
         creditLimit:
           description: "금액 한도(USD 크레딧). 생략하면 그대로 둡니다. null은 허용하지 않고, 유료 모델을 닫으려면 0을\
@@ -498,8 +642,12 @@ components:
           - "integer"
           - "null"
         passthroughEndpoints:
-          $ref: "#/components/schemas/AdminBulkListChange"
-          description: "기능 권한 목록에 적용할 변경. 생략하면 그대로 둡니다. 값은 images와 embeddings입니다."
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkListChange"
+          - type: "null"
+          description: "기능 권한 목록에 적용할 변경. 생략하면 그대로 둡니다. 현재 변경 요청에는 chat, web_search,\
+            \ pdf_ocr, images, embeddings를 지정할 수 있습니다. 결과 목록의 web_search와 pdf_ocr는\
+            \ chat과 함께 부여해야 합니다."
         rpm:
           description: "분당 요청 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다."
           format: "int32"
@@ -12660,7 +12808,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.102.0"
+  version: "0.103.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -12859,9 +13007,14 @@ paths:
       - "admin-audit-controller"
   /admin/bulk-changes:
     post:
-      description: "미리보기와 같은 본문에 fingerprint를 더해 적용합니다. 서버는 미리보기를 믿지 않고 적용 시점에 대상마\
-        다 다시 판정하며, 미리보기 뒤 바뀐 대상은 STALE로 답하고 쓰지 않습니다. 한 대상의 실패가 다른 대상을 되돌리지 않고, 되돌리\
-        기는 없습니다. 대상별 감사 기록은 단일 변경과 같은 이름으로 남고 같은 batchId를 담습니다."
+      description: "저장된 미리보기와 같은 변경·대상·fingerprint에 previewId와 클라이언트가 한 번 생성한 operationId를\
+        \ 더해 적용합니다. operationId는 결과의 batchId와 같습니다. 새 적용은 미리보기 저장 후 24시간까지만 허용합니다\
+        . 같은 수행자가 같은 식별자·본문으로 재시도하면 현재 접근 범위로 가린 저장 결과만 반환하며 변경이나 후속 작업을 다시 실행하지 않\
+        습니다. 이 재시도는 미리보기 만료 뒤에도 가능합니다. 같은 수행자의 식별자에 다른 본문을 결합하면 409, 타인의 기록은 404로\
+        \ 거절합니다. 새 적용은 대상마다 다시 판정하고 바뀐 확인값은 STALE, 업무상 거절은 SKIPPED로 저장합니다. 예기치 않은\
+        \ 트랜잭션 오류는 전체 변경과 결과를 롤백합니다. 커밋 후 callback 오류는 이미 커밋된 결과를 되돌리지 않으며 effects에\
+        서 관측합니다. APPLIED는 DB 커밋을 뜻하고 외부 완료를 보장하지 않습니다. 대상별 감사 기록은 단일 변경과 같은 이름으로 남\
+        고 같은 batchId를 담습니다."
       operationId: "applyAdminBulkChange"
       requestBody:
         content:
@@ -12885,12 +13038,63 @@ paths:
       summary: "관리자 일괄 변경 적용"
       tags:
       - "admin"
+  /admin/bulk-changes/operations:
+    get:
+      description: "본인의 최근 커밋 결과 최대 20개를 현재 접근 범위로 가려서 조회합니다. 대상과 후속 작업을 변경하지 않습니다\
+        ."
+      operationId: "listAdminBulkChangeOperations"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/AdminBulkChangeOperationResponse"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "본인의 최근 일괄 변경 결과 조회"
+      tags:
+      - "admin"
+  /admin/bulk-changes/operations/{operationId}:
+    get:
+      description: "본인의 커밋된 적용 결과와 callback 접수 관측을 조회합니다. 재실행하지 않으며 DB 커밋, queue 접\
+        수와 외부 완료는 별개입니다."
+      operationId: "getAdminBulkChangeOperation"
+      parameters:
+      - in: "path"
+        name: "operationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminBulkChangeOperationResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "저장된 일괄 변경 결과 조회"
+      tags:
+      - "admin"
   /admin/bulk-changes/preview:
     post:
-      description: "여러 대상에 한 가지 변경을 적용하면 어떻게 되는지 대상마다 답합니다. 아무것도 쓰지 않습니다. 범위 밖이거나\
-        \ 역할이 허용하지 않는 대상, 현재 상태에서 할 수 없는 대상은 이유와 함께 applicable=false로, 이미 그 값인 대상은\
-        \ 바뀔 필드 없이 applicable=true로 답합니다. 대상마다 fingerprint를 주며 적용 요청에 그대로 돌려보냅니다.\
-        \ 대상은 최대 200개입니다."
+      description: "여러 대상에 한 가지 변경을 적용하면 어떻게 되는지 대상마다 답합니다. 미리보기 기록만 저장하며 대상은 변경하지\
+        \ 않습니다. 범위 밖이거나 역할이 허용하지 않는 대상, 현재 상태에서 할 수 없는 대상은 이유와 함께 applicable=false로\
+        , 이미 그 값인 대상은 바뀔 필드 없이 applicable=true로 답합니다. 대상마다 fingerprint를 주며 적용 요청에\
+        \ 그대로 돌려보냅니다. 대상은 최대 200개입니다."
       operationId: "previewAdminBulkChange"
       requestBody:
         content:
@@ -12912,6 +13116,34 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "관리자 일괄 변경 미리보기"
+      tags:
+      - "admin"
+  /admin/bulk-changes/previews/{previewId}:
+    get:
+      description: "본인의 미리보기를 현재 대상별 변경 권한으로 다시 조회합니다. 접근할 수 없는 대상의 이름, 값, 확인값과 변경\
+        \ 내용은 가립니다."
+      operationId: "getAdminBulkChangePreview"
+      parameters:
+      - in: "path"
+        name: "previewId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminBulkChangePreviewResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "저장된 일괄 변경 미리보기 조회"
       tags:
       - "admin"
   /admin/campus-ip-requests:
