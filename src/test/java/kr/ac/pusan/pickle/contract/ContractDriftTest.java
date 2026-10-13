@@ -203,6 +203,7 @@ class ContractDriftTest {
             "PATCH /admin/nodes/{nodeId}",
             "GET /admin/os-images",
             "PATCH /admin/os-images/{imageId}",
+            "GET /admin/resource-deadlines",
             "GET /admin/vms",
             // HTTP publishing (multi-domain since contract v0.29.0).
             "POST /vms/{vmId}/domains",

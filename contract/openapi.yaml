@@ -2039,6 +2039,160 @@ components:
       - "name"
       - "status"
       type: "object"
+    AdminResourceDeadlineDates:
+      description: "종류별 저장 날짜. 해당 종류에 없는 날짜와 저장되지 않은 날짜는 null입니다. 기한 경과는 외부 처리 완료를\
+        \ 증명하지 않습니다."
+      properties:
+        allocatedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        deleteRequestedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        deleteScheduledFor:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        endDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        expiresAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        expiryStoppedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        grantedEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        grantedStartDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        leaseEndsAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        releasedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        renewDueAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        reservedUntil:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        startDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+      type: "object"
+    AdminResourceDeadlineKind:
+      description: "기한 종류. VM 사용 종료, LLM 키 만료, 외부 도메인 갱신·예약, GPU 승인기간·실제 임대 종료를 구분\
+        합니다."
+      enum:
+      - "VM_USAGE_END"
+      - "LLM_KEY_EXPIRY"
+      - "DOMAIN_RENEWAL"
+      - "DOMAIN_RESERVATION"
+      - "GPU_GRANT_END"
+      - "GPU_LEASE_END"
+      type: "string"
+    AdminResourceDeadlineResponse:
+      properties:
+        connectionStatus:
+          description: "GPU의 저장 연결 상태. 다른 종류는 null입니다."
+          type:
+          - "string"
+          - "null"
+        dates:
+          $ref: "#/components/schemas/AdminResourceDeadlineDates"
+        deadlineAt:
+          description: "현재 주 기한. 날짜 종료는 다음 날 0시(KST)로 정규화합니다. 이 시각 경과는 정지·회수·삭제 완료\
+            를 뜻하지 않습니다."
+          format: "date-time"
+          type: "string"
+        deadlineKind:
+          $ref: "#/components/schemas/AdminResourceDeadlineKind"
+        id:
+          format: "uuid"
+          type: "string"
+        inclusiveEndDate:
+          description: "그날까지 포함하는 종료일. VM·GPU 승인기간에 표시하며, LLM 키는 만료가 실제 KST 0시일 때만\
+            \ 전날을 표시합니다. 임의 시각의 기한에는 null입니다."
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        name:
+          type: "string"
+        observedAt:
+          description: "기한 판정과 함께 사용한 서버 시각. 마이크로초 정밀도입니다."
+          format: "date-time"
+          type: "string"
+        orgId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          type:
+          - "string"
+          - "null"
+        overdue:
+          description: "서버 관측 시각에 주 기한이 경과했는지. 실제 후속 처리 상태와 별개입니다."
+          type: "boolean"
+        sourceStatus:
+          description: "DB에 저장된 종류별 상태"
+          type: "string"
+        status:
+          description: "조회 시각의 종류별 상태. LLM 키는 정확한 만료 시각을 반영하며 다른 종류는 저장 상태입니다."
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        workspaceId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        workspaceName:
+          type:
+          - "string"
+          - "null"
+      required:
+      - "dates"
+      - "deadlineAt"
+      - "deadlineKind"
+      - "id"
+      - "name"
+      - "observedAt"
+      - "overdue"
+      - "sourceStatus"
+      - "status"
+      - "type"
+      type: "object"
     AdminRouteView:
       properties:
         appliedAt:
@@ -8929,6 +9083,31 @@ components:
       - "totalElements"
       - "totalPages"
       type: "object"
+    PageResponseAdminResourceDeadlineResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminResourceDeadlineResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
     PageResponseAdminRouteView:
       properties:
         content:
@@ -12808,7 +12987,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.103.0"
+  version: "0.104.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -16345,6 +16524,94 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-resource-access-controller"
+  /admin/resource-deadlines:
+    get:
+      description: "전역 지원 메타데이터를 자원당 주 기한 하나로 조회합니다. 기관·워크스페이스는 선택 필터이며 없는 식별자는 빈\
+        \ 목록입니다. VM은 사용 종료일, LLM 키는 만료 시각, 외부 도메인은 갱신 또는 해제 뒤 예약 종료, GPU는 대기 중 승인\
+        \ 종료일 또는 할당·반납 중 실제 임대 종료입니다. 종료 상태와 주 기한 없는 자원은 제외합니다. expiringInDays는 1~365의\
+        \ KST 달력 창으로 오늘부터 오늘+N일까지입니다. VM·대기 GPU는 종료일 양끝을 포함합니다. LLM 키는 관측 시각보다 미래이\
+        면서 오늘+N 다음 날 0시(KST)까지 포함하여 그날까지 사용 가능한 키를 담습니다. 도메인·GPU 임대의 정확한 시각은 관측 시각\
+        보다 미래이며 같은 다음 날 0시 미만입니다. expired=true는 날짜 종료가 오늘보다 이전이거나 정확한 기한이 관측 시각 이하\
+        인 자원입니다. 두 창을 함께 지정하면 교집합이므로 빈 목록입니다. 관측 시각과 count·페이지는 같은 DB snapshot이며 기\
+        한 경과를 외부 완료로 해석하지 않습니다. 실제 변경 권한은 기존 단건 경로의 기관 범위를 따릅니다."
+      operationId: "listAdminResourceDeadlines"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "type"
+        required: false
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "query"
+        name: "deadlineKind"
+        required: false
+        schema:
+          $ref: "#/components/schemas/AdminResourceDeadlineKind"
+      - in: "query"
+        name: "expiringInDays"
+        required: false
+        schema:
+          format: "int32"
+          maximum: 365
+          minimum: 1
+          type: "integer"
+      - in: "query"
+        name: "expired"
+        required: false
+        schema:
+          type: "boolean"
+      - in: "query"
+        name: "sort"
+        required: false
+        schema:
+          enum:
+          - "deadlineAt"
+          - "-deadlineAt"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminResourceDeadlineResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 통합 자원 기한 목록"
+      tags:
+      - "admin-resource-deadline-controller"
   /admin/routes:
     get:
       operationId: "listAdminRoutes"
