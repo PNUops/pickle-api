@@ -21,6 +21,8 @@ import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeResult;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeSpec;
 import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeOperationResponse;
+import kr.ac.pusan.pickle.orgs.OrgAdministrationLock;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.tx.AfterCommit;
@@ -41,8 +43,8 @@ import tools.jackson.databind.ObjectMapper;
  * in the same words the single path would use, never as a whole-call
  * failure. There is no undo.
  *
- * <p>Lock order everywhere: the gateway generation row first, then target
- * rows by internal id. The generation is spent once per apply that writes
+ * <p>Lock order: the administration advisory lock, operation identity, then
+ * the gateway generation row and target rows by internal id. The generation is spent once per apply that writes
  * any LLM key, and never by a preview.
  */
 @Service
@@ -54,10 +56,13 @@ public class AdminBulkChangeService {
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final AdminBulkChangeStore store;
+    private final OrgAdministrationLock administrationLock;
 
     public AdminBulkChangeService(List<BulkChangeHandler<?>> handlers,
             LlmGatewayGenerations generations, AuditService auditService,
-            ObjectMapper objectMapper, Clock clock) {
+            ObjectMapper objectMapper, Clock clock, AdminBulkChangeStore store,
+            OrgAdministrationLock administrationLock) {
         for (BulkChangeHandler<?> handler : handlers) {
             for (AdminBulkChangeKind kind : handler.kinds()) {
                 this.handlers.put(kind, handler);
@@ -67,33 +72,49 @@ public class AdminBulkChangeService {
         this.auditService = auditService;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.store = store;
+        this.administrationLock = administrationLock;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public AdminBulkChangePreviewResponse preview(AuthenticatedUser actor,
             AdminBulkChangeRequest request) {
         Instant now = clock.instant();
         BulkChangeHandler<?> handler = validate(request, false, now);
-        return new AdminBulkChangePreviewResponse(preview(handler, actor, request, now));
+        if (request.previewId() != null || request.operationId() != null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("previewId", "새 미리보기에는 적용 식별자를 보내지 마세요.")));
+        }
+        return store.savePreview(actor.id(), request, preview(handler, actor, request, now));
     }
 
     @Transactional
     public AdminBulkChangeApplyResponse apply(AuthenticatedUser actor,
             AdminBulkChangeRequest request, String ip) {
+        if (request.previewId() == null || request.operationId() == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("operationId", "미리보기 식별자와 이 적용의 고유 식별자를 보내 주세요.")));
+        }
+        administrationLock.acquire();
+        String binding = store.binding(request);
+        AdminBulkChangeStore.Operation previous = store.existing(actor.id(), request.operationId());
+        if (previous != null) { return repeat(actor, request, binding, previous); }
+        AdminBulkChangeStore.Preview saved = store.preview(actor.id(), request.previewId());
+        store.validatePreview(saved, request);
+        previous = store.claim(actor.id(), request, binding);
+        if (previous != null) { return repeat(actor, request, binding, previous); }
         Instant now = clock.instant();
         BulkChangeHandler<?> handler = validate(request, true, now);
-        UUID batchId = UUID.randomUUID();
+        UUID batchId = request.operationId();
         Map<String, Object> summary = new LinkedHashMap<>();
         // Every after-commit callback of this call is isolated from the
         // others, the summary's included, so one failed enqueue, push or
         // audit insert does not drop the rest. The summary is registered
         // first and filled in after the targets: callbacks run in
         // registration order, and it holds the counts only once they exist.
-        List<AdminBulkChangeApplyItem> items = AfterCommit.isolating("batch " + batchId, () -> {
+        List<AdminBulkChangeApplyItem> items = AfterCommit.observing(observer(batchId, null), () -> AfterCommit.isolating("batch " + batchId, () -> {
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
                     AuditService.ADMIN_BULK_CHANGE, "bulk_change", batchId, summary, ip);
             return apply(handler, actor, request, batchId, ip, now);
-        });
+        }));
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (AdminBulkChangeResult result : AdminBulkChangeResult.values()) {
             counts.put(result.name(), 0);
@@ -106,7 +127,103 @@ public class AdminBulkChangeService {
         summary.put("kind", request.change().kind().name());
         summary.put("targets", items.size());
         summary.put("counts", counts);
-        return new AdminBulkChangeApplyResponse(batchId, items);
+        AdminBulkChangeApplyResponse response = new AdminBulkChangeApplyResponse(batchId, items);
+        store.complete(batchId, response);
+        return response;
+    }
+
+    private AfterCommit.Observer observer(UUID operationId, UUID targetId) {
+        return label -> {
+            UUID effectId = store.registerEffect(operationId, targetId, label);
+            return (success, reference) -> store.observeEffect(effectId, success, reference,
+                    label.startsWith("enqueue ") && reference != null);
+        };
+    }
+
+    private AdminBulkChangeApplyResponse repeat(AuthenticatedUser actor, AdminBulkChangeRequest request,
+            String binding, AdminBulkChangeStore.Operation previous) {
+        if (!previous.previewId().equals(request.previewId()) || !previous.binding().equals(binding)) {
+            throw AdminBulkChangeStore.conflict("같은 적용 식별자에 다른 요청을 보낼 수 없습니다.");
+        }
+        if (previous.result() == null) { throw new IllegalStateException("committed operation has no receipt"); }
+        return maskResult(actor, store.preview(actor.id(), previous.previewId()).request(), previous.result());
+    }
+
+    @Transactional(readOnly = true)
+    public AdminBulkChangePreviewResponse savedPreview(AuthenticatedUser actor, UUID previewId) {
+        AdminBulkChangeStore.Preview saved = store.preview(actor.id(), previewId);
+        return maskPreview(handlers.get(saved.request().change().kind()), actor, saved);
+    }
+
+    @Transactional(readOnly = true)
+    public AdminBulkChangeOperationResponse operation(AuthenticatedUser actor, UUID operationId) {
+        AdminBulkChangeStore.Operation operation = store.read(actor.id(), operationId);
+        AdminBulkChangeStore.Preview saved = store.preview(actor.id(), operation.previewId());
+        return operation(handlers.get(saved.request().change().kind()), actor, saved, operation);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AdminBulkChangeOperationResponse> recent(AuthenticatedUser actor) {
+        return store.recent(actor.id(), 20).stream().map(id -> operation(actor, id)).toList();
+    }
+
+    private <T> AdminBulkChangePreviewResponse maskPreview(BulkChangeHandler<T> handler,
+            AuthenticatedUser actor, AdminBulkChangeStore.Preview saved) {
+        Map<UUID, T> targets = handler.load(saved.request());
+        boolean masked = false;
+        List<AdminBulkChangePreviewItem> items = new ArrayList<>();
+        for (AdminBulkChangePreviewItem item : saved.response().items()) {
+            T target = targets.get(item.targetId());
+            AdminBulkChangeReason refusal = target == null ? AdminBulkChangeReason.NOT_FOUND
+                    : handler.accessRefusal(actor, target, saved.request().change());
+            if (refusal == null) { items.add(item); } else {
+                masked = true;
+                items.add(new AdminBulkChangePreviewItem(item.targetId(), null, false, refusal, List.of(), "", null));
+            }
+        }
+        AdminBulkChangePreviewResponse response = saved.response();
+        return new AdminBulkChangePreviewResponse(response.previewId(), response.createdAt(), response.expiresAt(),
+                response.targetType(), masked ? null : response.change(), items, response.consumedOperationId());
+    }
+
+    private AdminBulkChangeApplyResponse maskResult(AuthenticatedUser actor, AdminBulkChangeRequest request,
+            AdminBulkChangeApplyResponse result) {
+        return maskResult(handlers.get(request.change().kind()), actor, request, result);
+    }
+
+    private <T> AdminBulkChangeApplyResponse maskResult(BulkChangeHandler<T> handler, AuthenticatedUser actor,
+            AdminBulkChangeRequest request, AdminBulkChangeApplyResponse result) {
+        Map<UUID, T> targets = handler.load(request);
+        return new AdminBulkChangeApplyResponse(result.batchId(), result.items().stream().map(item -> {
+            T target = targets.get(item.targetId());
+            AdminBulkChangeReason refusal = target == null ? AdminBulkChangeReason.NOT_FOUND
+                    : handler.accessRefusal(actor, target, request.change());
+            return refusal == null ? item : new AdminBulkChangeApplyItem(item.targetId(), null,
+                    item.result(), item.reason(), List.of());
+        }).toList());
+    }
+
+    private <T> AdminBulkChangeOperationResponse operation(BulkChangeHandler<T> handler, AuthenticatedUser actor,
+            AdminBulkChangeStore.Preview saved, AdminBulkChangeStore.Operation operation) {
+        Map<UUID, T> targets = handler.load(saved.request());
+        Set<UUID> allowed = new HashSet<>();
+        List<AdminBulkChangeOperationResponse.AdminBulkChangeCurrentObservation> observations = new ArrayList<>();
+        for (UUID id : saved.request().targetIds()) {
+            T target = targets.get(id);
+            AdminBulkChangeReason refusal = target == null ? AdminBulkChangeReason.NOT_FOUND
+                    : handler.accessRefusal(actor, target, saved.request().change());
+            if (refusal == null) { allowed.add(id); }
+            observations.add(new AdminBulkChangeOperationResponse.AdminBulkChangeCurrentObservation(id, clock.instant(),
+                    refusal, refusal == null ? handler.observationValues(target, saved.request().change()) : Map.of()));
+        }
+        var effects = store.effects(operation.id()).stream().map(effect ->
+                effect.targetId() == null || allowed.contains(effect.targetId()) ? store.observeQueue(effect)
+                        : new AdminBulkChangeOperationResponse.AdminBulkChangeEffect(effect.id(), effect.targetId(),
+                                effect.kind(), effect.outcome(), null, effect.registeredAt(), effect.observedAt(), null, null)).toList();
+        return new AdminBulkChangeOperationResponse(operation.id(), operation.previewId(), operation.committedAt(),
+                "COMMITTED", saved.request().targetType(), allowed.size() == saved.request().targetIds().size()
+                        ? saved.request().change() : null,
+                maskResult(handler, actor, saved.request(), operation.result()), effects, observations);
     }
 
     private <T> List<AdminBulkChangePreviewItem> preview(BulkChangeHandler<T> handler,
@@ -122,7 +239,7 @@ public class AdminBulkChangeService {
                 // No fingerprint of a target the actor may not change: hashing
                 // its values would hand out an oracle over what they are.
                 items.add(new AdminBulkChangePreviewItem(targetId,
-                        reach == AdminBulkChangeReason.NOT_FOUND ? null : handler.name(target),
+                        null,
                         false, reach, List.of(), BulkFingerprints.of(objectMapper, Map.of())));
                 continue;
             }
@@ -188,7 +305,7 @@ public class AdminBulkChangeService {
             AdminBulkChangeReason reach = handler.accessRefusal(actor, target, change);
             if (reach != null) {
                 results.put(targetId, new AdminBulkChangeApplyItem(targetId,
-                        reach == AdminBulkChangeReason.NOT_FOUND ? null : handler.name(target),
+                        null,
                         AdminBulkChangeResult.SKIPPED, reach, List.of()));
                 continue;
             }
@@ -211,8 +328,9 @@ public class AdminBulkChangeService {
                         AdminBulkChangeResult.UNCHANGED, null, List.of()));
                 continue;
             }
-            AdminBulkChangeReason refused = handler.write(actor, target, judgement, change,
-                    batchId, ip, request.accessConfirmations() == null ? null : request.accessConfirmations().get(targetId));
+            AdminBulkChangeReason refused = AfterCommit.observing(observer(batchId, targetId), () ->
+                    handler.write(actor, target, judgement, change, batchId, ip,
+                            request.accessConfirmations() == null ? null : request.accessConfirmations().get(targetId)));
             results.put(targetId, refused == null
                     ? new AdminBulkChangeApplyItem(targetId, name, AdminBulkChangeResult.APPLIED,
                             null, judgement.fields())

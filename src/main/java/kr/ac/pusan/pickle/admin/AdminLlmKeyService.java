@@ -377,12 +377,13 @@ public class AdminLlmKeyService {
             // this the key waits for the sweep, which is the same
             // several-minute silence a fresh approval used to get.
             long internalKeyId = key.getId();
-            afterCommit("enqueue openrouter provision " + key.getPublicId(), () -> {
+            AfterCommit.queue("enqueue openrouter provision " + key.getPublicId(), () -> {
                 try {
-                    jobScheduler.enqueue(() -> provisioner.provision(internalKeyId));
+                    return jobScheduler.enqueue(() -> provisioner.provision(internalKeyId)).toString();
                 } catch (RuntimeException e) {
                     log.warn("could not enqueue OpenRouter provisioning for a newly funded "
                             + "llm key; the sweep will pick it up", e);
+                    return null;
                 }
             });
         }
@@ -501,12 +502,13 @@ public class AdminLlmKeyService {
             // key on seeing this one, and the sweep would only return in a
             // few minutes; queue the attempt now, as the limits path does.
             long internalKeyId = key.getId();
-            afterCommit("enqueue openrouter provision " + key.getPublicId(), () -> {
+            AfterCommit.queue("enqueue openrouter provision " + key.getPublicId(), () -> {
                 try {
-                    jobScheduler.enqueue(() -> provisioner.provision(internalKeyId));
+                    return jobScheduler.enqueue(() -> provisioner.provision(internalKeyId)).toString();
                 } catch (RuntimeException e) {
                     log.warn("could not enqueue OpenRouter provisioning after an expiry change; "
                             + "the sweep will pick it up", e);
+                    return null;
                 }
             });
         }

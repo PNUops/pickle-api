@@ -240,16 +240,18 @@ class ResourceAccessSupportTest {
         var spec = new AdminBulkChangeSpec(AdminBulkChangeKind.ACCESS, null, null, null, null, null,
                 null, null, null, null, new AdminBulkAccessChange(manager.getPublicId(), AdminBulkAccessAction.GRANT, ResourceRole.MEMBER));
         var request = new AdminBulkChangeRequest(target, List.of(fixture.publicId()), spec, null);
-        var preview = bulk.preview(actor(manager), request).items().getFirst();
+        var savedPreview = bulk.preview(actor(manager), request);
+        var preview = savedPreview.items().getFirst();
         assertThat(preview.actorAccessImpact().increases()).singleElement();
         var fingerprints = Map.of(fixture.publicId(), preview.fingerprint());
         long auditsBefore = audits(fixture.publicId());
         assertThatThrownBy(() -> bulk.apply(actor(manager), new AdminBulkChangeRequest(target, request.targetIds(), spec,
-                fingerprints), "127.0.8.8")).isInstanceOf(ApiException.class);
+                fingerprints, null, savedPreview.previewId(), java.util.UUID.randomUUID()), "127.0.8.8")).isInstanceOf(ApiException.class);
         assertThat(grants.findByResourceTypeAndResourceIdAndUserId(type, fixture.id(), manager.getId())).isEmpty();
         assertThat(audits(fixture.publicId())).isEqualTo(auditsBefore);
         var applied = bulk.apply(actor(manager), new AdminBulkChangeRequest(target, request.targetIds(), spec,
-                fingerprints, Map.of(fixture.publicId(), confirmation(preview.actorAccessImpact()))), "127.0.8.8");
+                fingerprints, Map.of(fixture.publicId(), confirmation(preview.actorAccessImpact())),
+                savedPreview.previewId(), java.util.UUID.randomUUID()), "127.0.8.8");
         assertThat(applied.items().getFirst().result().name()).isEqualTo("APPLIED");
         assertThat(role(type, fixture.id(), manager)).isEqualTo(ResourceRole.MEMBER);
         assertThatThrownBy(() -> service.add(actor(manager), type, fixture.publicId(),

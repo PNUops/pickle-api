@@ -25,6 +25,8 @@ import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -87,7 +89,7 @@ class AdminUserSupportTest {
     }
 
     @Test
-    void globalInstitutionReadsDoNotWidenRevocation() throws Exception {
+    void globalWorkspaceAccessWritersCanRevokeAcrossInstitutions() throws Exception {
         member(workspace, target, "MEMBER");
         long first = vm(workspace, org);
         long second = vm(workspace, foreignOrg);
@@ -97,11 +99,82 @@ class AdminUserSupportTest {
         SeedFixtures.grantOrgRole(jdbc, actor.getId(), foreignOrg, UserRole.ORG_VIEWER);
         read(actor, "").andExpect(status().isOk()).andExpect(jsonPath("$.resources.length()").value(2));
         diagnose(actor, first).andExpect(status().isOk()).andExpect(jsonPath("$.canRevoke").value(true));
-        diagnose(actor, second).andExpect(status().isOk()).andExpect(jsonPath("$.canRevoke").value(false));
+        diagnose(actor, second).andExpect(status().isOk()).andExpect(jsonPath("$.canRevoke").value(true));
         read(actor, "?orgId=" + pub("orgs", org)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.resources.length()").value(1));
         read(actor(UserRole.ORG_VIEWER), "?orgId=" + pub("orgs", foreignOrg)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.resources.length()").value(1));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = UserRole.class, names = {"ORG_MANAGER", "ORG_ADMIN", "SYS_ADMIN", "SYS_MANAGER", "ORG_VIEWER", "SYS_VIEWER"})
+    void residualGrantRevocationCapabilitiesMatchActualGlobalAccessPolicy(UserRole role) throws Exception {
+        long resource = vm(workspace, foreignOrg);
+        grant(resource, target, "EDITOR");
+        jdbc.update("insert into resource_access_grants(resource_type,resource_id,grantee_type,role) values('VM',?,'WORKSPACE','MEMBER')", resource);
+        jdbc.update("update users set status='DISABLED' where id=?", target.getId());
+        User actor = actor(role);
+        boolean allowed = role == UserRole.ORG_MANAGER || role == UserRole.ORG_ADMIN || role == UserRole.SYS_ADMIN;
+        UUID resourceId = pub("vms", resource);
+        UUID grantId = jdbc.queryForObject("select public_id from resource_access_grants where resource_type='VM' and resource_id=? and user_id=?",
+                UUID.class, resource, target.getId());
+        diagnose(actor, resource).andExpect(status().isOk())
+                .andExpect(jsonPath("$.canRevoke").value(allowed))
+                .andExpect(jsonPath("$.revokeReason").value(allowed ? "ALLOWED" : "FORBIDDEN"))
+                .andExpect(jsonPath("$.workspaceRole").isEmpty());
+        mvc.perform(get("/api/v1/admin/resource-access/VM/" + resourceId).header("Authorization", "Bearer " + token(actor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.canManageAccess").value(allowed));
+        ResultActions removed = mvc.perform(delete("/api/v1/admin/resource-access/VM/" + resourceId + "/" + grantId)
+                .header("Authorization", "Bearer " + token(actor)));
+        if (allowed) {
+            removed.andExpect(status().isNoContent());
+            diagnose(actor, resource).andExpect(status().isOk()).andExpect(jsonPath("$.canRevoke").value(false))
+                    .andExpect(jsonPath("$.revokeReason").value("NO_PERSONAL_GRANT"));
+        } else { removed.andExpect(status().isForbidden()); }
+        assertThat(jdbc.queryForObject("select count(*) from resource_access_grants where public_id=?", Long.class, grantId))
+                .isEqualTo(allowed ? 0L : 1L);
+        assertThat(jdbc.queryForObject("select count(*) from resource_access_grants where resource_type='VM' and resource_id=? and grantee_type='WORKSPACE'", Long.class, resource)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from audit_logs where actor_id=? and action='vm.access_grant_remove' and target_id=?",
+                Long.class, actor.getId(), resourceId.toString())).isEqualTo(allowed ? 1L : 0L);
+    }
+
+    @Test
+    void removedDomainsAndMissingPersonalGrantsRemainIneligibleForDiagnosticRevocation() throws Exception {
+        long resource = vm(workspace, foreignOrg);
+        diagnose(actor(UserRole.ORG_MANAGER), resource).andExpect(status().isOk())
+                .andExpect(jsonPath("$.canRevoke").value(false)).andExpect(jsonPath("$.revokeReason").value("NO_PERSONAL_GRANT"));
+        long removed = domain(workspace, foreignOrg);
+        jdbc.update("update domains set status='REMOVED' where id=?", removed);
+        jdbc.update("insert into resource_access_grants(resource_type,resource_id,grantee_type,user_id,role) values('DOMAIN',?,'USER',?,'EDITOR')", removed, target.getId());
+        UUID resourceId = pub("domains", removed);
+        UUID grantId = jdbc.queryForObject("select public_id from resource_access_grants where resource_type='DOMAIN' and resource_id=? and user_id=?",
+                UUID.class, removed, target.getId());
+        mvc.perform(get(path(target) + "/support/access").param("type", "DOMAIN").param("resourceId", resourceId.toString())
+                .header("Authorization", "Bearer " + token(sysAdmin))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.canRevoke").value(false)).andExpect(jsonPath("$.revokeReason").value("RESOURCE_NOT_FOUND"));
+        // The diagnostic describes the support page's bulk consumer. The
+        // thin single path separately keeps historical cleanup behavior.
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("targetType", "DOMAIN");
+        body.put("targetIds", List.of(resourceId.toString()));
+        body.put("change", Map.of("kind", "ACCESS", "access", Map.of("action", "REVOKE", "userId", target.getPublicId().toString())));
+        var previewed = json.readTree(mvc.perform(post("/api/v1/admin/bulk-changes/preview")
+                        .header("Authorization", "Bearer " + token(sysAdmin)).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(body))).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+        assertThat(previewed.get("items").get(0).get("applicable").asBoolean()).isFalse();
+        assertThat(previewed.get("items").get(0).get("reason").asString()).isEqualTo("NOT_FOUND");
+        body.put("previewId", previewed.get("previewId").asString());
+        body.put("operationId", UUID.randomUUID().toString());
+        body.put("fingerprints", Map.of(resourceId.toString(), previewed.get("items").get(0).get("fingerprint").asString()));
+        var refused = json.readTree(mvc.perform(post("/api/v1/admin/bulk-changes")
+                        .header("Authorization", "Bearer " + token(sysAdmin)).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(body))).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+        assertThat(refused.get("items").get(0).get("result").asString()).isEqualTo("SKIPPED");
+        assertThat(refused.get("items").get(0).get("reason").asString()).isEqualTo("NOT_FOUND");
+        assertThat(jdbc.queryForObject("select count(*) from resource_access_grants where public_id=?", Long.class, grantId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from audit_logs where action='domain.access_grant_remove' and target_id=?", Long.class, resourceId.toString())).isZero();
     }
 
     @Test

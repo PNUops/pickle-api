@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.common.error;
 
 /** Stable machine-readable error codes (contract: Problem.code). */
 public final class ErrorCodes {
+    public static final String ADMIN_BULK_CHANGE_CONFLICT = "ADMIN_BULK_CHANGE_CONFLICT";
 
     public static final String GPU_ACCESS_GRANT_EXISTS = "GPU_ACCESS_GRANT_EXISTS";
     public static final String GPU_ATTACHMENT_NOT_READY = "GPU_ATTACHMENT_NOT_READY";

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.config.ClockConfig;
@@ -350,7 +351,7 @@ class AdminBulkChangeTest {
         Key key = key(orgA.getId(), workspaceA, "미리보기 뒤 바뀐 키", "ACTIVE", null);
         Map<String, Object> body = request("LLM_KEY", List.of(key.publicId()),
                 limits(Map.of("rpm", 90)));
-        Map<String, String> fingerprints = fingerprintsOf(previewJson(sysAdminToken, body));
+        PreparedPreview fingerprints = fingerprintsOf(previewJson(sysAdminToken, body));
         jdbcTemplate.update("update llm_api_keys set rpm = 61 where public_id = ?", key.publicId());
         long generation = generation();
 
@@ -914,7 +915,7 @@ class AdminBulkChangeTest {
         Map<String, Object> body = request("DOMAIN", List.of(pub("domains", domain)),
                 Map.of("kind", "DOMAIN_RENEWAL", "domainRenewal", Map.of("renewDueAt",
                         Instant.now().plus(90, ChronoUnit.DAYS).toString())));
-        Map<String, String> fingerprints = fingerprintsOf(previewJson(orgAdminToken, body));
+        PreparedPreview fingerprints = fingerprintsOf(previewJson(orgAdminToken, body));
         jdbcTemplate.update("update domains set renew_due_at = ? where id = ?",
                 OffsetDateTime.ofInstant(moved, ZoneOffset.UTC), domain);
 
@@ -1066,7 +1067,7 @@ class AdminBulkChangeTest {
         long failing = customDomain(orgA.getId(), workspaceA);
         long fine = customDomain(orgA.getId(), workspaceA);
         doThrow(new IllegalStateException("job storage unavailable"))
-                .when(domainVerificationJob).requestVerify(failing);
+                .when(domainVerificationJob).requestVerifyReceipt(failing);
         Map<String, Object> body = request("DOMAIN",
                 List.of(pub("domains", failing), pub("domains", fine)),
                 Map.of("kind", "DOMAIN_VERIFY", "domainVerify", Map.of()));
@@ -1121,7 +1122,7 @@ class AdminBulkChangeTest {
     void aSinglePathStillPropagatesItsAfterCommitFailure() throws Exception {
         long domain = customDomain(orgA.getId(), workspaceA);
         doThrow(new IllegalStateException("job storage unavailable"))
-                .when(domainVerificationJob).requestVerify(domain);
+                .when(domainVerificationJob).requestVerifyReceipt(domain);
 
         mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domain) + "/verify")
                         .header("Authorization", "Bearer " + orgAdminToken))
@@ -1293,8 +1294,37 @@ class AdminBulkChangeTest {
                         .content(objectMapper.writeValueAsString(
                                 request("LLM_KEY", List.of(id), limits(Map.of("rpm", 90))))))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("fingerprints"));
+                .andExpect(jsonPath("$.errors[0].field").value("operationId"));
         assertThat(keyRow(key).get("rpm")).isEqualTo(60);
+    }
+
+    @Test
+    void savedPartialCreditLimitsPreserveOmissionAcceptZeroAndRefuseExplicitNull() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "partial-credit", "ACTIVE", Instant.now().plus(30, ChronoUnit.DAYS));
+        long before = generation();
+        Map<String, Object> invalid = new LinkedHashMap<>();
+        invalid.put("creditLimit", null);
+        refused(request("LLM_KEY", List.of(key.publicId()), limits(invalid)), "change.llmKeyLimits.creditLimit");
+        assertThat(generation()).isEqualTo(before);
+        assertThat(keyRow(key).get("credit_limit").toString()).isEqualTo("1.00");
+        JsonNode omitted = applyJson(sysAdminToken, request("LLM_KEY", List.of(key.publicId()), limits(Map.of("rpm", 93))));
+        assertThat(item(omitted, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(keyRow(key).get("credit_limit").toString()).isEqualTo("1.00");
+        String snapshot = jdbcTemplate.queryForObject("select p.request::text from admin_bulk_change_previews p join admin_bulk_change_operations o on o.preview_id=p.id where o.id=?",
+                String.class, UUID.fromString(omitted.get("batchId").asString()));
+        assertThat(objectMapper.readTree(snapshot).get("change").get("llmKeyLimits").has("creditLimit")).isFalse();
+        JsonNode zero = applyJson(sysAdminToken, request("LLM_KEY", List.of(key.publicId()), limits(Map.of("creditLimit", 0))));
+        assertThat(item(zero, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(keyRow(key).get("credit_limit").toString()).isEqualTo("0.00");
+        assertThat(keyRow(key).get("rpm")).isEqualTo(93);
+        String zeroSnapshot = jdbcTemplate.queryForObject("select p.request::text from admin_bulk_change_previews p join admin_bulk_change_operations o on o.preview_id=p.id where o.id=?",
+                String.class, UUID.fromString(zero.get("batchId").asString()));
+        JsonNode storedZero = objectMapper.readTree(zeroSnapshot).get("change").get("llmKeyLimits");
+        assertThat(storedZero.get("creditLimit").asInt()).isZero();
+        var restored = objectMapper.readValue(zeroSnapshot, kr.ac.pusan.pickle.admin.dto.AdminBulkChangeRequest.class);
+        assertThat(restored.change().llmKeyLimits().isCreditLimitSet()).isTrue();
+        assertThat(restored.change().llmKeyLimits().getCreditLimit()).isEqualByComparingTo(java.math.BigDecimal.ZERO);
+        assertThat(restored.change().llmKeyLimits().isTpmSet()).isFalse();
     }
 
     // ── request helpers ────────────────────────────────────────────────────
@@ -1353,13 +1383,46 @@ class AdminBulkChangeTest {
     }
 
     private JsonNode apply(String token, Map<String, Object> body,
-            Map<String, String> fingerprints) throws Exception {
+            PreparedPreview preview) throws Exception {
         Map<String, Object> withFingerprints = new LinkedHashMap<>(body);
-        withFingerprints.put("fingerprints", fingerprints);
-        return objectMapper.readTree(perform(APPLY, token, withFingerprints)
+        withFingerprints.put("fingerprints", preview.fingerprints());
+        withFingerprints.put("previewId", preview.previewId());
+        withFingerprints.put("operationId", UUID.randomUUID());
+        JsonNode applied = objectMapper.readTree(perform(APPLY, token, withFingerprints)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.batchId").isNotEmpty())
                 .andReturn().getResponse().getContentAsString());
+        assertThat(applied.get("batchId").asString()).isEqualTo(withFingerprints.get("operationId").toString());
+        JsonNode reopened = objectMapper.readTree(mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                        APPLY + "/operations/" + applied.get("batchId").asString()).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertPublicObservationKeys(((Map<?, ?>) body.get("change")).get("kind").toString(), reopened);
+        return applied;
+    }
+
+    private void assertPublicObservationKeys(String kind, JsonNode operation) {
+        Set<String> expected = switch (kind) {
+            case "LLM_KEY_LIMITS" -> Set.of("status", "expiresAt", "rpm", "tpm", "concurrency", "dailyTokens",
+                    "creditLimit", "creditLimitReset", "creditAllowedModels", "creditDeniedModels", "passthroughEndpoints");
+            case "LLM_KEY_STATUS", "LLM_KEY_EXPIRY" -> Set.of("status", "expiresAt");
+            case "VM_PERIOD" -> Set.of("status", "startDate", "endDate", "deleteKind", "deleteScheduledFor", "deleteRequestedAt");
+            case "VM_POWER" -> Set.of("status", "pendingPowerAction", "endDate");
+            case "VM_DELETION" -> Set.of("status", "deleteKind", "deleteScheduledFor");
+            case "DOMAIN_RENEWAL" -> Set.of("kind", "status", "releasedAt", "renewDueAt");
+            case "DOMAIN_FORCE_RELEASE" -> Set.of("kind", "status", "releasedAt", "dnsStatus", "recordCount", "liveRouteStatus", "certificateCount");
+            case "DOMAIN_VERIFY" -> Set.of("kind", "status");
+            case "ACCESS" -> Set.of("granteeRole");
+            default -> throw new AssertionError("no public observation expectation for " + kind);
+        };
+        for (JsonNode observation : operation.get("observations")) {
+            if (observation.hasNonNull("refusal")) {
+                assertThat(observation.get("values")).isEmpty();
+            } else if ("ACCESS".equals(kind) && observation.get("values").has("listed")) {
+                assertThat(observation.get("values").propertyNames()).containsExactly("listed");
+            } else {
+                assertThat(observation.get("values").propertyNames()).containsExactlyInAnyOrderElementsOf(expected);
+            }
+        }
     }
 
     private ResultActions perform(String path, String token, Map<String, Object> body)
@@ -1369,12 +1432,14 @@ class AdminBulkChangeTest {
                 .content(objectMapper.writeValueAsString(body)));
     }
 
-    private static Map<String, String> fingerprintsOf(JsonNode preview) {
+    private record PreparedPreview(UUID previewId, Map<String, String> fingerprints) { }
+
+    private static PreparedPreview fingerprintsOf(JsonNode preview) {
         Map<String, String> fingerprints = new LinkedHashMap<>();
         for (JsonNode item : preview.get("items")) {
             fingerprints.put(item.get("targetId").asString(), item.get("fingerprint").asString());
         }
-        return fingerprints;
+        return new PreparedPreview(UUID.fromString(preview.get("previewId").asString()), fingerprints);
     }
 
     private static JsonNode item(JsonNode response, UUID targetId) {

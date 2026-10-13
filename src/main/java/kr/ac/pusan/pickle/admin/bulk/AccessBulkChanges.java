@@ -171,6 +171,11 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
     }
 
     @Override
+    Map<String, Object> observationValues(Target target, AdminBulkChangeSpec change) {
+        return publicValues(fingerprintValues(target, change), Set.of("listed", "granteeRole"));
+    }
+
+    @Override
     Judgement judge(AuthenticatedUser actor, Target target, AdminBulkChangeSpec change,
             Instant now) {
         if (!target.listed()) {

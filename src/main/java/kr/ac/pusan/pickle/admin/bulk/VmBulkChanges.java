@@ -184,6 +184,11 @@ class VmBulkChanges extends BulkChangeHandler<Vm> {
     }
 
     @Override
+    Map<String, Object> observationValues(Vm vm, AdminBulkChangeSpec change) {
+        return publicValues(fingerprintValues(vm, change), Set.of("status", "startDate", "endDate", "deleteKind", "deleteScheduledFor", "deleteRequestedAt", "pendingPowerAction"));
+    }
+
+    @Override
     Judgement judge(AuthenticatedUser actor, Vm vm, AdminBulkChangeSpec change, Instant now) {
         return switch (change.kind()) {
             case VM_PERIOD -> judgePeriod(vm, change.vmPeriod());

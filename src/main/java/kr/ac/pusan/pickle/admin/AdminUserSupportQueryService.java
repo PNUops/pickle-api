@@ -28,7 +28,6 @@ import kr.ac.pusan.pickle.request.RequestStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
-import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.workspace.WorkspaceInvitationStatus;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
@@ -188,7 +187,7 @@ public class AdminUserSupportQueryService {
             case GPU -> "ALLOCATED".equals(resource.status());
         };
         if (!ended && !ready) { reasons.add("RESOURCE_NOT_READY"); }
-        String revokeReason = actor.role() != UserRole.SYS_ADMIN && !actor.administers(resource.orgId())
+        String revokeReason = !StudentSupportPolicy.canWriteWorkspaceAccess(actor)
                 ? "FORBIDDEN" : resource.type() == ResourceType.DOMAIN && "REMOVED".equals(resource.status())
                 ? "RESOURCE_NOT_FOUND" : personal == null ? "NO_PERSONAL_GRANT" : "ALLOWED";
         return new AdminUserResourceAccessResponse(resource.type(), resource.publicId(), resource.name(), resource.status(),
