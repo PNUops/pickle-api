@@ -61,6 +61,10 @@ class ContractDriftTest {
 
     /** The implemented surface ("METHOD path") — runtime must expose exactly this. */
     private static final Set<String> IMPLEMENTED = Set.of(
+            "GET /workspaces/{workspaceId}/termination-impact",
+            "GET /admin/workspaces/{workspaceId}/termination-impact",
+            "GET /workspaces/{workspaceId}/invitations/{invitationId}/termination-impact",
+            "GET /admin/workspaces/{workspaceId}/invitations/{invitationId}/termination-impact",
             "GET /admin/bulk-changes/previews/{previewId}",
             "GET /admin/bulk-changes/operations/{operationId}",
             "GET /admin/bulk-changes/operations",

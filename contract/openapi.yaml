@@ -9608,6 +9608,56 @@ components:
       - "totalElements"
       - "totalPages"
       type: "object"
+    PageResponseWorkspaceTerminationResourceResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/WorkspaceTerminationResourceResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
+    PageResponseWorkspaceTerminationTargetResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/WorkspaceTerminationTargetResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
     PaidAccess:
       description: "유료 모델 사용 가능 여부. LISTED는 허용 목록과 차단 목록 중 어느 쪽으로든 좁혀진 상태이고, UNRESTRICTED는\
         \ 두 목록이 모두 비어 금액만이 경계인 상태입니다."
@@ -12975,6 +13025,242 @@ components:
       - "myRole"
       - "name"
       type: "object"
+    WorkspaceTerminationAction:
+      enum:
+      - "DELETE_WORKSPACE"
+      - "CANCEL_INVITATION"
+      type: "string"
+    WorkspaceTerminationImpactResponse:
+      properties:
+        action:
+          $ref: "#/components/schemas/WorkspaceTerminationAction"
+        blockedReason:
+          description: "현재 종료를 막는 조건입니다. PERSONAL 또는 REMAINING_RESOURCES이며, 차단이 없으\
+            면 null입니다."
+          type:
+          - "string"
+          - "null"
+        blockingResources:
+          $ref: "#/components/schemas/PageResponseWorkspaceTerminationResourceResponse"
+        executable:
+          type: "boolean"
+        fingerprint:
+          description: "수행자, 현재 권한, 전체 영향 대상과 자원 조건의 식별값입니다. 페이지와 조회 시각은 포함하지 않습니다\
+            ."
+          type: "string"
+        invitationId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        observedAt:
+          description: "조회 시각입니다. 실제 종료나 자원 생성 결과를 뜻하지 않습니다."
+          format: "date-time"
+          type: "string"
+        recipientCounts:
+          items:
+            $ref: "#/components/schemas/WorkspaceTerminationRecipientCount"
+          type: "array"
+        resourceBlockers:
+          items:
+            $ref: "#/components/schemas/WorkspaceTerminationResourceBlocker"
+          type: "array"
+        summary:
+          $ref: "#/components/schemas/WorkspaceTerminationSummary"
+        targets:
+          $ref: "#/components/schemas/PageResponseWorkspaceTerminationTargetResponse"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceName:
+          type: "string"
+      required:
+      - "action"
+      - "blockingResources"
+      - "executable"
+      - "fingerprint"
+      - "observedAt"
+      - "recipientCounts"
+      - "resourceBlockers"
+      - "summary"
+      - "targets"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
+    WorkspaceTerminationRecipientCount:
+      properties:
+        count:
+          format: "int64"
+          type: "integer"
+        recipientStatus:
+          $ref: "#/components/schemas/RequestRecipientStatus"
+        requestStatus:
+          $ref: "#/components/schemas/RequestStatus"
+        willClose:
+          type: "boolean"
+      required:
+      - "count"
+      - "recipientStatus"
+      - "requestStatus"
+      - "willClose"
+      type: "object"
+    WorkspaceTerminationResourceBlocker:
+      properties:
+        count:
+          format: "int64"
+          type: "integer"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+      required:
+      - "count"
+      - "type"
+      type: "object"
+    WorkspaceTerminationResourceResponse:
+      properties:
+        id:
+          format: "uuid"
+          type: "string"
+        name:
+          description: "현재 조회 권한에 맞춘 이름입니다. VM 접근 권한이 없으면 SSH 슬러그 대신 표시 이름 또는 공개 ID가\
+            \ 들어갑니다."
+          type: "string"
+        orgId:
+          description: "현재 조회 권한으로 공개되는 실제 기관입니다. 제한된 행이나 연결 기관이 없는 경우 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          type:
+          - "string"
+          - "null"
+        resourceReadable:
+          description: "현재 호출 경로에서 기존 종류별 단건 상세를 읽을 수 있는지입니다. 워크스페이스 OWNER 자체는 자원\
+            \ 상세 권한을 뜻하지 않습니다."
+          type: "boolean"
+        status:
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+      required:
+      - "id"
+      - "name"
+      - "resourceReadable"
+      - "status"
+      - "type"
+      type: "object"
+    WorkspaceTerminationSummary:
+      properties:
+        approvedRecipients:
+          format: "int64"
+          type: "integer"
+        closingRecipients:
+          format: "int64"
+          type: "integer"
+        failedRecipients:
+          description: "자동 종료되지 않고 현재 실패 이력으로 남는 대상자 수입니다."
+          format: "int64"
+          type: "integer"
+        pendingJoinRecipients:
+          format: "int64"
+          type: "integer"
+        queuedRecipients:
+          format: "int64"
+          type: "integer"
+        submittedRequests:
+          format: "int64"
+          type: "integer"
+        undecidedRecipients:
+          format: "int64"
+          type: "integer"
+      required:
+      - "approvedRecipients"
+      - "closingRecipients"
+      - "failedRecipients"
+      - "pendingJoinRecipients"
+      - "queuedRecipients"
+      - "submittedRequests"
+      - "undecidedRecipients"
+      type: "object"
+    WorkspaceTerminationTargetKind:
+      enum:
+      - "REQUEST"
+      - "RECIPIENT"
+      type: "string"
+    WorkspaceTerminationTargetResponse:
+      properties:
+        invitationId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        invitee:
+          description: "현재 OWNER 또는 지원 쓰기 권한 범위에서만 제공하는 초대 식별자입니다."
+          type:
+          - "string"
+          - "null"
+        kind:
+          $ref: "#/components/schemas/WorkspaceTerminationTargetKind"
+        name:
+          type:
+          - "string"
+          - "null"
+        orgId:
+          format: "uuid"
+          type: "string"
+        orgName:
+          type: "string"
+        reason:
+          type:
+          - "string"
+          - "null"
+        recipientId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        recipientStatus:
+          anyOf:
+          - $ref: "#/components/schemas/RequestRecipientStatus"
+          - type: "null"
+        requestId:
+          format: "uuid"
+          type: "string"
+        requestName:
+          type: "string"
+        requestReadable:
+          type: "boolean"
+        requestStatus:
+          $ref: "#/components/schemas/RequestStatus"
+        resourceId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        userId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        userReadable:
+          type: "boolean"
+        willClose:
+          description: "현재 종료 경로가 실제로 취소할 대상입니다. FAILED 이력은 false입니다."
+          type: "boolean"
+      required:
+      - "kind"
+      - "orgId"
+      - "orgName"
+      - "requestId"
+      - "requestName"
+      - "requestReadable"
+      - "requestStatus"
+      - "type"
+      - "userReadable"
+      - "willClose"
+      type: "object"
   securitySchemes:
     bearerAuth:
       bearerFormat: "JWT"
@@ -12987,7 +13273,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.104.0"
+  version: "0.105.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -18247,6 +18533,61 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-workspace-controller"
+  /admin/workspaces/{workspaceId}/invitations/{invitationId}/termination-impact:
+    get:
+      description: "기존 지원 쓰기 권한으로 정확한 초대에 연결된 신청 대상자의 종료 영향을 조회합니다. 복수 기관의 신청을 포함하\
+        며 FAILED는 자동 종료되지 않는 이력으로 구분합니다."
+      operationId: "getAdminWorkspaceInvitationTerminationImpact"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "invitationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          type: "integer"
+      - in: "query"
+        name: "resourcePage"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceTerminationImpactResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "지원 초대 취소 영향 조회"
+      tags:
+      - "admin-workspace-termination-impact-controller"
   /admin/workspaces/{workspaceId}/members/{userId}:
     delete:
       operationId: "removeAdminWorkspaceMember"
@@ -18347,6 +18688,55 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-workspace-controller"
+  /admin/workspaces/{workspaceId}/termination-impact:
+    get:
+      description: "기존 지원 쓰기 권한으로 전체 워크스페이스의 신청 취소, 대상자 자동 종료와 남은 자원 차단 조건을 조회합니다\
+        . 기관 선택은 전체 영향 집합을 좁히지 않습니다. 조회는 가입, 생성 또는 취소를 실행하지 않습니다."
+      operationId: "getAdminWorkspaceTerminationImpact"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          type: "integer"
+      - in: "query"
+        name: "resourcePage"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceTerminationImpactResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "지원 워크스페이스 삭제 영향 조회"
+      tags:
+      - "admin-workspace-termination-impact-controller"
   /auth/login:
     post:
       operationId: "login"
@@ -22209,6 +22599,61 @@ paths:
       summary: "초대 취소"
       tags:
       - "workspace-controller"
+  /workspaces/{workspaceId}/invitations/{invitationId}/termination-impact:
+    get:
+      description: "현재 OWNER가 정확한 초대에 연결된 신청 대상자의 자동 종료 영향을 조회합니다. 신청 자체와 다른 초대는 취\
+        소하지 않으며, FAILED는 자동 종료되지 않는 이력으로 구분합니다."
+      operationId: "getWorkspaceInvitationTerminationImpact"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "invitationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          type: "integer"
+      - in: "query"
+        name: "resourcePage"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceTerminationImpactResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "초대 취소 영향 조회"
+      tags:
+      - "workspace-termination-impact-controller"
   /workspaces/{workspaceId}/members/{userId}:
     delete:
       operationId: "removeWorkspaceMember"
@@ -22309,6 +22754,55 @@ paths:
       summary: "학번 명단 확인"
       tags:
       - "workspace-controller"
+  /workspaces/{workspaceId}/termination-impact:
+    get:
+      description: "현재 OWNER가 전체 워크스페이스의 신청 취소, 대상자 자동 종료와 남은 자원 차단 조건을 조회합니다. 조회는\
+        \ 상태를 바꾸지 않으며, 결과는 페이지와 무관한 전체 집합을 기준으로 계산합니다."
+      operationId: "getWorkspaceTerminationImpact"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          type: "integer"
+      - in: "query"
+        name: "resourcePage"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceTerminationImpactResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "워크스페이스 삭제 영향 조회"
+      tags:
+      - "workspace-termination-impact-controller"
 security:
 - bearerAuth: []
 servers:
