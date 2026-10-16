@@ -11,9 +11,9 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,46 +21,30 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Contract {@code listAdminWorkspaces}: workspaces linked to an organisation by
- * the canonical derived-membership rule ({@link OrgMembershipSql}: ≥1 request or
- * non-DELETED VM in the org). The org tier sees those of every organisation it
- * holds a role in; naming any other answers 404 (existence stays private).
- *
- * <p><b>This is wider than the announcement picker it also feeds.</b> Sending a
- * WORKSPACE announcement needs a role that may act, and ORG scope needs an
- * organisation the account <i>administers</i>, so a workspace can appear here
- * and still refuse the send. The console narrows the picker rather than this
- * list, because the list is also the admin inspection surface.
- *
- * <p>{@code memberCount} counts the workspace's <b>ACTIVE</b> members — exactly
- * the fan-out basis of a WORKSPACE announcement (contract clarification, docs
- * eb8bbf6).
+ * Global support reads over live workspaces. The optional institution filters
+ * derived links through requests and resources. Announcement sending still
+ * uses its own institution authority and ACTIVE-member fan-out rules.
  */
 @Service
 public class AdminWorkspaceQueryService {
     private final JdbcTemplate jdbcTemplate;
+    private final java.util.List<kr.ac.pusan.pickle.resource.ResourceTypeAdapter> adapters;
     private final kr.ac.pusan.pickle.workspace.WorkspaceInvitationService invitationService;
 
-    public AdminWorkspaceQueryService(JdbcTemplate jdbcTemplate,
+    public AdminWorkspaceQueryService(java.util.List<kr.ac.pusan.pickle.resource.ResourceTypeAdapter> adapters, JdbcTemplate jdbcTemplate,
             kr.ac.pusan.pickle.workspace.WorkspaceInvitationService invitationService) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.jdbcTemplate = jdbcTemplate; this.adapters = adapters;
         this.invitationService = invitationService;
     }
 
     /**
-     * The workspace picker. By default the org tier sees the workspaces linked
-     * to the organisations it operates (the announcement picker relies on this:
-     * posting is still limited to those), and the sys tier sees every one.
-     *
-     * <p>{@code all} returns every live workspace to any admin role (operator
-     * decision, 2026-09-28). It is what the admin request screen asks for: a
-     * workspace has no organisation of its own, and the linked scope meant an
-     * org administrator could not reach a course workspace a professor had just
-     * created and filled with invitations, which is the case bulk requests
-     * exist for. It follows the admin user list, unscoped since 2026-09-16.
+     * Every live workspace is searchable by support readers. The optional institution
+     * narrows derived membership; the legacy {@code all=true} explicitly bypasses
+     * that filter for clients using the unrestricted picker.
      */
     @Transactional(readOnly = true)
     public List<AdminWorkspaceOptionResponse> list(AuthenticatedUser actor, UUID orgId, boolean all) {
+        StudentSupportPolicy.requireRead(actor);
         OrgScope scope = all ? OrgScope.unrestricted() : scopeOrgId(actor, orgId);
         String select = """
                 select g.public_id, g.name, g.kind, g.created_at,
@@ -102,6 +86,7 @@ public class AdminWorkspaceQueryService {
      */
     @Transactional(readOnly = true)
     public AdminWorkspaceDetailResponse get(AuthenticatedUser actor, UUID publicWorkspaceId) {
+        StudentSupportPolicy.requireRead(actor);
         Long workspaceId = jdbcTemplate.query("select id from workspaces where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, publicWorkspaceId);
         if (workspaceId == null) {
@@ -130,6 +115,7 @@ public class AdminWorkspaceQueryService {
         AdminWorkspaceDetailResponse base = rows.getFirst();
         List<AdminWorkspaceMemberResponse> members = jdbcTemplate.query("""
                 select u.public_id as user_public_id, u.name, u.email, gm.role, u.status,
+                       u.role as user_role,
                        gm.created_at
                   from workspace_members gm
                   join users u on u.id = gm.user_id
@@ -141,20 +127,25 @@ public class AdminWorkspaceQueryService {
                         rs.getString("name"), rs.getString("email"),
                         WorkspaceMemberRole.valueOf(rs.getString("role")),
                         UserStatus.valueOf(rs.getString("status")),
+                        StudentSupportPolicy.canReadUser(actor, UserRole.valueOf(rs.getString("user_role"))),
                         rs.getTimestamp("created_at").toInstant()),
                 workspaceId);
+        boolean writer = StudentSupportPolicy.canWriteWorkspaceAccess(actor);
+        boolean structure = writer && base.kind() != WorkspaceKind.PERSONAL;
+        long owners = members.stream().filter(m -> m.workspaceRole() == WorkspaceMemberRole.OWNER).count();
+        List<AdminWorkspaceMemberResponse> capableMembers = members.stream().map(m -> new AdminWorkspaceMemberResponse(
+                m.userId(), m.name(), m.email(), m.workspaceRole(), m.userStatus(), m.supportDetailVisible(), m.joinedAt(),
+                structure && (m.workspaceRole() != WorkspaceMemberRole.OWNER || owners > 1),
+                structure && (m.workspaceRole() != WorkspaceMemberRole.OWNER || owners > 1))).toList();
+        boolean remaining = adapters.stream().anyMatch(a -> a.countLiveInWorkspace(workspaceId) > 0);
+        String blocked = !writer ? "FORBIDDEN" : base.kind() == WorkspaceKind.PERSONAL ? "PERSONAL"
+                : remaining ? "REMAINING_RESOURCES" : null;
         return new AdminWorkspaceDetailResponse(base.id(), base.kind(), base.name(),
-                base.description(), base.createdAt(), base.memberCount(), base.vmCount(), members);
+                base.description(), base.createdAt(), base.memberCount(), base.vmCount(), capableMembers,
+                writer, structure, structure, structure, blocked == null, blocked);
     }
 
-    /**
-     * Contract {@code GET /admin/workspaces/{workspaceId}/invitations}: the
-     * open invitations of a workspace, for an approver naming the people a
-     * request is for. The role gate is the approving roles (the only use of
-     * this list is to act); the workspace itself is not narrowed by
-     * organisation (operator decision, 2026-09-28, see {@link #list}).
-     * Unknown and deleted workspaces answer 404.
-     */
+    /** Pending invitation metadata for all support readers; deleted workspaces remain unavailable. */
     @Transactional(readOnly = true)
     public List<kr.ac.pusan.pickle.workspace.dto.WorkspaceInvitationResponse> listInvitations(
             AuthenticatedUser actor, UUID publicWorkspaceId) {
@@ -187,6 +178,6 @@ public class AdminWorkspaceQueryService {
         Long requested = orgId == null ? null : jdbcTemplate.query(
                 "select id from orgs where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
-        return AdminOrgScope.read(actor, orgId, requested);
+        return StudentSupportPolicy.filterScope(actor, orgId, requested);
     }
 }

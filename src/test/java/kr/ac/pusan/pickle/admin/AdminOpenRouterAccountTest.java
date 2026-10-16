@@ -521,15 +521,16 @@ class AdminOpenRouterAccountTest {
         long unboundApproval = request(orgId, workspaceId, "unbound-approval");
         assertThatThrownBy(() -> jdbcTemplate.update("""
                 insert into llm_key_request_details
-                       (request_id, granted_credit_limit)
-                values (?, 3)
+                       (request_id, req_passthrough_endpoints, granted_credit_limit)
+                values (?, '["chat"]', 3)
                 """, unboundApproval)).isInstanceOf(DataAccessException.class);
 
         long boundApproval = request(orgId, workspaceId, "bound-approval");
         jdbcTemplate.update("""
                 insert into llm_key_request_details
-                       (request_id, granted_credit_limit, granted_openrouter_account_id)
-                values (?, 3, ?)
+                       (request_id, req_passthrough_endpoints, granted_credit_limit,
+                        granted_openrouter_account_id)
+                values (?, '["chat"]', 3, ?)
                 """, boundApproval, account.getId());
         assertThat(jdbcTemplate.queryForObject("""
                 select granted_openrouter_account_id
@@ -592,8 +593,9 @@ class AdminOpenRouterAccountTest {
 
         assertThatThrownBy(() -> jdbcTemplate.update("""
                 insert into llm_key_request_details
-                       (request_id, granted_credit_limit, granted_openrouter_account_id)
-                values (?, 1, ?)
+                       (request_id, req_passthrough_endpoints, granted_credit_limit,
+                        granted_openrouter_account_id)
+                values (?, '["chat"]', 1, ?)
                 """, otherRequest, account.getId()))
                 .isInstanceOf(DataAccessException.class);
     }
@@ -1022,7 +1024,8 @@ class AdminOpenRouterAccountTest {
                 "fence 사업", UUID.randomUUID(), "sk-or-v1-fence");
         long workspaceId = workspace(orgId, "fence");
         long requestId = request(orgId, workspaceId, "approval-fence");
-        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)",
+        jdbcTemplate.update("insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')",
                 requestId);
         Request approvalRequest = requestRepository.findById(requestId).orElseThrow();
 
@@ -1080,7 +1083,8 @@ class AdminOpenRouterAccountTest {
     void approvalKeepsTheDenyListWithNoMoneyGranted() {
         long workspaceId = workspace(orgId, "deny-no-money");
         long requestId = request(orgId, workspaceId, "approval-deny-no-money");
-        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)",
+        jdbcTemplate.update("insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')",
                 requestId);
         Request approvalRequest = requestRepository.findById(requestId).orElseThrow();
         ApproveRequestRequest form = new ApproveRequestRequest(null, null, null, null,
@@ -1115,7 +1119,8 @@ class AdminOpenRouterAccountTest {
                 "lock-order 사업", VENDOR_WORKSPACE, MANAGEMENT_KEY);
         long workspaceId = workspace(orgId, "lock-order");
         long approvalRequestId = request(orgId, workspaceId, "approval-lock-order");
-        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)",
+        jdbcTemplate.update("insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')",
                 approvalRequestId);
         Request approvalRequest = requestRepository.findById(approvalRequestId).orElseThrow();
         ApproveRequestRequest approvalForm = new ApproveRequestRequest(
@@ -1270,7 +1275,7 @@ class AdminOpenRouterAccountTest {
 
     private OpenRouterAccountResponse create(String name) {
         return service.create(sysAdmin, new CreateOpenRouterAccountRequest(
-                orgPublicId, name, "사업 코드", null, null, null, null, name), "127.0.0.1");
+                orgPublicId, name, "사업 코드", null, null, null, name), "127.0.0.1");
     }
 
     private OpenRouterManagementAccess accessForBoundKey(

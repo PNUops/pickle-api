@@ -24,7 +24,28 @@ import org.jspecify.annotations.Nullable;
  * can add one model to two hundred keys without knowing what each already
  * allows.
  */
+@tools.jackson.databind.annotation.JsonSerialize(using = AdminBulkLlmKeyLimitsChange.SpecifiedFieldsSerializer.class)
 public class AdminBulkLlmKeyLimitsChange {
+
+    /** Snapshot serialization keeps omitted scalars distinct from explicit nulls. */
+    public static class SpecifiedFieldsSerializer extends tools.jackson.databind.ValueSerializer<AdminBulkLlmKeyLimitsChange> {
+        @Override
+        public void serialize(AdminBulkLlmKeyLimitsChange value, tools.jackson.core.JsonGenerator generator,
+                tools.jackson.databind.SerializationContext context) {
+            generator.writeStartObject();
+            if (value.rpmSet) { context.defaultSerializeProperty("rpm", value.rpm, generator); }
+            if (value.tpmSet) { context.defaultSerializeProperty("tpm", value.tpm, generator); }
+            if (value.concurrencySet) { context.defaultSerializeProperty("concurrency", value.concurrency, generator); }
+            if (value.dailyTokensSet) { context.defaultSerializeProperty("dailyTokens", value.dailyTokens, generator); }
+            if (value.creditLimitSet) { context.defaultSerializeProperty("creditLimit", value.creditLimit, generator); }
+            if (value.creditLimitResetSet) { context.defaultSerializeProperty("creditLimitReset", value.creditLimitReset, generator); }
+            if (value.creditAllowedModels != null) { context.defaultSerializeProperty("creditAllowedModels", value.creditAllowedModels, generator); }
+            if (value.creditDeniedModels != null) { context.defaultSerializeProperty("creditDeniedModels", value.creditDeniedModels, generator); }
+            if (value.passthroughEndpoints != null) { context.defaultSerializeProperty("passthroughEndpoints", value.passthroughEndpoints, generator); }
+            generator.writeEndObject();
+        }
+    }
+
 
     @Min(value = 1, message = "분당 요청 수는 1 이상이어야 합니다.")
     @Max(value = 10000, message = "분당 요청 수가 너무 큽니다.")
@@ -139,7 +160,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.creditDeniedModels = creditDeniedModels;
     }
 
-    @Schema(description = "기능 권한 목록에 적용할 변경. 생략하면 그대로 둡니다. 값은 images와 embeddings입니다.")
+    @Schema(description = "기능 권한 목록에 적용할 변경. 생략하면 그대로 둡니다. 현재 변경 요청에는 chat, web_search, pdf_ocr, images, embeddings를 지정할 수 있습니다. 결과 목록의 web_search와 pdf_ocr는 chat과 함께 부여해야 합니다.")
     public @Nullable AdminBulkListChange getPassthroughEndpoints() {
         return passthroughEndpoints;
     }

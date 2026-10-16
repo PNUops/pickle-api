@@ -133,22 +133,16 @@ public class LlmApiKeyService {
     private LlmApiKey revocable(AuthenticatedUser actor, UUID keyId) {
         LlmApiKey key = keyRepository.findByPublicId(keyId)
                 .orElseThrow(() -> LlmKeyResourceAdapter.MESSAGES.notFound());
-        if (actor.role() == UserRole.SYS_ADMIN) {
-            return key;
-        }
-        if (actor.role() == UserRole.ORG_ADMIN) {
-            if (!actor.administers(key.getOrgId())) {
-                throw LlmKeyResourceAdapter.MESSAGES.notFound();
-            }
-            return key;
-        }
         ResourceStanding standing = resourceAccessResolver.standing(ResourceType.LLM_API_KEY,
                 key.getId(), key.getWorkspaceId(), actor.id());
-        if (!standing.manages()) {
-            standing.requireVisible(LlmKeyResourceAdapter.MESSAGES);
-            throw LlmKeyResourceAdapter.MESSAGES.noGrant();
+        if (standing.manages()) { return key; }
+        if (actor.role() == UserRole.SYS_ADMIN) { return key; }
+        if (actor.role() == UserRole.ORG_ADMIN) {
+            if (!actor.administers(key.getOrgId())) { throw LlmKeyResourceAdapter.MESSAGES.notFound(); }
+            return key;
         }
-        return key;
+        standing.requireVisible(LlmKeyResourceAdapter.MESSAGES);
+        throw LlmKeyResourceAdapter.MESSAGES.noGrant();
     }
 
     /** Renames the key or turns body recording on or off. */

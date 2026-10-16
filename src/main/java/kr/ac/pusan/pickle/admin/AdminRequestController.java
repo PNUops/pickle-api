@@ -10,6 +10,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
+import java.time.LocalDate;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse;
 import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
@@ -58,9 +60,16 @@ public class AdminRequestController {
             @RequestParam(required = false) RequestStatus status,
             @RequestParam(required = false) ResourceType type,
             @RequestParam(required = false) UUID orgId,
+            @RequestParam(required = false) UUID workspaceId,
+            @RequestParam(required = false) @Size(max = 100, message = "검색어는 100자 이하여야 합니다.") String q,
+            @RequestParam(required = false) LocalDate requestedEndFrom,
+            @RequestParam(required = false) LocalDate requestedEndTo,
+            @RequestParam(required = false) Boolean reqIndefinite,
+            @RequestParam(required = false) UUID relatedUserId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return approvalService.list(principal, status, type, orgId, page, size);
+        return approvalService.list(principal, status, type, orgId, workspaceId, q,
+                requestedEndFrom, requestedEndTo, reqIndefinite, relatedUserId, page, size);
     }
 
     @GetMapping("/{requestId}")

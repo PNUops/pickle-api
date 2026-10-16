@@ -28,10 +28,19 @@ public class OpenRouterCatalogueRepository {
         this.jdbc = jdbc;
     }
 
-    /** One catalogue row as the console reads it. */
+    /**
+     * One catalogue row as the console reads it. {@code pricing} is the
+     * vendor's pricing object as stored, read through {@link ModelPricings}.
+     */
     public record CatalogueRow(String modelId, String displayName,
             @Nullable Integer contextLength, @Nullable BigDecimal promptPrice,
-            @Nullable BigDecimal completionPrice, boolean listed) {
+            @Nullable BigDecimal completionPrice, boolean listed, @Nullable String pricing) {
+
+        public CatalogueRow(String modelId, String displayName,
+                @Nullable Integer contextLength, @Nullable BigDecimal promptPrice,
+                @Nullable BigDecimal completionPrice, boolean listed) {
+            this(modelId, displayName, contextLength, promptPrice, completionPrice, listed, null);
+        }
     }
 
     /** The freshness facts, all of them nullable until a first fetch succeeds. */
@@ -64,18 +73,19 @@ public class OpenRouterCatalogueRepository {
         for (OpenRouterClient.VendorModel model : models) {
             String id = model.id().toLowerCase(Locale.ROOT);
             batch.add(new Object[] {id, model.name(), model.contextLength(),
-                    model.promptPrice(), model.completionPrice(), at, at});
+                    model.promptPrice(), model.completionPrice(), model.pricing(), at, at});
         }
         jdbc.batchUpdate("""
                 insert into openrouter_catalogue_model (model_id, display_name,
-                        context_length, prompt_price, completion_price, first_seen_at,
-                        last_listed_at, listed, delisted_at)
-                     values (?, ?, ?, ?, ?, ?, ?, true, null)
+                        context_length, prompt_price, completion_price, pricing,
+                        first_seen_at, last_listed_at, listed, delisted_at)
+                     values (?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, true, null)
                 on conflict (model_id) do update
                     set display_name     = excluded.display_name,
                         context_length   = excluded.context_length,
                         prompt_price     = excluded.prompt_price,
                         completion_price = excluded.completion_price,
+                        pricing          = excluded.pricing,
                         last_listed_at   = excluded.last_listed_at,
                         listed           = true,
                         delisted_at      = null
@@ -153,7 +163,7 @@ public class OpenRouterCatalogueRepository {
     public List<CatalogueRow> listed() {
         return jdbc.query("""
                 select model_id, display_name, context_length, prompt_price,
-                       completion_price, listed
+                       completion_price, listed, pricing::text as pricing
                   from openrouter_catalogue_model
                  where listed
                  order by completion_price asc nulls last, model_id asc
@@ -161,6 +171,6 @@ public class OpenRouterCatalogueRepository {
                         rs.getString("display_name"),
                         rs.getObject("context_length", Integer.class),
                         rs.getBigDecimal("prompt_price"), rs.getBigDecimal("completion_price"),
-                        rs.getBoolean("listed")));
+                        rs.getBoolean("listed"), rs.getString("pricing")));
     }
 }

@@ -198,10 +198,9 @@ class AdminLlmUsageBreakdownTest {
     }
 
     @Test
-    void aKeyOutsideTheReadersInstitutionsIsAnsweredAsMissing() throws Exception {
-        // The 404 alone proves nothing: a scope check that refuses everything
-        // passes it too. The pair is the assertion — the same reader reaches
-        // its own institution's key and not the other one.
+    void keyUsageAggregatesAreReadableAcrossInstitutions() throws Exception {
+        // Key aggregates share the global metadata boundary; provider-account
+        // usage below retains its separate actual-institution read boundary.
         event(keyOne.id(), "pickle-general", "chat", null, 1, 1, hoursAgo(2));
         event(keyOther.id(), "pickle-general", "chat", null, 1, 1, hoursAgo(2));
         rollupService.refresh();
@@ -209,7 +208,9 @@ class AdminLlmUsageBreakdownTest {
         adminKeyUsage(orgBAdminToken, keyOther.publicId())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.trend.points").isArray());
-        adminKeyUsage(orgBAdminToken, keyOne.publicId()).andExpect(status().isNotFound());
+        adminKeyUsage(orgBAdminToken, keyOne.publicId()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.trend.points").isArray())
+                .andExpect(jsonPath("$.endpointKinds[0].endpoint").value("chat"));
     }
 
     @Test
@@ -284,7 +285,11 @@ class AdminLlmUsageBreakdownTest {
 
         platformUsage(sysToken, "orgId=" + orgA.getPublicId())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.breakdown.passthroughGrants.length()").value(2))
+                // chat, images, embeddings: the grantable capabilities whose use a
+                // route can show. web_search and pdf_ocr are judged from the body
+                // and have no row, and names nobody may hold yet have none either.
+                .andExpect(jsonPath("$.breakdown.passthroughGrants[*].capability")
+                        .value(org.hamcrest.Matchers.contains("chat", "images", "embeddings")))
                 // orgB도 이 기능을 가진 키를 하나 갖고 있다. 스코프가 빠지면 이 수가
                 // 곧바로 달라지므로, 이 단언이 스코프를 실제로 지킨다.
                 .andExpect(jsonPath(

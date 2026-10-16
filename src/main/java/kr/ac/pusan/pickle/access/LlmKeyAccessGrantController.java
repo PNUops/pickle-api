@@ -95,4 +95,11 @@ public class LlmKeyAccessGrantController {
             HttpServletRequest httpRequest) {
         service.remove(principal, ResourceType.LLM_API_KEY, keyId, grantId, clientIp(httpRequest));
     }
+    @PostMapping("/preview")
+    public kr.ac.pusan.pickle.access.dto.ActorAccessImpact previewLlmKeyAccessChange(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID keyId,
+            @Valid @RequestBody kr.ac.pusan.pickle.access.dto.ResourceAccessChangePreviewRequest request) {
+        return service.preview(actor, ResourceType.LLM_API_KEY, keyId, request, false);
+    }
+
 }

@@ -30,6 +30,25 @@ public final class AfterCommit {
     /** The isolating caller's context (a bulk batch, say), or absent when not isolating. */
     private static final ThreadLocal<String> ISOLATING = new ThreadLocal<>();
 
+    @FunctionalInterface
+    public interface Completion { void observed(boolean success, @Nullable String reference); }
+    @FunctionalInterface
+    public interface Observer { Completion registered(String label); }
+    private static final ThreadLocal<Observer> OBSERVER = new ThreadLocal<>();
+
+    public static <T> T observing(Observer observer, Supplier<T> body) {
+        Observer previous = OBSERVER.get();
+        OBSERVER.set(observer);
+        try { return body.get(); } finally {
+            if (previous == null) { OBSERVER.remove(); } else { OBSERVER.set(previous); }
+        }
+    }
+
+    /** A non-null returned scheduler reference proves queue acceptance, never execution completion. */
+    public static void queue(String label, Supplier<@Nullable String> action) {
+        register(label, action);
+    }
+
     private AfterCommit() {
     }
 
@@ -39,21 +58,30 @@ public final class AfterCommit {
      * leaves, such as {@code "audit vm.admin_start <publicId>"}.
      */
     public static void run(String label, Runnable action) {
-        @Nullable String context = ISOLATING.get();
+        register(label, () -> { action.run(); return null; });
+    }
+
+    private static void register(String label, Supplier<@Nullable String> action) {
+        String context = ISOLATING.get();
+        Observer observer = OBSERVER.get();
+        Completion completion = observer == null ? null : observer.registered(label);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                if (context == null) {
-                    action.run();
-                    return;
-                }
+            @Override public void afterCommit() {
+                boolean success = false;
+                String reference = null;
                 try {
-                    action.run();
+                    reference = action.get();
+                    success = true;
                 } catch (RuntimeException e) {
-                    // The transaction has committed; all that is left is to
-                    // say so and let the remaining callbacks run.
-                    log.error("after-commit {} failed ({}); the remaining ones still run",
-                            label, context, e);
+                    if (context == null) { throw e; }
+                    log.error("after-commit {} failed ({}); the remaining ones still run", label, context, e);
+                } finally {
+                    if (completion != null) {
+                        try { completion.observed(success, reference); }
+                        catch (RuntimeException e) {
+                            log.error("after-commit observation {} failed; committed work is retained", label, e);
+                        }
+                    }
                 }
             }
         });

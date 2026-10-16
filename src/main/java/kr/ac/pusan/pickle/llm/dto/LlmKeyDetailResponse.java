@@ -61,11 +61,16 @@ public record LlmKeyDetailResponse(
                 + "없습니다. 허용 목록과 함께 걸리면 차단이 이깁니다."
                 + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         List<String> creditDeniedModels,
-        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
-                PassthroughEndpoints.EMBEDDINGS}),
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
+                PassthroughEndpoints.WEB_SEARCH, PassthroughEndpoints.PDF_OCR,
+                PassthroughEndpoints.CONTAINERS, PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS, PassthroughEndpoints.RERANK,
+                PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
+                PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
+                PassthroughEndpoints.FILES}),
                 arraySchema = @Schema(description = "이 키에 부여된 기능 권한. 빈 배열이면 "
-                        + "기능을 하나도 쓸 수 없습니다. 모델 목록 둘과 반대로 이 목록은 채워야 "
-                        + "열립니다. 채팅과 모델 조회는 이 목록과 무관합니다."))
+                        + "기능을 하나도 쓸 수 없습니다(chat 포함). 모델 목록 둘과 반대로 이 목록은 "
+                        + "채워야 열립니다. 모델 조회는 이 목록과 무관합니다."))
         List<String> passthroughEndpoints,
         @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
         @Nullable UUID workspaceId,

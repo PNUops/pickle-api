@@ -5,6 +5,7 @@ import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.ApprovalContextContributor;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.GpuContext;
 import kr.ac.pusan.pickle.request.Request;
+import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -12,7 +13,7 @@ public class GpuApprovalContextContributor implements ApprovalContextContributor
     private final GpuStore store;
     public GpuApprovalContextContributor(GpuStore store) { this.store = store; }
     @Override public ResourceType type() { return ResourceType.GPU; }
-    @Override public Contribution contribute(Request request, List<Long> applicantWorkspaceIds) {
+    @Override public Contribution contribute(Request request, List<Long> applicantWorkspaceIds, AuthenticatedUser actor) {
         var spec = store.requestSpec(request.getId());
         long available = store.jdbc().queryForObject("""
                 select count(*) from gpus g join nodes n on n.id=g.node_id

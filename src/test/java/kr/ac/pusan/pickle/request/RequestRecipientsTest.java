@@ -585,7 +585,7 @@ class RequestRecipientsTest {
         String invited = email("one-step-invitee");
         UUID invitation = invite(workspace, invited);
         Map<String, Object> body = common(workspace, "LLM_API_KEY");
-        body.put("llmKey", Map.of());
+        body.put("llmKey", Map.of("reqPassthroughEndpoints", List.of("chat")));
         body.put("recipients", List.of(Map.of("userId", member.getPublicId()),
                 Map.of("invitationId", invitation)));
         Map<String, Object> approval = new HashMap<>();
@@ -767,7 +767,8 @@ class RequestRecipientsTest {
                 "management-credential-fixture"), owner.getId());
 
         Map<String, Object> body = common(workspace, "LLM_API_KEY");
-        body.put("llmKey", Map.of("useCommercialModels", true));
+        body.put("llmKey", Map.of("useCommercialModels", true,
+                "reqPassthroughEndpoints", List.of("chat")));
         body.put("recipients", List.of(Map.of("userId", first.getPublicId()),
                 Map.of("userId", second.getPublicId()), Map.of("invitationId", invitation)));
         JsonNode submitted = created(postJson("/api/v1/requests", ownerToken, body));
@@ -833,7 +834,7 @@ class RequestRecipientsTest {
 
     private long approvedKeyRequestFor(UUID workspace, List<Map<String, Object>> recipients) throws Exception {
         Map<String, Object> body = common(workspace, "LLM_API_KEY");
-        body.put("llmKey", Map.of());
+        body.put("llmKey", Map.of("reqPassthroughEndpoints", List.of("chat")));
         body.put("recipients", recipients);
         JsonNode submitted = created(postJson("/api/v1/requests", ownerToken, body));
         Map<String, Object> approval = new HashMap<>();

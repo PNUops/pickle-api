@@ -22,7 +22,6 @@ import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -102,7 +101,8 @@ public class ApprovalService {
 
     @Transactional(readOnly = true)
     public PageResponse<RequestDetailResponse> list(AuthenticatedUser actor, RequestStatus status,
-            ResourceType type, UUID orgId, int page, int size) {
+            ResourceType type, UUID orgId, UUID workspaceId, String q, java.time.LocalDate requestedEndFrom,
+            java.time.LocalDate requestedEndTo, Boolean reqIndefinite, UUID relatedUserId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
         OrgScope scope = listScopeOrgId(actor, orgId);
         Specification<Request> spec = Specification.unrestricted();
@@ -114,6 +114,26 @@ public class ApprovalService {
         }
         if (type != null) {
             spec = spec.and(RequestSpecs.type(type));
+        }
+        if (workspaceId != null) {
+            Long internalWorkspace = workspaceRepository.findByPublicId(workspaceId)
+                    .map(kr.ac.pusan.pickle.workspace.Workspace::getId).orElse(null);
+            spec = spec.and(internalWorkspace == null ? (root, query, cb) -> cb.disjunction()
+                    : RequestSpecs.workspace(internalWorkspace));
+        }
+        if (requestedEndFrom != null && requestedEndTo != null && requestedEndFrom.isAfter(requestedEndTo)) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("requestedEndTo", "기간의 끝은 시작 이후여야 합니다.")));
+        }
+        if (Boolean.TRUE.equals(reqIndefinite) && (requestedEndFrom != null || requestedEndTo != null)) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("reqIndefinite", "무기한 검색에는 종료일 범위를 함께 보내지 않습니다.")));
+        }
+        if (q != null && !q.isBlank()) { spec = spec.and(RequestSpecs.text(q)); }
+        if (requestedEndFrom != null) { spec = spec.and(RequestSpecs.requestedEndFrom(requestedEndFrom)); }
+        if (requestedEndTo != null) { spec = spec.and(RequestSpecs.requestedEndTo(requestedEndTo)); }
+        if (reqIndefinite != null) { spec = spec.and(RequestSpecs.indefinite(reqIndefinite)); }
+        if (relatedUserId != null) {
+            Long user = userRepository.findByPublicId(relatedUserId).map(kr.ac.pusan.pickle.user.User::getId).orElse(null);
+            spec = spec.and(user == null ? (root, query, cb) -> cb.disjunction() : RequestSpecs.relatedUser(user));
         }
         Page<Request> result = requestRepository.findAll(spec, pageable);
         return PageResponse.of(assembler.toDetails(result.getContent(), actor), result);
@@ -300,13 +320,11 @@ public class ApprovalService {
     private OrgScope listScopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        return AdminOrgScope.read(actor, orgId, requested);
+        return StudentSupportPolicy.filterScope(actor, orgId, requested);
     }
 
     /**
-     * Read lookup (request detail, approval context). The org tier reads the
-     * requests of every organisation it holds a role in, a read-only role
-     * included.
+     * Read lookup for global request support metadata and approval context.
      *
      * <p>Split from {@link #findWritableWithLock} so the two questions cannot be
      * answered by one condition: deciding a request needs a role that may act,
@@ -317,9 +335,7 @@ public class ApprovalService {
         if (request == null) {
             throw requestNotFound();
         }
-        if (actor.role().isOrgTier() && !actor.reads(request.getOrgId())) {
-            throw requestNotFound();
-        }
+        StudentSupportPolicy.requireRead(actor);
         return request;
     }
 

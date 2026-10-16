@@ -18,6 +18,9 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     /** Resolution of the identifier this row wears outside the API boundary. */
     Optional<Domain> findByPublicId(UUID publicId);
 
+    /** Exact request provenance; legacy names are never matched here. */
+    List<Domain> findByRequestId(Long requestId);
+
     /** The live row holding an FQDN — the revive-or-409 pre-check. */
     Optional<Domain> findFirstByFqdnAndStatusNot(String fqdn, DomainStatus status);
 
@@ -162,11 +165,12 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     @Query("""
             select d from Domain d
             where (:orgIds is null or d.orgId in :orgIds)
+              and (:workspaceId is null or d.workspaceId = :workspaceId)
               and (:kind is null or cast(d.kind as string) = :kind)
               and ((:status is null and cast(d.status as string) <> 'REMOVED')
                    or cast(d.status as string) = :status)
             order by d.id desc
             """)
-    Page<Domain> findAdmin(@Param("orgIds") Collection<Long> orgIds, @Param("kind") String kind,
+    Page<Domain> findAdmin(@Param("orgIds") Collection<Long> orgIds, @Param("workspaceId") Long workspaceId, @Param("kind") String kind,
             @Param("status") String status, Pageable pageable);
 }

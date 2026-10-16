@@ -79,6 +79,49 @@ class AfterCommitTest {
         commit();
     }
 
+    @Test
+    void observerRecordsRegistrationBeforeQueueAcceptanceAndPreservesActualReference() {
+        List<String> evidence = new ArrayList<>();
+        AfterCommit.observing(label -> {
+            evidence.add("registered " + label);
+            return (success, reference) -> evidence.add(success + " " + reference);
+        }, () -> {
+            AfterCommit.queue("enqueue actual", () -> { ran.add("queue"); return "actual-job-id"; });
+            return null;
+        });
+        assertThat(ran).isEmpty();
+        assertThat(evidence).containsExactly("registered enqueue actual");
+        commit();
+        assertThat(ran).containsExactly("queue");
+        assertThat(evidence).containsExactly("registered enqueue actual", "true actual-job-id");
+    }
+
+    @Test
+    void aFailedLateObservationCannotDropOtherCommittedCallbacks() {
+        AfterCommit.observing(label -> (success, reference) -> { throw new IllegalStateException("observation store unavailable"); }, () -> {
+            AfterCommit.run("first", () -> ran.add("first"));
+            AfterCommit.run("second", () -> ran.add("second"));
+            return null;
+        });
+        commit();
+        assertThat(ran).containsExactly("first", "second");
+    }
+
+    @Test
+    void failedIsolatedCallbackIsObservedAndTheObserverScopeDoesNotEscape() {
+        List<Boolean> observed = new ArrayList<>();
+        AfterCommit.observing(label -> (success, reference) -> observed.add(success), () ->
+                AfterCommit.isolating("batch", () -> {
+                    AfterCommit.run("failed", () -> { throw new IllegalStateException("callback failed"); });
+                    AfterCommit.run("passed", () -> ran.add("passed"));
+                    return null;
+                }));
+        AfterCommit.run("outside", () -> ran.add("outside"));
+        commit();
+        assertThat(observed).containsExactly(false, true);
+        assertThat(ran).containsExactly("passed", "outside");
+    }
+
     private void commit() {
         for (TransactionSynchronization synchronization
                 : TransactionSynchronizationManager.getSynchronizations()) {

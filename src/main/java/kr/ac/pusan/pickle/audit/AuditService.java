@@ -26,6 +26,7 @@ public class AuditService {
     public static final String AUTH_REFRESH_REUSE_DETECTED = "auth.refresh_reuse_detected";
     public static final String AUTH_LOGOUT = "auth.logout";
     public static final String WORKSPACE_CREATE = "workspace.create";
+    public static final String WORKSPACE_UPDATE = "workspace.update";
     public static final String WORKSPACE_DELETE = "workspace.delete";
     public static final String WORKSPACE_KIND_UPDATE = "workspace.kind_update";
     public static final String WORKSPACE_MEMBER_ADD = "workspace.member_add";

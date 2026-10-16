@@ -37,8 +37,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Contract tag {@code admin}, vms subset — list, detail/events, power
- * intervention, and deletion management. The org tier reads the organisations
- * it holds a role in and acts only in those it operates, with scheduled
+ * intervention, and deletion management. Support metadata reads are global; the
+ * institution tier acts only in organisations it operates, with scheduled
  * deletion narrower still (administers); a target outside answers 404, never
  * 403, so the existence of other orgs stays private. Force delete and
  * the gateway-block toggle are SYS_ADMIN-only (method-level gates override the
@@ -84,7 +84,7 @@ public class AdminVmController {
                 q, sort, page, size);
     }
 
-    /** Org-scoped admin view of the full VM detail (viewer is not a member). */
+    /** Global support VM metadata view without resource member authority. */
     @GetMapping("/{vmId}")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public VmDetailResponse getAdminVm(

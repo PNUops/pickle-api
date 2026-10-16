@@ -78,12 +78,12 @@ public class PublicationAssembler {
      * the reservation policy: its {@code reservedUntil} equals its release
      * time (due immediately).
      *
-     * <p>Package-private because the admin domain listing carries the same
-     * axis: two copies of this arithmetic would let the two views disagree
+     * <p>Shared by domain listings and request observations: two copies of
+     * this arithmetic would let the views disagree
      * about when a name comes free, and only one of them would be the one the
      * sweeper actually follows.</p>
      */
-    Instant reservedUntil(Domain domain) {
+    public Instant reservedUntil(Domain domain) {
         if (domain.getReleasedAt() == null) {
             return null;
         }
@@ -102,6 +102,17 @@ public class PublicationAssembler {
                 .orElse(null);
         CertificateView certificate = certificateFor(domain).map(CertificateView::from).orElse(null);
         return new PublicationView(domain.getFqdn(), toDomainDetail(domain, vmId), route, certificate);
+    }
+
+    /** Support metadata omits the DNS verification value used to prove domain control. */
+    public PublicationView toSupportPublication(Domain domain, UUID vmId) {
+        DomainDetailView detail = toDomainDetail(domain, vmId);
+        DomainDetailView metadata = new DomainDetailView(detail.id(), detail.vmId(), detail.kind(),
+                detail.fqdn(), detail.rootDomain(), detail.status(), detail.verifiedAt(), detail.releasedAt(),
+                detail.reservedUntil(), detail.createdAt(), detail.dnsStatus(), detail.dnsLastError(),
+                detail.dnsAppliedAt(), null);
+        PublicationView publication = toPublication(domain, vmId);
+        return new PublicationView(publication.fqdn(), metadata, publication.route(), publication.certificate());
     }
 
     /**

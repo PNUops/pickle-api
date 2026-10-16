@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.config.ClockConfig;
@@ -236,6 +237,62 @@ class AdminBulkChangeTest {
     }
 
     /**
+     * The hierarchy is a property of each key's merged list, not of the
+     * request: ADD web_search lands on a key that has chat and is refused on
+     * one that does not. Removing chat under a feature that needs it is
+     * refused rather than taking the feature away with it.
+     */
+    @Test
+    void theHierarchyIsJudgedOnEachKeysMergedList() throws Exception {
+        Key withChat = key(orgA.getId(), workspaceA, "chat 있는 키", "ACTIVE", null);
+        Key withoutChat = key(orgA.getId(), workspaceA, "chat 없는 키", "ACTIVE", null);
+        setLists(withChat, "[]", "[]", "[\"chat\"]");
+        setLists(withoutChat, "[]", "[]", "[\"images\"]");
+
+        JsonNode added = applyJson(sysAdminToken, request("LLM_KEY",
+                List.of(withChat.publicId(), withoutChat.publicId()),
+                limits(Map.of("passthroughEndpoints", listOp("ADD", List.of("web_search"))))));
+        assertThat(item(added, withChat.publicId()).get("result").asString())
+                .isEqualTo("APPLIED");
+        assertThat(item(added, withoutChat.publicId()).get("reason").asString())
+                .isEqualTo("VALIDATION");
+        assertThat(models(withChat, "passthrough_endpoints")).containsExactly("chat", "web_search");
+        assertThat(models(withoutChat, "passthrough_endpoints")).containsExactly("images");
+
+        JsonNode removed = applyJson(sysAdminToken, request("LLM_KEY",
+                List.of(withChat.publicId()),
+                limits(Map.of("passthroughEndpoints", listOp("REMOVE", List.of("chat"))))));
+        assertThat(item(removed, withChat.publicId()).get("reason").asString())
+                .isEqualTo("VALIDATION");
+        assertThat(models(withChat, "passthrough_endpoints")).containsExactly("chat", "web_search");
+    }
+
+    /**
+     * Chat alone is outside the money gate on the bulk path too, through the
+     * same judgement as the single path.
+     */
+    @Test
+    void sysManagerMayAddOrRemoveChatInBulk() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "운영자 일괄 chat 키", "ACTIVE", null);
+        setLists(key, "[]", "[]", "[\"images\"]");
+
+        JsonNode added = applyJson(sysManagerToken, request("LLM_KEY", List.of(key.publicId()),
+                limits(Map.of("passthroughEndpoints", listOp("ADD", List.of("chat"))))));
+        assertThat(item(added, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(models(key, "passthrough_endpoints")).containsExactly("images", "chat");
+
+        JsonNode removed = applyJson(sysManagerToken, request("LLM_KEY", List.of(key.publicId()),
+                limits(Map.of("passthroughEndpoints", listOp("REMOVE", List.of("chat"))))));
+        assertThat(item(removed, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+
+        JsonNode replaced = applyJson(sysManagerToken, request("LLM_KEY", List.of(key.publicId()),
+                limits(Map.of("passthroughEndpoints", listOp("REPLACE", List.of("chat"))))));
+        assertThat(item(replaced, key.publicId()).get("reason").asString())
+                .isEqualTo("FORBIDDEN");
+        assertThat(models(key, "passthrough_endpoints")).containsExactly("images");
+    }
+
+    /**
      * The money gate is judged per key against what the merge actually moves.
      * The same request is a rate-limit edit on a key already at that amount
      * and a money change on one that is not, and only the second is refused.
@@ -294,7 +351,7 @@ class AdminBulkChangeTest {
         Key key = key(orgA.getId(), workspaceA, "미리보기 뒤 바뀐 키", "ACTIVE", null);
         Map<String, Object> body = request("LLM_KEY", List.of(key.publicId()),
                 limits(Map.of("rpm", 90)));
-        Map<String, String> fingerprints = fingerprintsOf(previewJson(sysAdminToken, body));
+        PreparedPreview fingerprints = fingerprintsOf(previewJson(sysAdminToken, body));
         jdbcTemplate.update("update llm_api_keys set rpm = 61 where public_id = ?", key.publicId());
         long generation = generation();
 
@@ -673,11 +730,11 @@ class AdminBulkChangeTest {
         Map<String, Object> grant = request("VM", targets, access("GRANT", requester, "MEMBER"));
 
         assertThat(item(previewJson(orgManagerToken, grant), pub("vms", first))
-                .get("reason").asString()).isEqualTo("FORBIDDEN");
+                .get("applicable").asBoolean()).isTrue();
         assertThat(item(previewJson(sysManagerToken, grant), pub("vms", first))
                 .get("reason").asString()).isEqualTo("FORBIDDEN");
         assertThat(item(previewJson(otherOrgAdminToken, grant), pub("vms", first))
-                .get("reason").asString()).isEqualTo("NOT_FOUND");
+                .get("applicable").asBoolean()).isTrue();
         assertThat(item(previewJson(orgAdminToken, request("VM", targets,
                 access("GRANT", outsider, "MEMBER"))), pub("vms", first))
                 .get("reason").asString()).isEqualTo("NOT_MEMBER");
@@ -687,7 +744,7 @@ class AdminBulkChangeTest {
         assertThat(item(previewJson(orgAdminToken, request("VM", targets, nobody)),
                 pub("vms", first)).get("reason").asString()).isEqualTo("INELIGIBLE");
 
-        JsonNode granted = applyJson(orgAdminToken, grant);
+        JsonNode granted = applyJson(otherOrgAdminToken, grant);
         assertThat(item(granted, pub("vms", first)).get("result").asString()).isEqualTo("APPLIED");
         assertThat(item(granted, pub("vms", second)).get("result").asString()).isEqualTo("APPLIED");
         assertThat(grantRole(first, requester.getId())).isEqualTo("MEMBER");
@@ -703,7 +760,7 @@ class AdminBulkChangeTest {
                 access("GRANT", requester, "EDITOR"))), pub("vms", first))
                 .get("reason").asString()).isEqualTo("ALREADY_GRANTED");
 
-        JsonNode changed = applyJson(sysAdminToken, request("VM", targets,
+        JsonNode changed = applyJson(orgManagerToken, request("VM", targets,
                 access("CHANGE", requester, "EDITOR")));
         assertThat(item(changed, pub("vms", first)).get("result").asString()).isEqualTo("APPLIED");
         assertThat(grantRole(first, requester.getId())).isEqualTo("EDITOR");
@@ -731,6 +788,45 @@ class AdminBulkChangeTest {
                                 access("GRANT", requester, null)))))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("change.access.role"));
+    }
+
+    @Test
+    void inactiveNamedGrantsCanBeRevokedWithoutChangingWorkspaceWideAccess() throws Exception {
+        User disabled = user("disabled-revoke-" + UUID.randomUUID() + "@pusan.ac.kr", "비활성 회수 대상", UserRole.USER, null);
+        jdbcTemplate.update("insert into workspace_members(workspace_id,user_id,role) values(?,?,'MEMBER')", workspaceA, disabled.getId());
+        long first = createVm(orgA.getId(), workspaceA, "RUNNING", today.plusDays(10));
+        long foreign = createVm(orgB.getId(), workspaceB, "RUNNING", today.plusDays(10));
+        jdbcTemplate.update("""
+                insert into resource_access_grants(resource_type,resource_id,grantee_type,user_id,role)
+                values('VM',?,'USER',?,'EDITOR'),('VM',?,'USER',?,'EDITOR')
+                """, first, disabled.getId(), foreign, disabled.getId());
+        jdbcTemplate.update("insert into resource_access_grants(resource_type,resource_id,grantee_type,role) values('VM',?,'WORKSPACE','MEMBER')", first);
+        jdbcTemplate.update("update users set status='DISABLED' where id=?", disabled.getId());
+        List<UUID> targets = List.of(pub("vms", first), pub("vms", foreign));
+        for (String action : List.of("GRANT", "CHANGE")) {
+            assertThat(item(previewJson(orgAdminToken, request("VM", targets, access(action, disabled, "MEMBER"))), pub("vms", first))
+                    .get("reason").asString()).isEqualTo("INELIGIBLE");
+        }
+        JsonNode revoked = applyJson(orgAdminToken, request("VM", targets, access("REVOKE", disabled, null)));
+        assertThat(item(revoked, pub("vms", first)).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(item(revoked, pub("vms", foreign)).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(grantRole(first, disabled.getId())).isNull();
+        assertThat(grantRole(foreign, disabled.getId())).isNull();
+        assertThat(auditCount(pub("vms", foreign), "vm.access_grant_remove")).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from resource_access_grants where resource_type='VM' and resource_id=? and grantee_type='WORKSPACE'", Long.class, first)).isEqualTo(1);
+        assertThat(auditDetail(pub("vms", first), "vm.access_grant_remove").get("granteeUserId")).isEqualTo(disabled.getPublicId().toString());
+        jdbcTemplate.update("update users set status='ACTIVE' where id=?", disabled.getId());
+        assertThat(grantRole(first, disabled.getId())).isNull();
+    }
+
+    @Test
+    void departedUsersExistingGrantCanBeCleanedUpBySystemAdministrator() throws Exception {
+        long first = createVm(orgA.getId(), workspaceA, "RUNNING", today.plusDays(10));
+        jdbcTemplate.update("insert into resource_access_grants(resource_type,resource_id,grantee_type,user_id,role) values('VM',?,'USER',?,'EDITOR')", first, outsider.getId());
+        Map<String, Object> body = request("VM", List.of(pub("vms", first)), access("REVOKE", outsider, null));
+        assertThat(item(previewJson(sysManagerToken, body), pub("vms", first)).get("reason").asString()).isEqualTo("FORBIDDEN");
+        assertThat(item(applyJson(sysAdminToken, body), pub("vms", first)).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(grantRole(first, outsider.getId())).isNull();
     }
 
     // ── domains ────────────────────────────────────────────────────────────
@@ -819,7 +915,7 @@ class AdminBulkChangeTest {
         Map<String, Object> body = request("DOMAIN", List.of(pub("domains", domain)),
                 Map.of("kind", "DOMAIN_RENEWAL", "domainRenewal", Map.of("renewDueAt",
                         Instant.now().plus(90, ChronoUnit.DAYS).toString())));
-        Map<String, String> fingerprints = fingerprintsOf(previewJson(orgAdminToken, body));
+        PreparedPreview fingerprints = fingerprintsOf(previewJson(orgAdminToken, body));
         jdbcTemplate.update("update domains set renew_due_at = ? where id = ?",
                 OffsetDateTime.ofInstant(moved, ZoneOffset.UTC), domain);
 
@@ -971,7 +1067,7 @@ class AdminBulkChangeTest {
         long failing = customDomain(orgA.getId(), workspaceA);
         long fine = customDomain(orgA.getId(), workspaceA);
         doThrow(new IllegalStateException("job storage unavailable"))
-                .when(domainVerificationJob).requestVerify(failing);
+                .when(domainVerificationJob).requestVerifyReceipt(failing);
         Map<String, Object> body = request("DOMAIN",
                 List.of(pub("domains", failing), pub("domains", fine)),
                 Map.of("kind", "DOMAIN_VERIFY", "domainVerify", Map.of()));
@@ -1026,7 +1122,7 @@ class AdminBulkChangeTest {
     void aSinglePathStillPropagatesItsAfterCommitFailure() throws Exception {
         long domain = customDomain(orgA.getId(), workspaceA);
         doThrow(new IllegalStateException("job storage unavailable"))
-                .when(domainVerificationJob).requestVerify(domain);
+                .when(domainVerificationJob).requestVerifyReceipt(domain);
 
         mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domain) + "/verify")
                         .header("Authorization", "Bearer " + orgAdminToken))
@@ -1108,15 +1204,15 @@ class AdminBulkChangeTest {
                     "select fqdn from domains where id = ?", String.class, domain));
         }
         String constant = item(preview, SeedFixtures.UNKNOWN_ID).get("fingerprint").asString();
-        for (long domain : new long[] {removed, foreign}) {
+        for (long domain : new long[] {removed}) {
             JsonNode previewed = item(preview, pub("domains", domain));
             assertThat(previewed.get("reason").asString()).isEqualTo("NOT_FOUND");
             assertThat(previewed.get("name").isNull()).isTrue();
             assertThat(previewed.get("fingerprint").asString()).isEqualTo(constant);
         }
-        // Out of scope stays out of scope whatever the kind.
+        assertThat(item(preview, pub("domains", foreign)).get("applicable").asBoolean()).isTrue();
         assertThat(item(previewJson(otherOrgAdminToken, body), pub("domains", platform))
-                .get("reason").asString()).isEqualTo("NOT_FOUND");
+                .get("reason").asString()).isEqualTo("INELIGIBLE");
 
         JsonNode apply = apply(orgAdminToken, body, fingerprintsOf(preview));
         assertThat(item(apply, pub("domains", external)).get("result").asString())
@@ -1130,8 +1226,10 @@ class AdminBulkChangeTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from resource_access_grants
                  where resource_type = 'DOMAIN' and user_id = ? and resource_id in (?, ?, ?, ?)
-                """, Long.class, requester.getId(), platform, custom, removed, foreign)).isZero();
+                """, Long.class, requester.getId(), platform, custom, removed, foreign)).isEqualTo(1);
+        assertThat(item(apply, pub("domains", foreign)).get("result").asString()).isEqualTo("APPLIED");
         assertThat(auditCount(pub("domains", external), "dns_domain.access_grant_add")).isEqualTo(1);
+        assertThat(auditCount(pub("domains", foreign), "dns_domain.access_grant_add")).isEqualTo(1);
     }
 
     // ── the call as a whole ────────────────────────────────────────────────
@@ -1196,8 +1294,37 @@ class AdminBulkChangeTest {
                         .content(objectMapper.writeValueAsString(
                                 request("LLM_KEY", List.of(id), limits(Map.of("rpm", 90))))))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("fingerprints"));
+                .andExpect(jsonPath("$.errors[0].field").value("operationId"));
         assertThat(keyRow(key).get("rpm")).isEqualTo(60);
+    }
+
+    @Test
+    void savedPartialCreditLimitsPreserveOmissionAcceptZeroAndRefuseExplicitNull() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "partial-credit", "ACTIVE", Instant.now().plus(30, ChronoUnit.DAYS));
+        long before = generation();
+        Map<String, Object> invalid = new LinkedHashMap<>();
+        invalid.put("creditLimit", null);
+        refused(request("LLM_KEY", List.of(key.publicId()), limits(invalid)), "change.llmKeyLimits.creditLimit");
+        assertThat(generation()).isEqualTo(before);
+        assertThat(keyRow(key).get("credit_limit").toString()).isEqualTo("1.00");
+        JsonNode omitted = applyJson(sysAdminToken, request("LLM_KEY", List.of(key.publicId()), limits(Map.of("rpm", 93))));
+        assertThat(item(omitted, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(keyRow(key).get("credit_limit").toString()).isEqualTo("1.00");
+        String snapshot = jdbcTemplate.queryForObject("select p.request::text from admin_bulk_change_previews p join admin_bulk_change_operations o on o.preview_id=p.id where o.id=?",
+                String.class, UUID.fromString(omitted.get("batchId").asString()));
+        assertThat(objectMapper.readTree(snapshot).get("change").get("llmKeyLimits").has("creditLimit")).isFalse();
+        JsonNode zero = applyJson(sysAdminToken, request("LLM_KEY", List.of(key.publicId()), limits(Map.of("creditLimit", 0))));
+        assertThat(item(zero, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(keyRow(key).get("credit_limit").toString()).isEqualTo("0.00");
+        assertThat(keyRow(key).get("rpm")).isEqualTo(93);
+        String zeroSnapshot = jdbcTemplate.queryForObject("select p.request::text from admin_bulk_change_previews p join admin_bulk_change_operations o on o.preview_id=p.id where o.id=?",
+                String.class, UUID.fromString(zero.get("batchId").asString()));
+        JsonNode storedZero = objectMapper.readTree(zeroSnapshot).get("change").get("llmKeyLimits");
+        assertThat(storedZero.get("creditLimit").asInt()).isZero();
+        var restored = objectMapper.readValue(zeroSnapshot, kr.ac.pusan.pickle.admin.dto.AdminBulkChangeRequest.class);
+        assertThat(restored.change().llmKeyLimits().isCreditLimitSet()).isTrue();
+        assertThat(restored.change().llmKeyLimits().getCreditLimit()).isEqualByComparingTo(java.math.BigDecimal.ZERO);
+        assertThat(restored.change().llmKeyLimits().isTpmSet()).isFalse();
     }
 
     // ── request helpers ────────────────────────────────────────────────────
@@ -1256,13 +1383,46 @@ class AdminBulkChangeTest {
     }
 
     private JsonNode apply(String token, Map<String, Object> body,
-            Map<String, String> fingerprints) throws Exception {
+            PreparedPreview preview) throws Exception {
         Map<String, Object> withFingerprints = new LinkedHashMap<>(body);
-        withFingerprints.put("fingerprints", fingerprints);
-        return objectMapper.readTree(perform(APPLY, token, withFingerprints)
+        withFingerprints.put("fingerprints", preview.fingerprints());
+        withFingerprints.put("previewId", preview.previewId());
+        withFingerprints.put("operationId", UUID.randomUUID());
+        JsonNode applied = objectMapper.readTree(perform(APPLY, token, withFingerprints)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.batchId").isNotEmpty())
                 .andReturn().getResponse().getContentAsString());
+        assertThat(applied.get("batchId").asString()).isEqualTo(withFingerprints.get("operationId").toString());
+        JsonNode reopened = objectMapper.readTree(mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                        APPLY + "/operations/" + applied.get("batchId").asString()).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertPublicObservationKeys(((Map<?, ?>) body.get("change")).get("kind").toString(), reopened);
+        return applied;
+    }
+
+    private void assertPublicObservationKeys(String kind, JsonNode operation) {
+        Set<String> expected = switch (kind) {
+            case "LLM_KEY_LIMITS" -> Set.of("status", "expiresAt", "rpm", "tpm", "concurrency", "dailyTokens",
+                    "creditLimit", "creditLimitReset", "creditAllowedModels", "creditDeniedModels", "passthroughEndpoints");
+            case "LLM_KEY_STATUS", "LLM_KEY_EXPIRY" -> Set.of("status", "expiresAt");
+            case "VM_PERIOD" -> Set.of("status", "startDate", "endDate", "deleteKind", "deleteScheduledFor", "deleteRequestedAt");
+            case "VM_POWER" -> Set.of("status", "pendingPowerAction", "endDate");
+            case "VM_DELETION" -> Set.of("status", "deleteKind", "deleteScheduledFor");
+            case "DOMAIN_RENEWAL" -> Set.of("kind", "status", "releasedAt", "renewDueAt");
+            case "DOMAIN_FORCE_RELEASE" -> Set.of("kind", "status", "releasedAt", "dnsStatus", "recordCount", "liveRouteStatus", "certificateCount");
+            case "DOMAIN_VERIFY" -> Set.of("kind", "status");
+            case "ACCESS" -> Set.of("granteeRole");
+            default -> throw new AssertionError("no public observation expectation for " + kind);
+        };
+        for (JsonNode observation : operation.get("observations")) {
+            if (observation.hasNonNull("refusal")) {
+                assertThat(observation.get("values")).isEmpty();
+            } else if ("ACCESS".equals(kind) && observation.get("values").has("listed")) {
+                assertThat(observation.get("values").propertyNames()).containsExactly("listed");
+            } else {
+                assertThat(observation.get("values").propertyNames()).containsExactlyInAnyOrderElementsOf(expected);
+            }
+        }
     }
 
     private ResultActions perform(String path, String token, Map<String, Object> body)
@@ -1272,12 +1432,14 @@ class AdminBulkChangeTest {
                 .content(objectMapper.writeValueAsString(body)));
     }
 
-    private static Map<String, String> fingerprintsOf(JsonNode preview) {
+    private record PreparedPreview(UUID previewId, Map<String, String> fingerprints) { }
+
+    private static PreparedPreview fingerprintsOf(JsonNode preview) {
         Map<String, String> fingerprints = new LinkedHashMap<>();
         for (JsonNode item : preview.get("items")) {
             fingerprints.put(item.get("targetId").asString(), item.get("fingerprint").asString());
         }
-        return fingerprints;
+        return new PreparedPreview(UUID.fromString(preview.get("previewId").asString()), fingerprints);
     }
 
     private static JsonNode item(JsonNode response, UUID targetId) {
@@ -1301,7 +1463,8 @@ class AdminBulkChangeTest {
                 values ('LLM_API_KEY', ?, ?, ?, '테스트', ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requester.getId(), name + " 신청");
-        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)", requestId);
+        jdbcTemplate.update("insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')", requestId);
         long accountId = jdbcTemplate.queryForObject("""
                 insert into openrouter_accounts (org_id, name, created_by)
                 values (?, '일괄 시험 사업', ?)
@@ -1333,7 +1496,8 @@ class AdminBulkChangeTest {
                 values ('LLM_API_KEY', ?, ?, ?, '테스트', ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requester.getId(), name + " 신청");
-        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)", requestId);
+        jdbcTemplate.update("insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')", requestId);
         String hash = (UUID.randomUUID().toString() + UUID.randomUUID()).replace("-", "");
         long id = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys (workspace_id, org_id, request_id, name, purpose,

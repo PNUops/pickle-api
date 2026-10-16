@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin.bulk;
 
+import kr.ac.pusan.pickle.access.dto.ActorAccessImpact;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -9,13 +10,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import kr.ac.pusan.pickle.access.GrantChange;
-import kr.ac.pusan.pickle.access.ResourceAccessAudit;
 import kr.ac.pusan.pickle.access.ResourceAccessGrant;
 import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
-import kr.ac.pusan.pickle.access.ResourceAccessResolver;
 import kr.ac.pusan.pickle.access.ResourceRole;
-import kr.ac.pusan.pickle.access.ResourceStanding;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkAccessAction;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkAccessChange;
@@ -23,13 +20,7 @@ import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeKind;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeReason;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeSpec;
-import kr.ac.pusan.pickle.audit.AuditIds;
-import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.gpu.GpuAllocation;
-import kr.ac.pusan.pickle.gpu.GpuStore;
-import kr.ac.pusan.pickle.llm.LlmApiKey;
-import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.publishing.Domain;
 import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.DomainRepository;
@@ -39,13 +30,9 @@ import kr.ac.pusan.pickle.resource.ResourceTypeAdapter;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
-import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
-import kr.ac.pusan.pickle.vm.Vm;
-import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import org.jspecify.annotations.Nullable;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -54,12 +41,12 @@ import tools.jackson.databind.ObjectMapper;
  * one type, by an administrator.
  *
  * <p>This is a second way onto an access list. The first is the resource's
- * own owners and the owners of its workspace; this one is a system
- * administrator, or an organisation administrator of the institution the
- * resource belongs to, the same tier that may schedule a VM's deletion.
- * Every rule of the first way holds here: the person must be active and a
- * member of the owning workspace, only grants naming a person are made, and
- * one person holds one entry per resource.
+ * own owners and the owners of its workspace; support writes are available
+ * globally to institution managers and administrators and system administrators.
+     * New grants and role changes require an active member of the owning
+     * workspace. Removing an existing personal grant also works after account
+     * disable or membership removal, so a later activation cannot restore it.
+     * Workspace-wide grants are untouched.
  *
  * <p>Every edit is an administrator's intervention in a workspace's own
  * list, so its audit row says so beside the shape the owner's edits leave.
@@ -68,48 +55,30 @@ import tools.jackson.databind.ObjectMapper;
 class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
 
     /**
-     * One resource as the access machinery sees it, plus the institution it
-     * belongs to. {@code listed} is false for a row the actor may have picked
+     * One resource as the access machinery sees it. {@code listed} is false for a row the actor may have picked
      * from an admin listing but that has no access list at all.
      */
-    record Target(ResourceIdentity identity, ResourceTypeAdapter adapter, @Nullable Long orgId,
-            boolean listed) {
+    record Target(ResourceIdentity identity, ResourceTypeAdapter adapter, boolean listed) {
     }
 
     private final Map<ResourceType, ResourceTypeAdapter> adapters;
-    private final VmRepository vmRepository;
-    private final LlmApiKeyRepository keyRepository;
+    private final kr.ac.pusan.pickle.access.ResourceAccessGrantService grantChanges;
+    private final kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock;
     private final DomainRepository domainRepository;
-    private final GpuStore gpuStore;
     private final UserRepository userRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
-    private final ResourceAccessResolver resolver;
-    private final JdbcTemplate jdbcTemplate;
-    private final AuditService auditService;
-    private final AuditIds auditIds;
     private final ObjectMapper objectMapper;
 
-    AccessBulkChanges(List<ResourceTypeAdapter> adapters, VmRepository vmRepository,
-            LlmApiKeyRepository keyRepository, DomainRepository domainRepository,
-            GpuStore gpuStore, UserRepository userRepository,
-            WorkspaceMemberRepository workspaceMemberRepository,
-            ResourceAccessGrantRepository grantRepository, ResourceAccessResolver resolver,
-            JdbcTemplate jdbcTemplate, AuditService auditService, AuditIds auditIds,
+    AccessBulkChanges(kr.ac.pusan.pickle.access.ResourceAccessGrantService grantChanges,
+            kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock, List<ResourceTypeAdapter> adapters,
+            DomainRepository domainRepository, UserRepository userRepository,
+            WorkspaceMemberRepository workspaceMemberRepository, ResourceAccessGrantRepository grantRepository,
             ObjectMapper objectMapper) {
-        this.adapters = adapters.stream()
-                .collect(Collectors.toMap(ResourceTypeAdapter::type, Function.identity()));
-        this.vmRepository = vmRepository;
-        this.keyRepository = keyRepository;
-        this.domainRepository = domainRepository;
-        this.gpuStore = gpuStore;
-        this.userRepository = userRepository;
-        this.workspaceMemberRepository = workspaceMemberRepository;
-        this.grantRepository = grantRepository;
-        this.resolver = resolver;
-        this.jdbcTemplate = jdbcTemplate;
-        this.auditService = auditService;
-        this.auditIds = auditIds;
+        this.grantChanges = grantChanges; this.administrationLock = administrationLock;
+        this.adapters = adapters.stream().collect(Collectors.toMap(ResourceTypeAdapter::type, Function.identity()));
+        this.domainRepository = domainRepository; this.userRepository = userRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository; this.grantRepository = grantRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -141,8 +110,7 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
                 continue;
             }
             adapter.identifyByPublicId(id).ifPresent(identity -> targets.put(id,
-                    new Target(identity, adapter, orgIdOf(type, identity.id()).orElse(null),
-                            true)));
+                    new Target(identity, adapter, true)));
         }
         return targets;
     }
@@ -164,25 +132,10 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
         if (domain.getKind() != DomainKind.EXTERNAL) {
             ResourceIdentity identity = new ResourceIdentity(domain.getId(), domain.getPublicId(),
                     domain.getWorkspaceId(), domain.getFqdn(), null, domain.getStatus().name());
-            return Optional.of(new Target(identity, adapter, domain.getOrgId(), false));
+            return Optional.of(new Target(identity, adapter, false));
         }
         return adapter.identifyByPublicId(id)
-                .map(identity -> new Target(identity, adapter, domain.getOrgId(), true));
-    }
-
-    /**
-     * The institution a resource belongs to, which the access machinery does
-     * not carry because grants are decided by workspace, not by institution.
-     * The administrator's reach is decided by institution, so it is read
-     * here, from each type's own row.
-     */
-    private Optional<Long> orgIdOf(ResourceType type, long resourceId) {
-        return switch (type) {
-            case VM -> vmRepository.findById(resourceId).map(Vm::getOrgId);
-            case LLM_API_KEY -> keyRepository.findById(resourceId).map(LlmApiKey::getOrgId);
-            case DOMAIN -> domainRepository.findById(resourceId).map(Domain::getOrgId);
-            case GPU -> gpuStore.allocation(resourceId).map(GpuAllocation::orgId);
-        };
+                .map(identity -> new Target(identity, adapter, true));
     }
 
     @Override
@@ -198,16 +151,8 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
     @Override
     @Nullable AdminBulkChangeReason accessRefusal(AuthenticatedUser actor, Target target,
             AdminBulkChangeSpec change) {
-        if (actor.role() == UserRole.SYS_ADMIN) {
-            return null;
-        }
-        if (actor.role().isOrgTier()) {
-            if (target.orgId() == null || !actor.reads(target.orgId())) {
-                return AdminBulkChangeReason.NOT_FOUND;
-            }
-            return actor.administers(target.orgId()) ? null : AdminBulkChangeReason.FORBIDDEN;
-        }
-        return AdminBulkChangeReason.FORBIDDEN;
+        return kr.ac.pusan.pickle.admin.StudentSupportPolicy.canWriteWorkspaceAccess(actor)
+                ? null : AdminBulkChangeReason.FORBIDDEN;
     }
 
     @Override
@@ -219,10 +164,15 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
             values.put("listed", false);
             return values;
         }
-        User grantee = activeUser(change.access().userId());
+        User grantee = eligibleUser(change.access());
         values.put("granteeRole", grantee == null ? null
                 : grantOf(target, grantee).map(grant -> grant.getRole().name()).orElse(null));
         return values;
+    }
+
+    @Override
+    Map<String, Object> observationValues(Target target, AdminBulkChangeSpec change) {
+        return publicValues(fingerprintValues(target, change), Set.of("listed", "granteeRole"));
     }
 
     @Override
@@ -232,7 +182,7 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
             return Judgement.refused(AdminBulkChangeReason.INELIGIBLE);
         }
         AdminBulkAccessChange access = change.access();
-        User grantee = activeUser(access.userId());
+        User grantee = eligibleUser(access);
         if (grantee == null) {
             // An id no active account has is refused as ineligible, not as
             // missing: the grantee's existence is not this surface's to disclose.
@@ -241,7 +191,7 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
         boolean member = workspaceMemberRepository
                 .findByWorkspaceIdAndUserId(target.identity().workspaceId(), grantee.getId())
                 .isPresent();
-        if (!member) {
+        if (!member && access.action() != AdminBulkAccessAction.REVOKE) {
             return Judgement.refused(AdminBulkChangeReason.NOT_MEMBER);
         }
         ResourceAccessGrant grant = grantOf(target, grantee).orElse(null);
@@ -276,120 +226,50 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
     }
 
     @Override
-    @Nullable AdminBulkChangeReason write(AuthenticatedUser actor, Target target,
-            Judgement judgement, AdminBulkChangeSpec change, UUID batchId, String ip) {
-        AdminBulkAccessChange access = change.access();
-        long userId = (Long) judgement.plan();
-        ResourceType type = target.adapter().type();
-        long resourceId = target.identity().id();
-        // Read before the write, for the same reason the owner path does: the
-        // self-edit marker needs both sides of the comparison.
-        ResourceStanding standingBefore = userId == actor.id()
-                ? resolver.standing(type, resourceId, target.identity().workspaceId(), actor.id())
-                : null;
-        switch (access.action()) {
-            case GRANT -> {
-                // One statement that either inserts or says the entry exists,
-                // so a grant that raced in from the owner's side is this
-                // item's answer and not a constraint violation that would
-                // poison the batch's transaction.
-                List<Long> inserted = jdbcTemplate.queryForList("""
-                        insert into resource_access_grants
-                               (resource_type, resource_id, grantee_type, user_id, role)
-                        values (?::resource_type, ?, 'USER', ?, ?::resource_role)
-                        on conflict (resource_type, resource_id, user_id)
-                            where grantee_type = 'USER' do nothing
-                        returning id
-                        """, Long.class, type.name(), resourceId, userId, access.role().name());
-                if (inserted.isEmpty()) {
-                    return AdminBulkChangeReason.ALREADY_GRANTED;
-                }
-                ResourceAccessGrant saved = grantRepository.findById(inserted.getFirst())
-                        .orElseThrow();
-                audit(actor, target, GrantChange.ADD, saved, null, batchId, ip);
-                breakGlassIfSelf(actor, target, standingBefore, batchId, ip, saved, null);
-            }
-            case CHANGE -> {
-                ResourceAccessGrant grant = grantRepository
-                        .findByResourceTypeAndResourceIdAndUserId(type, resourceId, userId)
-                        .orElse(null);
-                if (grant == null) {
-                    return AdminBulkChangeReason.NO_GRANT;
-                }
-                ResourceRole previous = grant.getRole();
-                grant.setRole(access.role());
-                audit(actor, target, GrantChange.UPDATE, grant, previous, batchId, ip);
-                breakGlassIfSelf(actor, target, standingBefore, batchId, ip, grant, previous);
-            }
-            case REVOKE -> {
-                ResourceAccessGrant grant = grantRepository
-                        .findByResourceTypeAndResourceIdAndUserId(type, resourceId, userId)
-                        .orElse(null);
-                if (grant == null) {
-                    return AdminBulkChangeReason.NO_GRANT;
-                }
-                grantRepository.delete(grant);
-                audit(actor, target, GrantChange.REMOVE, grant, null, batchId, ip);
-            }
-        }
-        return null;
+    void prepareApply(AuthenticatedUser actor, AdminBulkChangeRequest request) { administrationLock.acquire(); }
+
+    @Override
+    @Nullable ActorAccessImpact actorAccessImpact(AuthenticatedUser actor, Target target,
+            AdminBulkChangeSpec change) {
+        if (!target.listed()) { return null; }
+        User grantee = eligibleUser(change.access());
+        if (grantee == null) { return null; }
+        var access = change.access();
+        return grantChanges.bulkImpact(actor, target.adapter().type(), target.identity().publicId(), grantee.getId(),
+                access.action().name(), access.role());
     }
 
-    /**
-     * The owner path's record, with two more facts: which batch this was part
-     * of, and that an administrator rather than an owner made the edit. The
-     * shape stays the owner path's so a reader of the trail meets one shape
-     * per action name.
-     */
-    private void audit(AuthenticatedUser actor, Target target, GrantChange change,
-            ResourceAccessGrant grant, @Nullable ResourceRole previousRole, UUID batchId,
-            String ip) {
-        ResourceAccessAudit names = target.adapter().accessAudit();
-        auditService.recordAfterCommit(actor.id(), actor.role().name(), names.actionOf(change),
-                names.targetType(), target.identity().publicId(),
-                detailOf(grant, previousRole, batchId), ip);
+    @Override
+    Map<String, Object> fingerprintValues(AuthenticatedUser actor, Target target, AdminBulkChangeSpec change) {
+        Map<String, Object> values = new LinkedHashMap<>(fingerprintValues(target, change));
+        var impact = actorAccessImpact(actor, target, change);
+        if (impact != null) { values.put("actorAccessFingerprint", impact.fingerprint()); }
+        User grantee = eligibleUser(change.access());
+        values.put("eligibleStatus", grantee == null ? null : grantee.getStatus().name());
+        values.put("member", grantee != null && workspaceMemberRepository.findByWorkspaceIdAndUserId(target.identity().workspaceId(), grantee.getId()).isPresent());
+        return values;
     }
 
-    private Map<String, Object> detailOf(ResourceAccessGrant grant,
-            @Nullable ResourceRole previousRole, UUID batchId) {
-        Map<String, Object> detail = new LinkedHashMap<>();
-        detail.put("grantId", grant.getPublicId());
-        detail.put("granteeType", grant.getGranteeType().name());
-        detail.put("granteeUserId", auditIds.user(grant.getUserId()));
-        detail.put("role", grant.getRole().name());
-        if (previousRole != null) {
-            detail.put("previousRole", previousRole.name());
-        }
-        detail.put("adminIntervention", true);
-        detail.put("batchId", batchId);
-        return detail;
+    @Override
+    @Nullable AdminBulkChangeReason write(AuthenticatedUser actor, Target target, Judgement judgement,
+            AdminBulkChangeSpec change, UUID batchId, String ip) {
+        return write(actor, target, judgement, change, batchId, ip, null);
     }
 
-    /**
-     * An administrator naming themselves is the case the owner path records
-     * as break-glass, and it is recorded here by the same rule: only when the
-     * edit is what puts them inside a resource they could not reach before.
-     */
-    private void breakGlassIfSelf(AuthenticatedUser actor, Target target,
-            @Nullable ResourceStanding before, UUID batchId, String ip, ResourceAccessGrant grant,
-            @Nullable ResourceRole previousRole) {
-        if (before == null || before.atLeast(ResourceRole.MEMBER)) {
-            return;
-        }
-        ResourceStanding after = resolver.standing(target.adapter().type(),
-                target.identity().id(), target.identity().workspaceId(), actor.id());
-        if (!after.atLeast(ResourceRole.MEMBER)) {
-            return;
-        }
-        ResourceAccessAudit names = target.adapter().accessAudit();
-        auditService.recordAfterCommit(actor.id(), actor.role().name(), names.breakGlass(),
-                names.targetType(), target.identity().publicId(),
-                detailOf(grant, previousRole, batchId), ip);
+    @Override
+    @Nullable AdminBulkChangeReason write(AuthenticatedUser actor, Target target, Judgement judgement,
+            AdminBulkChangeSpec change, UUID batchId, String ip,
+            kr.ac.pusan.pickle.access.dto.AccessConfirmation confirmation) {
+        var access = change.access();
+        boolean changed = grantChanges.bulkChange(actor, target.adapter().type(), target.identity().publicId(),
+                (Long) judgement.plan(), access.action().name(), access.role(), batchId, ip, confirmation);
+        return changed ? null : access.action() == AdminBulkAccessAction.GRANT
+                ? AdminBulkChangeReason.ALREADY_GRANTED : AdminBulkChangeReason.NO_GRANT;
     }
 
-    private @Nullable User activeUser(UUID publicId) {
-        return userRepository.findByPublicId(publicId)
-                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
+    private @Nullable User eligibleUser(AdminBulkAccessChange access) {
+        return userRepository.findByPublicId(access.userId())
+                .filter(user -> access.action() == AdminBulkAccessAction.REVOKE || user.getStatus() == UserStatus.ACTIVE)
                 .orElse(null);
     }
 

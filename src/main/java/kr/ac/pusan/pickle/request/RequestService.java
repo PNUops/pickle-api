@@ -52,6 +52,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class RequestService {
+    private final kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock;
 
     /**
      * 직접 적는 종료일의 상한. 기간 항목이 덮지 못하는 경우를 위한 안전장치이고,
@@ -76,7 +77,7 @@ public class RequestService {
     private final kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService;
     private final EntityManager entityManager;
 
-    public RequestService(RequestRepository requestRepository, RequestAssembler assembler, RequestApproval requestApproval,
+    public RequestService(kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock, RequestRepository requestRepository, RequestAssembler assembler, RequestApproval requestApproval,
             List<RequestTypeHandler> handlers, WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository, OrgRepository orgRepository,
             AuditService auditService, AuditIds auditIds, NotificationService notificationService,
@@ -85,6 +86,7 @@ public class RequestService {
             kr.ac.pusan.pickle.admin.ApprovalService approvalService,
             kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService,
             EntityManager entityManager) {
+        this.administrationLock = administrationLock;
         this.entityManager = entityManager;
         this.adminWorkspaceQueryService = adminWorkspaceQueryService;
         this.recipientService = recipientService;
@@ -116,6 +118,7 @@ public class RequestService {
 
     @Transactional
     public RequestDetailResponse create(AuthenticatedUser actor, CreateRequestRequest form, String ip) {
+        administrationLock.acquire();
         RequestTypeHandler handler = handlerFor(form.type());
         // A soft-deleted workspace cannot receive new requests.
         Workspace workspace = workspaceRepository.findByPublicIdAndDeletedAtIsNull(form.workspaceId())

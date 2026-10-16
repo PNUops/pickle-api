@@ -81,6 +81,17 @@ class AdminWorkspacesTest {
     }
 
     @Test
+    void legacyAllFlagExplicitlyBypassesTheInstitutionFilter() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/workspaces").param("orgId", SeedFixtures.UNKNOWN_ID.toString())
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk()).andExpect(jsonPath(bySlug()).doesNotExist());
+        mockMvc.perform(get("/api/v1/admin/workspaces").param("all", "true")
+                        .param("orgId", SeedFixtures.UNKNOWN_ID.toString())
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk()).andExpect(jsonPath(bySlug()).exists());
+    }
+
+    @Test
     void optionListCarriesKindAndCreatedAt() throws Exception {
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + sysAdminToken))
@@ -107,6 +118,27 @@ class AdminWorkspacesTest {
                         .value("OWNER"))
                 .andExpect(jsonPath("$.members[?(@.userId == '%s')].userStatus"
                         .formatted(pub("users", disabledMemberId))).value("DISABLED"));
+    }
+
+    @Test
+    void memberSupportLinksFollowTheSameSystemAccountBoundaryAsSupportDetail() throws Exception {
+        User sysAdmin = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow();
+        jdbcTemplate.update("insert into workspace_members (workspace_id, user_id, role) "
+                + "values (?, ?, 'MEMBER'::workspace_member_role)", workspaceId, sysAdmin.getId());
+
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", workspaceId))
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.members[?(@.userId == '%s')].supportDetailVisible"
+                        .formatted(sysAdmin.getPublicId())).value(false))
+                .andExpect(jsonPath("$.members[?(@.userId == '%s')].supportDetailVisible"
+                        .formatted(pub("users", ownerId))).value(true));
+
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", workspaceId))
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.members[?(@.userId == '%s')].supportDetailVisible"
+                        .formatted(sysAdmin.getPublicId())).value(true));
     }
 
     @Test

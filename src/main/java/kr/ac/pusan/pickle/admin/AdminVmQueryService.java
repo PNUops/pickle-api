@@ -14,7 +14,6 @@ import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.AdminVmAccess;
@@ -35,11 +34,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Contract {@code GET /admin/vms}: the org tier answers for the organisations it
- * holds a role in, a read-only role included; the sys tier for all of them. The
- * {@code orgId} filter narrows within that, and naming an organisation outside
- * it answers 404 so which organisations exist stays private (same convention as
- * the vm-requests queue). The decision itself lives in {@code AdminOrgScope}.
+ * Global VM support metadata reads with an optional institution filter.
+ * Resource membership, credential reveal and actual interventions retain
+ * their dedicated authorization.
  */
 @Service
 public class AdminVmQueryService {
@@ -82,18 +79,18 @@ public class AdminVmQueryService {
     }
 
     /**
-     * Contract {@code GET /admin/vms/{vmId}} (v0.17.0): org-scoped admin view
-     * of the full detail — the viewer is not a workspace member, so
+     * Contract {@code GET /admin/vms/{vmId}} (v0.17.0): global support view
+     * of the detail — the viewer is not a workspace member, so
      * {@code myResourceRole} is null and password reveal stays off.
      */
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, UUID vmId) {
         Vm vm = adminVmAccess.requireReadableVm(actor, vmId);
-        return vmQueryService.detailOf(vm, null);
+        return vmQueryService.supportDetailOf(vm, !actor.role().isOrgTier() || actor.reads(vm.getOrgId()));
     }
 
     /**
-     * Contract {@code GET /admin/vms/{vmId}/events} (v0.17.0): org-scoped history.
+     * Contract {@code GET /admin/vms/{vmId}/events} (v0.17.0): global support history.
      *
      * <p>Who intervened is named for the readers who could already learn it
      * from the audit log, and for nobody else. This endpoint admits one role
@@ -213,6 +210,6 @@ public class AdminVmQueryService {
     private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        return AdminOrgScope.read(actor, orgId, requested);
+        return StudentSupportPolicy.filterScope(actor, orgId, requested);
     }
 }

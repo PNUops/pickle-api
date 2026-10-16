@@ -160,9 +160,11 @@ class LlmKeyModelsTest {
         UUID keyId = createKey("저장 검증 키", "5.00", "hash-store",
                 "[\"*/*\"]", "[\"*/*-pro\"]");
         jdbcTemplate.update("""
-                insert into llm_key_request_details (request_id, granted_credit_limit,
-                    granted_openrouter_account_id, granted_credit_allowed_models, granted_credit_denied_models)
-                select request_id, 5, openrouter_account_id, '["*/*"]'::jsonb, '["*/*-pro"]'::jsonb
+                insert into llm_key_request_details (request_id, req_passthrough_endpoints,
+                    granted_credit_limit, granted_openrouter_account_id,
+                    granted_credit_allowed_models, granted_credit_denied_models)
+                select request_id, '["chat"]'::jsonb, 5, openrouter_account_id,
+                       '["*/*"]'::jsonb, '["*/*-pro"]'::jsonb
                   from llm_api_keys where public_id = ?
                 """, keyId);
         jdbcTemplate.update("""
@@ -239,6 +241,13 @@ class LlmKeyModelsTest {
                 .andExpect(jsonPath("$.paid.models[2].id").value("tinyvendor/cheap-8b"))
                 // Per-token becomes per-million so the number is readable.
                 .andExpect(jsonPath("$.paid.models[0].promptPricePerMillion").value(0.2))
+                // The rest of the bill rides along, each axis in its own unit.
+                .andExpect(jsonPath("$.paid.models[0].pricing.axes[2].axis").value("input_cache_read"))
+                .andExpect(jsonPath("$.paid.models[0].pricing.axes[2].unit").value("PER_MILLION_TOKENS"))
+                .andExpect(jsonPath("$.paid.models[0].pricing.axes[2].price").value(0.02))
+                .andExpect(jsonPath("$.paid.models[0].pricing.axes[3].unit").value("PER_CALL"))
+                .andExpect(jsonPath("$.paid.models[0].pricing.tiers.length()").value(0))
+                .andExpect(jsonPath("$.paid.models[1].pricing").doesNotExist())
                 .andExpect(jsonPath("$.paid.freshness").doesNotExist())
                 .andExpect(jsonPath("$.paid.catalogFreshness").value("FRESH"));
     }
@@ -506,6 +515,14 @@ class LlmKeyModelsTest {
         insertModel("openai/gpt-5.6-luna", "GPT-5.6 Luna", "0.0000002", "0.0000012", 1050000);
         insertModel("openai/gpt-4o", "GPT-4o", "0.0000025", "0.00001", 128000);
         insertModel("tinyvendor/cheap-8b", "Cheap 8B", "0.00000004", "0.00000005", 8192);
+        // One row with the full pricing object; the others stand for rows not
+        // refreshed since the column appeared.
+        jdbcTemplate.update("""
+                update openrouter_catalogue_model
+                   set pricing = '{"prompt":"0.0000002","completion":"0.0000012",
+                                   "input_cache_read":"0.00000002","web_search":"0.01"}'::jsonb
+                 where model_id = 'openai/gpt-5.6-luna'
+                """);
     }
 
     private void insertModel(String id, String name, String prompt, String completion, int ctx) {

@@ -40,8 +40,7 @@ public class DevDataSeeder implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DevDataSeeder.class);
 
-    /** Template the development catalog row points at. Tests stub the clone path for
-     * this id, so it lives here rather than in three places that can drift apart. */
+    /** The fixed test-profile template; a real dev host overrides the seeded value. */
     public static final int SEED_TEMPLATE_VMID = 1001;
 
     public static final String ORG_NAME = "테스트 기관";
@@ -51,17 +50,20 @@ public class DevDataSeeder implements ApplicationRunner {
     private final PersonalWorkspaceService personalWorkspaceService;
     private final PasswordEncoder passwordEncoder;
     private final SeedProperties properties;
+    private final DevInventoryProperties inventory;
     private final TermsService termsService;
     private final JdbcTemplate jdbcTemplate;
 
     public DevDataSeeder(UserRepository userRepository, OrgRepository orgRepository,
             PersonalWorkspaceService personalWorkspaceService, PasswordEncoder passwordEncoder,
-            SeedProperties properties, TermsService termsService, JdbcTemplate jdbcTemplate) {
+            SeedProperties properties, DevInventoryProperties inventory,
+            TermsService termsService, JdbcTemplate jdbcTemplate) {
         this.userRepository = userRepository;
         this.orgRepository = orgRepository;
         this.personalWorkspaceService = personalWorkspaceService;
         this.passwordEncoder = passwordEncoder;
         this.properties = properties;
+        this.inventory = inventory;
         this.termsService = termsService;
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -69,11 +71,26 @@ public class DevDataSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        boolean freshSettings = jdbcTemplate.queryForObject(
+                "select count(*) from settings", Integer.class) == 0;
+        if (!freshSettings) {
+            Boolean marked = jdbcTemplate.query(
+                    "select value = 'true'::jsonb from settings"
+                            + " where key = 'dev_environment_marker'",
+                    rs -> rs.next() && rs.getBoolean(1));
+            if (!Boolean.TRUE.equals(marked)) {
+                throw new IllegalStateException("Existing database has no development marker");
+            }
+        }
         // Both run before the accounts: the settings rows carry the switches the
         // rest of startup reads, and seedUser grants consent to whatever terms
         // documents exist at that moment, so an empty table there would leave the
         // seed accounts permanently behind the consent gate.
         seedSettings();
+        if (freshSettings) {
+            setting("dev_environment_marker", "true",
+                    "개발 또는 테스트 환경으로 새로 만든 DB의 시드 확인 표시.");
+        }
         seedTerms();
 
         seedUser(properties.sysadminEmail(), properties.sysadminPassword(), "시스템 관리자",
@@ -90,7 +107,10 @@ public class DevDataSeeder implements ApplicationRunner {
         seedUser(properties.orgadminEmail(), properties.orgadminPassword(), "기관 관리자",
                 UserRole.ORG_ADMIN, org.getId());
 
-        enableGatewayKillSwitches();
+        if (inventory.enableGateways()) {
+            enableGatewayKillSwitches();
+        }
+        seedVmidBaseline();
         seedInventory();
     }
 
@@ -111,8 +131,8 @@ public class DevDataSeeder implements ApplicationRunner {
      *
      * <p>Values follow the deployed ones with two deliberate departures. Both
      * gateway kill switches start {@code false}, because a development database
-     * must not assume an SSH gateway or a terminal bridge exists (the fresh-database
-     * pass below turns them on where that is safe). And the reserved and profanity
+     * must not assume an SSH gateway or a terminal bridge exists (a test fixture
+     * opts in after it wires mock endpoints). And the reserved and profanity
      * lists are the short original sets rather than the curated production lists:
      * a test that asserted on a few hundred operator-chosen names would be
      * asserting on an operations decision.</p>
@@ -125,7 +145,7 @@ public class DevDataSeeder implements ApplicationRunner {
         if (rows == null || rows > 0) {
             return;
         }
-        setting("allowed_root_domains", "[\"pusan.dev\"]",
+        setting("allowed_root_domains", "[\"" + inventory.rootDomain() + "\"]",
                 "VM 신청에서 선택할 수 있는 루트 도메인 목록.");
         setting("reserved_subdomains",
                 "[\"www\",\"api\",\"admin\",\"ssh\",\"mail\",\"console\",\"staging\"]",
@@ -252,6 +272,29 @@ public class DevDataSeeder implements ApplicationRunner {
         seedDomainRoot();
     }
 
+    /** Set a fresh sequence once, never rewinding an existing allocation. */
+    private void seedVmidBaseline() {
+        int start = inventory.vmidStart();
+        if (start < 100000 || start > 999999999) {
+            throw new IllegalStateException("Development VMID baseline is outside the user VMID range");
+        }
+        jdbcTemplate.query("select last_value, is_called from vmid_seq", rs -> {
+            if (!rs.next()) {
+                throw new IllegalStateException("Development VMID sequence is missing");
+            }
+            long last = rs.getLong(1);
+            boolean called = rs.getBoolean(2);
+            if (!called && (last == 100000 || last == start)) {
+                jdbcTemplate.queryForObject("select setval('vmid_seq', ?, false)", Long.class,
+                        (long) start);
+            } else if (last < start) {
+                throw new IllegalStateException("Existing VMID sequence is below the configured"
+                        + " development baseline; choose an unused range before startup");
+            }
+            return null;
+        });
+    }
+
     /**
      * The root names are issued under, and the organisation they belong to.
      *
@@ -290,9 +333,12 @@ public class DevDataSeeder implements ApplicationRunner {
         }
         jdbcTemplate.update(
                 "insert into nodes (name, api_host, cpu_threads, memory_mb, vm_bridge, storage)"
-                        + " values ('pve1', 'https://pve1:8006', 40, 79872, 'vmbr2', 'local-lvm')");
-        log.info("Empty inventory: seeded the development node (pve1)");
-        return jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
+                        + " values (?, ?, ?, ?, ?, ?)", inventory.nodeName(),
+                inventory.nodeApiHost(), inventory.nodeCpuThreads(), inventory.nodeMemoryMb(),
+                inventory.nodeVmBridge(), inventory.nodeStorage());
+        log.info("Empty inventory: seeded the development node ({})", inventory.nodeName());
+        return jdbcTemplate.queryForObject("select id from nodes where name = ?", Long.class,
+                inventory.nodeName());
     }
 
     private void seedIpPool(long nodeId) {
@@ -301,13 +347,14 @@ public class DevDataSeeder implements ApplicationRunner {
             return;
         }
         jdbcTemplate.update(
-                "insert into ip_pools (name, cidr, gateway, dns, reserved_ranges) values"
-                        + " ('guest-private', '172.29.0.0/16', '172.29.0.1', '[\"8.8.8.8\"]'::jsonb,"
-                        + " '[{\"from\": \"172.29.0.0\", \"to\": \"172.29.0.255\"},"
-                        + " {\"from\": \"172.29.255.0\", \"to\": \"172.29.255.255\"}]'::jsonb)");
+                "insert into ip_pools (name, cidr, gateway, dns, reserved_ranges)"
+                        + " values (?, ?::cidr, ?::inet, jsonb_build_array(?::text), ?::jsonb)",
+                inventory.ipPoolName(), inventory.ipPoolCidr(), inventory.ipPoolGateway(),
+                inventory.ipPoolDns(), inventory.ipPoolReservedRanges());
         jdbcTemplate.update("update nodes set ip_pool_id = (select id from ip_pools"
-                + " where name = 'guest-private'), updated_at = now() where id = ?", nodeId);
-        log.info("Empty inventory: seeded the development IP pool (guest-private)");
+                + " where name = ?), updated_at = now() where id = ?",
+                inventory.ipPoolName(), nodeId);
+        log.info("Empty inventory: seeded the development IP pool ({})", inventory.ipPoolName());
     }
 
     private void seedOsImage(long nodeId) {
@@ -319,8 +366,8 @@ public class DevDataSeeder implements ApplicationRunner {
                 "insert into os_images (name, display_name, os_family, os_version,"
                         + " ssh_username, proxmox_vmid, node_id, version, min_disk_gb, status, notes)"
                         + " values ('ubuntu-24.04', 'Ubuntu 24.04 LTS', 'ubuntu', '24.04',"
-                        + " 'ubuntu', " + SEED_TEMPLATE_VMID + ", ?, 1, 10, 'ACTIVE'::catalog_status,"
-                        + " '개발용 시드 이미지')", nodeId);
+                        + " 'ubuntu', ?, ?, 1, 10, 'ACTIVE'::catalog_status,"
+                        + " '개발용 시드 이미지')", inventory.templateVmid(), nodeId);
         log.info("Empty inventory: seeded the development OS image (ubuntu-24.04)");
     }
 
@@ -381,9 +428,10 @@ public class DevDataSeeder implements ApplicationRunner {
             return;
         }
         jdbcTemplate.update("insert into relays (name, source_ip, public_host,"
-                + " port_band_start, port_band_end) values ('lightsail-1', '10.100.100.1',"
-                + " 'relay.invalid', 10000, 19999)");
-        log.info("Empty inventory: seeded the development relay (lightsail-1)");
+                + " port_band_start, port_band_end) values (?, ?, ?, ?, ?)",
+                inventory.relayName(), inventory.relaySourceIp(), inventory.relayPublicHost(),
+                inventory.relayPortStart(), inventory.relayPortEnd());
+        log.info("Empty inventory: seeded the development relay ({})", inventory.relayName());
     }
 
     /**
@@ -411,8 +459,8 @@ public class DevDataSeeder implements ApplicationRunner {
     }
 
     /**
-     * Turns the SSH-gateway and web-terminal kill switches on when the database is
-     * freshly created.
+     * Turns the SSH-gateway and web-terminal kill switches on only when this
+     * fixture explicitly opts in and the database is freshly created.
      *
      * <p>Both are seeded {@code false} above on purpose: in production a
      * capability is switched on deliberately, after its infrastructure is wired and

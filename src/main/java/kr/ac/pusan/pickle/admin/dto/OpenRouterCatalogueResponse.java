@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import kr.ac.pusan.pickle.llm.dto.ModelPricing;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCreditsFreshness;
 import org.jspecify.annotations.Nullable;
 
@@ -54,6 +55,8 @@ public record OpenRouterCatalogueResponse(
             @Schema(description = "백만 토큰당 출력 가격(USD). 모르면 비어 있고, 0은 무료를 뜻합니다.")
             @Nullable BigDecimal completionPricePerMillion,
             @Schema(description = "컨텍스트 길이(토큰).")
-            @Nullable Integer contextLength) {
+            @Nullable Integer contextLength,
+            @Schema(description = "입력과 출력을 포함한 가격 축 전체. 목록이 아직 이 정보를 받지 않았으면 비어 있습니다.")
+            @Nullable ModelPricing pricing) {
     }
 }

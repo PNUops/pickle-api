@@ -134,7 +134,8 @@ public class AdminPublishingService {
     @Transactional(readOnly = true)
     public PageResponse<AdminRouteView> listRoutes(AuthenticatedUser actor, UUID orgId,
             RouteStatus status, int page, int size) {
-        OrgScope scope = scopedOrgId(actor, orgId);
+        Long requested = orgId == null ? null : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
+        OrgScope scope = kr.ac.pusan.pickle.admin.StudentSupportPolicy.filterScope(actor, orgId, requested);
         Page<Route> routes = routeRepository.findAdmin(orgFilter(scope), name(status), page(page, size));
         Context ctx = context(routes.getContent().stream()
                 .map(r -> domainRepository.findById(r.getDomainId()).orElse(null))
@@ -165,14 +166,28 @@ public class AdminPublishingService {
      */
     @Transactional(readOnly = true)
     public PageResponse<AdminDomainView> listDomains(AuthenticatedUser actor, UUID orgId,
-            DomainKind kind, DomainStatus status, int page, int size) {
-        OrgScope scope = scopedOrgId(actor, orgId);
-        Page<Domain> domains = domainRepository.findAdmin(orgFilter(scope), name(kind), name(status),
+            UUID workspaceId, DomainKind kind, DomainStatus status, int page, int size) {
+        Long requested = orgId == null ? null : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
+        OrgScope scope = kr.ac.pusan.pickle.admin.StudentSupportPolicy.filterScope(actor, orgId, requested);
+        Long internalWorkspace = workspaceId == null ? null : workspaceRepository.findByPublicId(workspaceId)
+                .map(Workspace::getId).orElse(-1L);
+        Page<Domain> domains = domainRepository.findAdmin(orgFilter(scope), internalWorkspace, name(kind), name(status),
                 page(page, size));
         Context ctx = context(domains.getContent());
         List<AdminDomainView> content = domains.getContent().stream()
                 .map(domain -> view(domain, ctx)).toList();
         return PageResponse.of(content, domains);
+    }
+
+    @Transactional(readOnly = true)
+    public AdminDomainView getDomain(AuthenticatedUser actor, UUID domainId) {
+        Domain domain = requireReadableDomain(actor, domainId);
+        AdminDomainView observed = view(domain, context(List.of(domain)));
+        if (observed.orgId() == null || observed.orgName() == null
+                || observed.workspaceId() == null || observed.workspaceName() == null) {
+            throw domainNotFound();
+        }
+        return observed;
     }
 
     @Transactional(readOnly = true)
@@ -248,7 +263,7 @@ public class AdminPublishingService {
      */
     @Transactional(readOnly = true)
     public List<DnsRecordSetView> listRecords(AuthenticatedUser actor, UUID domainId) {
-        Domain domain = requireReadableDomain(actor, domainId);
+        Domain domain = requireScopedDomain(actor, domainId, true);
         return recordRepository
                 .findByDomainIdAndStatusNotOrderByIdAsc(domain.getId(), DomainRecordStatus.REMOVED)
                 .stream()
@@ -482,8 +497,8 @@ public class AdminPublishingService {
                     "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
         }
         long domainId = domain.getId();
-        runAfterCommit("enqueue verify " + domain.getPublicId(),
-                () -> domainVerificationJob.requestVerify(domainId));
+        AfterCommit.queue("enqueue verify " + domain.getPublicId(),
+                () -> domainVerificationJob.requestVerifyReceipt(domainId));
         Map<String, Object> args = new java.util.LinkedHashMap<>();
         args.put("fqdn", domain.getFqdn());
         Map<String, Object> old = new java.util.LinkedHashMap<>();
@@ -560,7 +575,11 @@ public class AdminPublishingService {
      * write question hides an organisation's own rows from its own viewer.</p>
      */
     private Domain requireReadableDomain(AuthenticatedUser actor, UUID domainId) {
-        return requireScopedDomain(actor, domainId, true);
+        Domain domain = domainRepository.findByPublicId(domainId)
+                .orElseThrow(AdminPublishingService::domainNotFound);
+        if (domain.getStatus() == DomainStatus.REMOVED) { throw domainNotFound(); }
+        kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireRead(actor);
+        return domain;
     }
 
     private Domain requireScopedDomain(AuthenticatedUser actor, UUID domainId, boolean forRead) {
@@ -601,6 +620,9 @@ public class AdminPublishingService {
     private void requireScope(AuthenticatedUser actor, Domain domain, boolean forRead) {
         if (!actor.role().isOrgTier()) {
             return;
+        }
+        if (domain.getOrgId() == null) {
+            throw domainNotFound();
         }
         boolean allowed = forRead ? actor.reads(domain.getOrgId())
                 : actor.operates(domain.getOrgId());

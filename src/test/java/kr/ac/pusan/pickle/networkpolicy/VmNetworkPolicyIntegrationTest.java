@@ -120,6 +120,35 @@ class VmNetworkPolicyIntegrationTest {
     }
 
     @Test
+    void supportMetadataDoesNotWidenRawPolicyWhileAssignedViewersAndSystemRolesStillRead() throws Exception {
+        long actualOrg = SeedFixtures.seedOrgId(jdbc);
+        long foreignOrg = jdbc.queryForObject("insert into orgs(name) values(?) returning id", Long.class,
+                "Policy foreign institution " + UUID.randomUUID());
+        for (UserRole role : List.of(UserRole.ORG_VIEWER, UserRole.ORG_MANAGER, UserRole.ORG_ADMIN)) {
+            User actor = user("policy-support-" + UUID.randomUUID() + "@pickle.local", "Policy reader");
+            actor.setRole(role); actor = users.saveAndFlush(actor);
+            SeedFixtures.grantOrgRole(jdbc, actor.getId(), foreignOrg, role);
+            String token = jwt.createAccessToken(actor);
+            mockMvc.perform(get("/api/v1/admin/vms/" + vmPublicId).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.passwordRevealAllowed").value(false));
+            mockMvc.perform(get("/api/v1/admin/vms/" + vmPublicId + "/network-policy")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+            SeedFixtures.grantOrgRole(jdbc, actor.getId(), actualOrg, UserRole.ORG_VIEWER);
+            mockMvc.perform(get("/api/v1/admin/vms/" + vmPublicId + "/network-policy")
+                            .header("Authorization", "Bearer " + jwt.createAccessToken(actor)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.systemRules.length()").value(4));
+        }
+        for (UserRole role : List.of(UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN)) {
+            User actor = user("policy-system-" + UUID.randomUUID() + "@pickle.local", "Policy system reader");
+            actor.setRole(role); actor = users.saveAndFlush(actor);
+            mockMvc.perform(get("/api/v1/admin/vms/" + vmPublicId + "/network-policy")
+                            .header("Authorization", "Bearer " + jwt.createAccessToken(actor)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.systemRules.length()").value(4));
+        }
+    }
+
+    @Test
     void editorReplacesRulesByRevisionWhileViewerIsReadOnly() throws Exception {
         mockMvc.perform(get("/api/v1/vms/" + vmPublicId + "/network-policy")
                         .header("Authorization", "Bearer " + viewerToken))

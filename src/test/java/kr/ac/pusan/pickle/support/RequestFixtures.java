@@ -98,7 +98,8 @@ public final class RequestFixtures {
                 values ('LLM_API_KEY', ?, ?, ?, ?, left(?, 100))
                 returning id
                 """, Long.class, workspaceId, orgId, requesterId, purpose, purpose);
-        jdbc.update("insert into llm_key_request_details (request_id) values (?)", requestId);
+        jdbc.update("insert into llm_key_request_details (request_id, req_passthrough_endpoints) "
+                + "values (?, '[\"chat\"]')", requestId);
         return requestId;
     }
 }

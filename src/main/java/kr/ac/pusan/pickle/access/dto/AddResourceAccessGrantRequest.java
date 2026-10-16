@@ -14,5 +14,9 @@ public record AddResourceAccessGrantRequest(
         @Schema(description = "대상 사용자 id. granteeType이 USER일 때만 보내며, 소유 워크스페이스의 구성원이어야 합니다.")
         @Nullable UUID userId,
         @Schema(description = "부여할 등급. 워크스페이스 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다.")
-        @NotNull ResourceRole role) {
+        @NotNull ResourceRole role,
+        @jakarta.validation.Valid @Nullable AccessConfirmation confirmation) {
+    public AddResourceAccessGrantRequest(AccessGranteeType granteeType, @Nullable UUID userId, ResourceRole role) {
+        this(granteeType, userId, role, null);
+    }
 }

@@ -225,35 +225,37 @@ class AdminUserProfileTest {
     }
 
     @Test
-    void aNonSysAdminCannotReachIt() throws Exception {
-        User orgAdmin = ensureUser("aup.orgadmin@pusan.ac.kr", UserRole.ORG_ADMIN, "기관관리자");
-        // 학번 identifies a real person and a wrong one is not the holder's to
-        // fix, so this stays with the role that holds every other write on
-        // another account. Widening it later is a decision, not an oversight.
-        mockMvc.perform(patch("/api/v1/admin/users/" + target.getPublicId() + "/profile")
+    void supportCapabilitiesAndProfileCorrectionFollowAssignedRolesWithoutStaffQualification() throws Exception {
+        for (UserRole role : java.util.List.of(UserRole.ORG_VIEWER, UserRole.ORG_MANAGER,
+                UserRole.ORG_ADMIN, UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN)) {
+            User actor = ensureUser("aup.cap." + role + "@pusan.ac.kr", role, "Support actor");
+            if (role.isOrgTier()) {
+                SeedFixtures.grantOrgRole(jdbcTemplate, actor.getId(), SeedFixtures.seedOrgId(jdbcTemplate), role);
+            }
+            actor.setProfile(UserPosition.STUDENT_UNDERGRAD, "C" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 9), null, null);
+            actor = userRepository.saveAndFlush(actor);
+            String token = jwtService.createAccessToken(actor);
+            boolean corrects = role == UserRole.ORG_MANAGER || role == UserRole.ORG_ADMIN || role == UserRole.SYS_ADMIN;
+            mockMvc.perform(get("/api/v1/admin/users/" + target.getPublicId())
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.studentNo").value("322012345"))
+                    .andExpect(jsonPath("$.supportCapabilities.profileVisible").value(true))
+                    .andExpect(jsonPath("$.supportCapabilities.canCorrectProfile").value(corrects))
+                    .andExpect(jsonPath("$.supportCapabilities.canEnableAccount").value(role == UserRole.SYS_ADMIN));
+            mockMvc.perform(patch("/api/v1/admin/users/" + target.getPublicId() + "/profile")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"studentNo\":\"322012345\"}"))
+                    .andExpect(corrects ? status().isOk() : status().isForbidden());
+        }
+        User orgAdmin = ensureUser("aup.sysmask@pusan.ac.kr", UserRole.ORG_ADMIN, "Support actor");
+        SeedFixtures.grantOrgRole(jdbcTemplate, orgAdmin.getId(), SeedFixtures.seedOrgId(jdbcTemplate), UserRole.ORG_ADMIN);
+        User systemTarget = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow();
+        mockMvc.perform(patch("/api/v1/admin/users/" + systemTarget.getPublicId() + "/profile")
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(orgAdmin))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"studentNo\":\"322099999\"}"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"departmentOther\":\"Unexpected\"}"))
                 .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void theOrgTierDoesNotSeeTheProfileOnTheDetail() throws Exception {
-        // This endpoint admits ORG_VIEWER, which an organisation grants to
-        // ANOTHER organisation's staff, and it is not org-scoped — so filling
-        // 학번 in for the org tier would hand every organisation's staff every
-        // account's identifier. Drawn at the line the audit log draws.
-        User orgAdmin = ensureUser("aup.orgadmin@pusan.ac.kr", UserRole.ORG_ADMIN, "기관관리자");
-        mockMvc.perform(get("/api/v1/admin/users/" + target.getPublicId())
-                        .header("Authorization", "Bearer " + jwtService.createAccessToken(orgAdmin)))
-                .andExpect(status().isOk())
-                // The row is still readable; the identifier is not.
-                .andExpect(jsonPath("$.email").value(TARGET))
-                .andExpect(jsonPath("$.studentNo").doesNotExist())
-                .andExpect(jsonPath("$.position").doesNotExist())
-                .andExpect(jsonPath("$.departmentCode").doesNotExist())
-                .andExpect(jsonPath("$.departmentName").doesNotExist())
-                .andExpect(jsonPath("$.departmentOther").doesNotExist());
     }
 
     @Test

@@ -30,9 +30,10 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   동시에 승인되어 결재자 없는 승인 기록이 남습니다. 이름은 사용 기한을 가지며 연장하지
   않으면 레코드가 내려가고 예약 기간 동안만 같은 워크스페이스가 되살릴 수 있습니다.
 - **LLM API 키 관리**: 승인된 신청에서 키를 만들고 발급과 한도, 정지, 재개, 폐기 상태를
-  관리합니다. 관리자 조회는 기관별 역할 범위로 제한하며, 7·30·90일 수요와 주요 소비처,
+  관리합니다. 키별 metadata와 사용량 집계는 전역 학생 지원 권한으로 조회하며, 기관별
+  운영 관측은 기관 역할 범위를 따릅니다. 7·30·90일 수요와 주요 소비처,
   실제 한도 차단, usage 전달 신뢰도를 DB cache에서 함께 조회합니다. 키 하나와 사업
-  account 하나, 그리고 모델과 호출 경로와 기능 권한별 분해도 같은 범위로 읽습니다.
+  account 하나, 모델과 호출 경로, 기능 권한별 분해를 제공합니다.
 - **usage event의 금액은 귀속이지 청구가 아닙니다**: `llm_usage_events.cost_usd`는 요청마다
   upstream이 알려 준 값이고, 한도를 견주거나 잔액을 말하는 자리는 언제나 vendor meter입니다.
   둘은 창이 다르고 이쪽에는 가격이 붙지 않은 요청이 빠져 있으므로 서로 빼거나 한 숫자로
@@ -56,7 +57,8 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 - **드리프트 감시**: 기록된 상태와 하이퍼바이저의 실제 상태가 어긋나면 찾아내 관리자
   화면에 올립니다. 스스로 고치거나 지우지 않습니다.
 - **알림**: 승인, 만료 임박, 프로비저닝 결과 같은 사건을 콘솔 알림함에 쌓고 메일로도
-  내보냅니다.
+  내보냅니다. VM 삭제 알림은 접수와 예약, 취소, 강제 삭제, 완료 시점에 활성 VM 소유자와
+  워크스페이스 소유자에게 보냅니다. 두 범위에 겹치는 소유자는 한 번만 수신합니다.
 - **공지사항**: 팝업으로 띄울지가 로그인 없이 보이는지까지 함께 정합니다. 팝업으로 올린
   공지는 방문자에게 바로 열리고, 나머지는 로그인한 사용자의 게시판에 남습니다. 볼 수 없는
   공지는 거절이 아니라 404로 답합니다. 본문 이미지는 클라이언트가 선언한 형식이 아니라
@@ -406,6 +408,165 @@ GPU 양쪽의 편집 권한 및 중단 동의를 확인합니다. `detach`는 �
 대기 중인 신청 메일은 재선정하거나 재검사하지 않습니다. 발송 결과의 `SENT`는 SMTP
 인계이며 메일함 도착을 뜻하지 않습니다.
 
+## 사용자 관계와 접근 조건
+
+기관 열람자와 운영자, 관리자는 시스템 계층 계정을 제외한 사용자의 프로필, 워크스페이스,
+초대, 신청 결과와 자원 metadata를 전역 조회합니다. 시스템 계층은 모든 계정을 조회합니다.
+역할 부여 자체를 지원 자격으로 사용하며 직책이나 학생의 기관 연결을 추가로 요구하지 않습니다.
+`GET /api/v1/admin/users/{userId}/support`는 실제 구성원 관계와 신청 대상자 상태,
+생성된 리소스를 연결합니다. 이메일과 저장 학번으로 대기 초대를 연결하며 이미 수락된
+초대는 실제 사용자 ID를 따릅니다. 기존 종류별 관리자 목록과 단건 상세에도 같은 지원
+읽기를 적용합니다. `orgId`는 조회 필터이며 `GET /api/v1/admin/support-orgs`는 비활성
+기관을 포함한 필터 옵션의 ID와 이름, 상태를 제공합니다. 신청과 도메인 목록의
+`workspaceId`는 워크스페이스로 대상을 좁힙니다.
+
+사용자 상세의 `supportCapabilities`는 프로필 조회와 정정, 계정 활성화의 가능 여부를
+구분합니다. 워크스페이스 구성원의 `supportDetailVisible`도 같은 계정 공개 기준을
+따릅니다. 자격증명과 원문 내용, 물리 인프라 조회 및 실제 기관 집행 권한은 기존 인가를
+사용합니다. LLM 키 사용량의 토큰·금액·모델별 집계는 지원 metadata에 포함합니다.
+
+`GET /api/v1/admin/users/{userId}/support/access?type=VM&resourceId=...`는 지정 리소스의
+구성원 자격과 개인 부여, 워크스페이스 전체 부여 및 계정 상태를 읽습니다. 워크스페이스
+소유자의 접근 목록 관리 권한은 내용 접근 등급과 구분합니다. 공통 조건 충족은 VM 연결이나
+LLM 호출의 성공 판정이 아니며, 이미 발급된 비밀번호와 키 평문은 부여 회수로 지워지지
+않습니다. 외부 도메인이 아닌 VM 연결 도메인은 해당 VM의 접근 조건과 관리자 도메인
+목록에서 확인합니다.
+
+기관 운영자와 관리자, 시스템 관리자는 `PATCH /api/v1/admin/users/{userId}/profile`로
+프로필을 정정하며 `POST /api/v1/admin/users/{userId}/profile-impact`의 `action: PROFILE`과
+정정할 `profile`로 저장 전 초대 영향을 확인합니다. 계정 활성화의 `action: ENABLE`과
+실제 활성화·정지·MFA 초기화는 시스템 관리자에게만 허용합니다.
+프로필은 실제 정정과 같은 생략 및 명시 null, 학번 정규화를 적용합니다. 활성 계정에
+새 학번이 들어가거나 비활성 계정이 ACTIVE로 복원될 때만 초대를 수락할 수 있습니다.
+PENDING_VERIFICATION으로 복원하면 인증을 기다립니다. 이 조회는 초대를 수락하거나
+작업을 접수하지 않습니다. 저장 후 지원 조회에서 실제 가입과 생성 대기, 생성된 행을
+다시 확인하며 VM 자체의 생성 완료는 VM 상태로 확인합니다.
+
+기관 운영자와 관리자, 시스템 관리자는 `/api/v1/admin/workspaces/{workspaceId}`에서 정보를
+수정하고 구성원 초대, 소유자 지정과 해제, 구성원 제거 및 삭제를 수행합니다. 응답의
+기능별 capability와 구성원별 `canChangeRole`·`canRemove`는 현재 권한과 보호 조건을
+반영합니다. 개인 워크스페이스의 구성원 구조와 유형을 유지하며 마지막 소유자는 강등하거나
+제거할 수 없습니다. 마지막 소유자의 탈퇴도 자원 유무와 관계없이 차단합니다. 소유자를
+위임하거나 워크스페이스를 삭제한 뒤 탈퇴할 수 있습니다. 삭제되지 않은 자원이 남아 있으면
+워크스페이스 삭제를 거절합니다.
+
+`/api/v1/admin/resource-access/{resourceType}/{resourceId}`는 VM, LLM API 키, 외부 도메인과 GPU 할당의
+접근 목록을 읽고 변경합니다. 지원 읽기 역할은 전체 목록을 조회하며 `canManageAccess`가
+true인 기관 운영자·관리자와 시스템 관리자만 지원 변경을 수행합니다. 단건과 관리자 일괄
+변경은 같은 부여 로직을 사용합니다. 워크스페이스 전체에는 VIEWER 또는 MEMBER까지만
+부여합니다. 관리자 일괄 접근 변경의 REVOKE는 비활성 계정이나 워크스페이스를 떠난 사용자의
+남은 개인 부여를 회수할 수 있습니다. 새 부여와 등급 변경은 활성 구성원에게만 허용하며,
+일괄 회수는 워크스페이스 전체 부여를 유지합니다. 회수할 개인 부여가 없으면 `NO_GRANT`로
+거절합니다. 일반 소유자의 기존 단건 등급 변경 조건은 유지합니다. 계정 정지 자체는 부여나
+기관 역할을 자동으로 회수하지 않습니다.
+
+수행자의 실효 접근이 증가하면 미리보기의 정확한 대상과 얻는 등급을 확인한
+`confirmation`이 필요합니다. 변경 목적과 fingerprint, `confirmed: true`를 제출하며 현재
+권한이 달라지면 다시 미리보기를 받아야 합니다. 본인 부여와 등급 상승, 공유 부여로 얻는
+권한 및 지원 경로의 자기 초대에도 같은 확인을 적용합니다. 자기 프로필 정정으로 초대를
+수락하는 경우 `actorAccessImpact`는 기존 자원의 권한 증가와 승인된 신청의 미래 OWNER
+생성 대기를 구분합니다. `QUEUED`는 생성 완료를 뜻하지 않습니다. 일반 가입과 활성화,
+첫 프로필 저장의 자동 초대 수락은 기존 흐름을 사용합니다.
+
+## 기간 변경과 일괄 변경 결과
+
+VM의 `endDate`는 KST 기준 해당 날짜까지 포함하며, 끝 날짜가 없으면 고정 종료일이
+없습니다. 만료만으로 연장을 거절하지 않지만 삭제에 들어간 VM은 기존 상태 보호를
+적용합니다. LLM 키의 끝 날짜는 다음 날 KST 00:00의 만료 시각으로 변환합니다.
+폐기된 키는 변경할 수 없으며 유료 제공자에 이미 발급된 키의 기존 만료 시각을 뒤로
+미룰 수 없습니다. 미발급 키와 교내 키의 만료 변경은 기존 재활성화 조건을 사용합니다.
+외부 도메인의 갱신 기한은 기존 도메인 유형과 해제 상태 조건을 유지합니다.
+
+`POST /api/v1/admin/bulk-changes/preview`는 최대 200개 대상의 판정과 확인값을 저장하고
+`previewId`·`createdAt`·`expiresAt`를 반환합니다. 대상 자원은 변경하지 않습니다.
+`POST /api/v1/admin/bulk-changes`는 같은 변경·대상·fingerprint에 `previewId`와
+클라이언트가 한 번 생성한 `operationId`를 추가합니다. `operationId`는 결과의
+`batchId`와 같고 응답 유실 뒤에도 유지합니다. 하나의 미리보기는 한 적용에만 사용하며,
+같은 적용 식별자에 다른 본문을 보내거나 새 식별자로 소비한 미리보기를 재사용하면
+409로 거절합니다. 새 적용은 미리보기 저장 후 24시간까지 허용합니다. 이미 커밋된
+동일 적용의 결과 조회와 정확한 재시도에는 이 제한을 적용하지 않습니다.
+
+본인의 미리보기는 `GET /api/v1/admin/bulk-changes/previews/{previewId}`, 결과는
+`GET /api/v1/admin/bulk-changes/operations/{operationId}`에서 다시 엽니다.
+미리보기의 `consumedOperationId`는 이미 저장된 결과로 연결합니다.
+`GET /api/v1/admin/bulk-changes/operations`는 본인의 최근 결과 최대 20개를 반환합니다.
+현재 계정의 역할과 대상별 변경 범위를 다시 검사하며 조회할 수 없는 이름·값·확인값과
+변경 내용, 후속 작업 참조는 가립니다. 조회는 변경이나 작업을 다시 실행하지 않습니다.
+응답 유실 뒤 결과 조회가 404이면 접수 여부를 확인할 수 없다는 뜻이며 새 식별자로
+자동 적용하지 않습니다.
+
+대상별 `APPLIED`·`STALE`·`SKIPPED`·`UNCHANGED`는 저장 당시 결과를 유지합니다.
+`APPLIED`와 `COMMITTED`는 DB 변경과 결과 저장의 커밋을 뜻합니다. `effects`의
+`REGISTERED`는 callback 등록, `ACCEPTED`는 실제 queue 접수 참조가 확인됐다는 뜻입니다.
+감사 callback의 `COMPLETED`, 현재 `queueState`의 `SUCCEEDED`도 외부 자원의 물리적
+완료를 대신하지 않습니다. 오류를 내부에서 처리해 접수 증거가 없으면 `UNKNOWN`으로
+남고 후기 관측 저장 실패가 기존 변경을 되돌리거나 재실행하지 않습니다.
+`observations`는 현재 DB가 알고 있는 공개 값과 현재 조회 거절을 별도로 제공합니다.
+현재 값이 요청과 같다는 이유만으로 이 적용의 외부 완료를 판정하지 않습니다.
+
+## 통합 자원 기한 조회
+
+`GET /api/v1/admin/resource-deadlines`는 여섯 관리자 역할이 전역 메타데이터를 자원당
+주 기한 하나로 조회하는 경로입니다. `orgId`, `workspaceId`, `type`, `deadlineKind`는
+선택 필터이며 없는 기관·워크스페이스 식별자는 빈 페이지로 응답합니다. `page`는 0부터,
+`size`는 기본 20·최대 100입니다. `sort=deadlineAt` 또는 `-deadlineAt`으로 정렬하고
+같은 기한은 종류와 공개 ID 순서로 유지합니다. Count와 페이지는 같은 DB snapshot입니다.
+
+VM은 그날까지 포함하는 사용 종료일, LLM 키는 정확한 만료 시각을 사용합니다. 외부
+도메인은 해제 전에는 갱신 기한, 해제 후에는 현재 예약 설정을 적용한 예약 종료입니다.
+GPU는 대기 중이면 승인 종료일, 할당·반납 중이면 실제 임대 종료가 주 기한이며 승인
+기간과 임대 시각을 별도 날짜 문맥으로 제공합니다. 종료 상태와 주 기한 없는 자원은
+조회에서 제외합니다. 기관·워크스페이스 정보가 없는 해제 도메인도 전역 조회에 남습니다.
+
+`expiringInDays=1..365`는 KST 오늘부터 오늘+N일까지의 달력 창입니다. VM·대기 GPU는
+종료일 양끝을 포함합니다. LLM 키는 서버 관측보다 미래인 만료 시각 중 오늘+N 다음 날
+0시까지 포함하므로 그날까지 사용 가능한 키를 담습니다. 도메인·GPU 임대의 정확한
+시각은 같은 다음 날 0시 미만입니다. `expired=true`는 포함 종료일이 오늘보다 이전이거나
+정확한 기한이 관측 시각 이하인 자원을 조회합니다. 두 조건을 지정하면 교집합은 비어 있습니다.
+
+응답의 `overdue`와 `observedAt`은 서버의 기한 판정입니다. `sourceStatus`는 저장 상태이고
+LLM 키의 `status`는 현재 만료를 반영합니다. 날짜 경과는 정지·회수·삭제 완료를 뜻하지
+않으며 GPU 연결 상태와 종류별 저장 날짜는 따로 제공합니다. 실제 기간 변경·키 만료일
+변경·도메인 갱신 조정·GPU 임대 연장은 기존 상세와 실제 기관 쓰기 권한을 사용합니다.
+
+## 신청 검토와 배치 조건
+
+`GET /api/v1/admin/requests/{requestId}/context`는 참고 자료의 실제 기관과 상세 조회
+가능 여부를 제공합니다. `recipientUserReadFlags`는 저장된 실제 대상 계정의 사용자 관리
+상세 읽기 여부를 현재 디렉터리 권한과 대조합니다. 워크스페이스를 떠난 대상도 연결하며
+가입 전 이메일이나 학번으로 새 계정 관계를 추정하지 않습니다. 생성 결과는 VM과 LLM API 키, GPU 할당, 새 발급 도메인의 `request_id`에서
+조회하며, VM은 실제 배치 노드도 함께 확인합니다. 대상자 `CREATED`는 자원 행이
+등록됐다는 결과입니다. VM의 `CREATING`, `ERROR`, `RUNNING`은 별도로 읽고, LLM 키와
+GPU 할당은 각 종류의 상태를 유지합니다. 기록 갱신 시각은 외부 시스템 적용이나 연결
+성공을 측정한 시각이 아닙니다. 새 도메인 승인은 발급과 같은 트랜잭션에서 원래 신청
+연결을 기록합니다. `REMOVED` 이력은 같은 기관의 역사 목록 범위에서 관측하며 상세
+조회 가능 여부는 별도로 표시합니다. raw `ACTIVE`와 해제 시각, 갱신 기한, 예약 종료는
+서로 구분합니다. 신청 FK가 없는 과거 도메인의 발급 이름은 보존하며, 현재 같은 이름의
+도메인을 과거 결과의 자원 ID로 추정하지 않습니다. 과거 행을 이름으로 backfill하지 않습니다.
+
+`GET /api/v1/admin/domains/{domainId}`는 관리자 목록과 같은 도메인 상태를 정확한 ID로
+읽습니다. 조회 가능한 기관과 삭제 여부는 레코드 열람과 같은 기준이며, 접근할 수 없거나
+삭제된 도메인은 404로 응답합니다. 해제·갱신·예약 시각과 저장된 DNS 상태를 제공하고
+외부 DNS 조회, provider 적용, 감사 기록이나 작업 생성은 실행하지 않습니다.
+기관이나 워크스페이스 관계를 확인할 수 없어 필수 정보를 만들 수 없는 과거 행도 404로 응답합니다.
+
+`POST /api/v1/admin/vm-placement/preview`는 승인 가능한 기관과 `imageId`, `vcpu`,
+`memoryMb`, `diskGb`를 받아 한 VM의 현재 배치 조건을 조회합니다. 신청 저장 전과
+저장된 신청의 승인 검토에서 같은 조회를 사용합니다. 논리 이미지의 동일 revision에
+대해 호환 ACTIVE replica와 ACTIVE 노드를 확인하고 실제 배치 용량 계산을 재사용합니다.
+노드 식별자와 이름, 현재 한 VM 적합성만 제공하며 일반 노드 목록의 기관 조회 권한을
+확대하지 않습니다. 조회는 용량을 예약하거나 승인하지 않고, 다인 전체 용량도 예약하지
+않습니다. 실제 생성 시점에는 같은 조건을 다시 검증합니다.
+응답의 `inputImageId`는 검증한 입력 식별자이고 `image.id`는 같은 논리 revision의
+canonical 이미지 식별자입니다. 호환 replica를 입력한 경우 두 식별자는 다를 수 있습니다.
+
+관리자 신청 목록의 `q`는 신청 표시 이름과 목적, 신청자 이름과 이메일, 워크스페이스
+이름을 검색합니다. 프로필 학번은 검색하지 않습니다. `requestedEndFrom`과
+`requestedEndTo`, `reqIndefinite`는 신청에 저장된 요청 종료일을 필터링합니다. 현재
+기간 카탈로그 날짜나 부여 종료일로 바꾸어 해석하지 않습니다. `relatedUserId`는 실제
+신청자와 대상 계정, 수락된 초대의 계정 연결만 조회하며 미가입자의 학번으로 계정을
+추측하지 않습니다. 조건은 페이지를 나누기 전에 적용합니다.
+
 ## API 명세
 
 springdoc이 생성한 `contract/openapi.yaml`이 커밋된 as-built 스펙이고, 콘솔의
@@ -579,12 +740,13 @@ JobRunr 작업 실패로 드러납니다. 기본 보존 설정은 0으로, 원�
 JDK 25와 Maven, 로컬 PostgreSQL 18이 필요합니다.
 
 ```bash
-# 기본 접속 정보가 가리키는 역할과 데이터베이스를 먼저 만듭니다.
+# 로컬 또는 별도 개발 PostgreSQL에 역할과 데이터베이스를 먼저 만듭니다.
 sudo -u postgres psql -c "create role pickle login password '<직접 정한 값>'"
 sudo -u postgres createdb -O pickle pickle_dev
 
 # 자격증명에는 커밋된 기본값이 없습니다. 로컬 기동 전에 직접 export 하세요.
 export PICKLE_DB_PASSWORD=...            # 위에서 역할에 준 값
+export PICKLE_DB_URL=jdbc:postgresql://127.0.0.1:5432/pickle_dev
 export PICKLE_JWT_SECRET=...             # 32바이트 이상
 export PICKLE_CREDENTIALS_KEY=...        # base64 32바이트
 export PICKLE_SEED_SYSADMIN_PASSWORD=...
@@ -603,6 +765,10 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
   회원가입 인증 링크는 거기서 꺼내면 됩니다.
 - `users.email` 컬럼이 `citext` 확장을 쓰므로 마이그레이션 역할에 확장 생성 권한이
   필요합니다.
+- dev 프로파일은 loopback PostgreSQL을 사용하거나 원격 개발 DB의 기대값을
+  `PICKLE_DEV_DB_HOST`, `_NAME`, `_USER`로 지정합니다. 원격 접속에는
+  `sslmode=verify-full`과 절대 경로의 `sslrootcert`가 필요합니다. 실제 접속 설정과
+  DB의 개발 표시를 context 생성과 Flyway 실행 전에 검사합니다.
 
 ## 구성
 
@@ -788,6 +954,54 @@ V100은 contract migration이라 `openrouter_legacy` 컬럼을 지우며, 그 �
 잡습니다. 롤백 경로는 forward-fix 또는 DB restore입니다.
 
 ### 시드 계정 (dev/test 전용, 멱등)
+
+새 dev DB의 노드, IP 풀, relay, 루트 도메인, OS 이미지의 template VMID와 사용자 VMID
+시작값은 `PICKLE_DEV_*` 변수로 지정합니다. 기본값은 `.invalid` 호스트와 문서 전용
+`192.0.2.0/24` 주소를 사용하므로 실제 인프라 작업에 쓸 수 없습니다. 시더는 빈 표만
+채우고 새 DB에 개발 표시를 기록합니다. 기동 시 실제 Spring datasource 설정을 검사한 뒤,
+context 생성과 Flyway 실행 전에 읽기 전용 연결로 기존 DB의 개발 표시를 확인합니다.
+사용자 테이블이나 시퀀스가 있는데 표시가 없으면 거부합니다. 마이그레이션 뒤 시드 전에
+첫 기동이 실패한 DB도 이 조건에 해당하므로 자동으로 개발 표시를 추가하지 않습니다.
+새 개발 DB는 비어 있는 상태에서 시작해야 합니다. 별도 Flyway URL·자격증명, Hikari의
+연결 대상·자격증명 재정의 및 추가 JDBC driver 속성은 허용하지 않습니다. JDBC URL의
+query는 중복 없는 `sslmode`와 `sslrootcert`만 허용합니다. 이미 할당한 VMID가 지정한 시작값보다 낮으면 기동을 거부하며,
+시퀀스를 되감지 않습니다.
+
+| 변수 | 용도 | 기본값 |
+|---|---|---|
+| `PICKLE_DEV_ROOT_DOMAIN` | 시드 루트 도메인 | `dev.pickle.test` |
+| `PICKLE_DEV_NODE_NAME` / `_API_HOST` / `_CPU_THREADS` / `_MEMORY_MB` / `_VM_BRIDGE` / `_STORAGE` | 시드 Proxmox 노드의 이름, API URL, 자원 및 배치 경로 | `dev-pve` / `https://dev-proxmox.invalid:8006` / `4` / `4096` / `vmbr-dev` / `dev-storage` |
+| `PICKLE_DEV_IP_POOL_NAME` / `_CIDR` / `_GATEWAY` / `_DNS` / `_RESERVED_RANGES` | 개발 게스트 전용 주소와 예약 범위. 마지막 값은 JSON 배열 | `dev-guest` / `192.0.2.0/24` / `192.0.2.1` / `192.0.2.53` / `[]` |
+| `PICKLE_DEV_TEMPLATE_VMID` / `_VMID_START` | 시드 이미지의 template VMID와 새 VM 번호의 시작값 | `9001` / `900000000` |
+| `PICKLE_DEV_RELAY_NAME` / `_SOURCE_IP` / `_PUBLIC_HOST` / `_PORT_START` / `_PORT_END` | 시드 relay의 식별자와 별도 접속 범위 | `dev-relay` / `192.0.2.2` / `relay.invalid` / `30000` / `30999` |
+| `PICKLE_DEV_ENABLE_GATEWAYS` | 새 개발 DB의 SSH와 웹 터미널 전역 스위치 | `false` |
+| `PICKLE_DEV_JOBRUNR_ENABLED` | 개발 DB의 background worker | `false` |
+| `PICKLE_DEV_REAL_INTEGRATIONS_ENABLED` | 별도 토큰과 실제 연동을 사용하는 개발 검증의 명시적 선택 | `false` |
+
+dev 프로파일은 mock 메일, noop DNS, `.invalid` agent와 OpenRouter URL을 기본으로
+선택합니다. 실제 Proxmox 검증에는 전용 토큰, 확인된 node URL, 별도 IP 풀과 예약 범위,
+충돌하지 않는 VMID 시작값을 설정합니다. `PICKLE_DEV_REAL_INTEGRATIONS_ENABLED=true`도
+함께 지정해야 외부 자격증명이나 worker를 사용할 수 있습니다. 내부 agent·gateway 토큰은
+loopback 또는 `.invalid` mock endpoint와 문서 전용 출발지 주소에 연결할 때 이 선택 없이
+사용할 수 있습니다. mock 단계의 임의 외부 endpoint와 일반 네트워크 주소는 기동에서
+거부합니다. synthetic publishing의 루트 도메인도 `.test` 또는 `.invalid`를 사용해야 합니다.
+공개 개발 콘솔의 도메인은 별도 `PICKLE_CONSOLE_BASE_URL`로 설정합니다. 실제 연동을
+선택하기 전에 대상 endpoint와 저장된 inventory의 격리를 확인합니다.
+SMTP 자격증명과 직접 OpenRouter polling은 dev 프로파일에서 허용하지 않습니다.
+
+로컬 DB는 loopback 주소를 사용합니다. 원격 개발 DB는 `PICKLE_DEV_DB_HOST`,
+`PICKLE_DEV_DB_NAME`, `PICKLE_DEV_DB_USER`를 기대값으로 지정해야 하며, 실제
+Spring datasource의 host·DB 이름·사용자가 이 값과 일치해야 합니다.
+`PICKLE_DEV_DB_PORT`를 지정하면 port도 대조합니다. 원격 URL에는
+`sslmode=verify-full`과 절대 경로의 `sslrootcert`가 필요합니다.
+이 변수들은 기대값을 선언하므로 기존 `PICKLE_DB_URL`, `_USER`, `_PASSWORD`도
+실제 연결 값으로 함께 설정합니다. 개발 DB 기대값은 각 환경에서 관리합니다.
+
+개발용 공개 콘솔을 사용할 때에는 `PICKLE_CONSOLE_BASE_URL`,
+`PICKLE_VERIFICATION_BASE_URL`, `PICKLE_PASSWORD_RESET_BASE_URL`,
+`PICKLE_GOOGLE_REDIRECT_URI`를 그 도메인으로 지정합니다. 기본값은 모두
+`dev.pickle.test`이며, 로그인에 Google OAuth를 사용할 경우 개발 전용 client를
+별도로 설정합니다.
 
 | 계정 | 환경 변수 | 기본값 |
 |---|---|---|

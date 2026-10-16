@@ -65,11 +65,19 @@ public record ApproveLlmKeyRequestSpec(
         @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
         @Nullable List<String> grantedCreditDeniedModels,
 
-        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
-                PassthroughEndpoints.EMBEDDINGS}),
-                arraySchema = @Schema(description = "이 키에 부여할 기능 권한. 비우면 기능을 "
-                        + "하나도 쓸 수 없습니다. 모델 목록과 반대로 이 목록은 채워야 "
-                        + "열립니다. 채팅과 모델 조회는 이 목록과 무관합니다."))
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
+                PassthroughEndpoints.WEB_SEARCH, PassthroughEndpoints.PDF_OCR,
+                PassthroughEndpoints.CONTAINERS, PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS, PassthroughEndpoints.RERANK,
+                PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
+                PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
+                PassthroughEndpoints.FILES}),
+                arraySchema = @Schema(description = "이 키에 부여할 기능 권한. 생략하거나 null이면 "
+                        + "신청자가 고른 목록(reqPassthroughEndpoints)으로 승인하고, 빈 배열이면 기능을 "
+                        + "하나도 쓸 수 없습니다(chat도 포함). 모델 목록과 반대로 이 목록은 "
+                        + "채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, "
+                        + "images, embeddings이고, web_search와 pdf_ocr은 chat과 함께 "
+                        + "부여해야 합니다. 모델 조회는 이 목록과 무관합니다."))
         @Size(max = 20, message = "기능은 최대 20개까지 허용할 수 있습니다.")
         @Nullable List<String> grantedPassthroughEndpoints,
 

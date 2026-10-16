@@ -13,6 +13,7 @@ import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyModelsResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyModelsResponse.CatalogFreshness;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyModelsResponse.PaidAccess;
+import kr.ac.pusan.pickle.llm.openrouter.ModelPricings;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCatalogueRefreshJob;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCatalogueRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCreditsFreshness;
@@ -244,7 +245,7 @@ public class LlmKeyModelService {
                         .thenComparing(OpenRouterCatalogueRepository.CatalogueRow::modelId))
                 .map(row -> new LlmKeyModelsResponse.PaidModel(row.modelId(), row.displayName(),
                         perMillion(row.promptPrice()), perMillion(row.completionPrice()),
-                        row.contextLength()))
+                        row.contextLength(), ModelPricings.read(row.pricing())))
                 .toList();
     }
 

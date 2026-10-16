@@ -25,7 +25,8 @@ import org.jspecify.annotations.Nullable;
 @Schema(description = "리소스 접근 권한 목록과, 그 목록이 어느 리소스의 것인지 알려 주는 최소 정보")
 public record ResourceAccessListResponse(
         @Schema(description = "이 목록이 속한 리소스") ResourceBrief resource,
-        @Schema(description = "접근 권한 항목") List<ResourceAccessGrantView> grants) {
+        @Schema(description = "접근 권한 항목") List<ResourceAccessGrantView> grants,
+        @Schema(description = "현재 수행자가 이 목록을 변경할 수 있는지") boolean canManageAccess) {
 
     /** Name, state and owning workspace — the same fields a restricted row shows. */
     @Schema(description = "접근 권한이 없는 사람에게도 보이는 범위의 리소스 정보")
@@ -43,9 +44,14 @@ public record ResourceAccessListResponse(
 
     public static ResourceAccessListResponse of(ResourceType type, ResourceIdentity resource,
             UUID workspaceId, String workspaceName, List<ResourceAccessGrantView> grants) {
+        return of(type, resource, workspaceId, workspaceName, grants, true);
+    }
+
+    public static ResourceAccessListResponse of(ResourceType type, ResourceIdentity resource,
+            UUID workspaceId, String workspaceName, List<ResourceAccessGrantView> grants, boolean canManageAccess) {
         return new ResourceAccessListResponse(
                 new ResourceBrief(resource.publicId(), type, resource.name(), resource.displayName(),
                         resource.status(), workspaceId, workspaceName),
-                grants);
+                grants, canManageAccess);
     }
 }

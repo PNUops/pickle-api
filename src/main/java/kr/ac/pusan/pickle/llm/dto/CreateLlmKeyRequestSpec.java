@@ -1,12 +1,17 @@
 package kr.ac.pusan.pickle.llm.dto;
 
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
+import java.util.List;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -48,5 +53,26 @@ public record CreateLlmKeyRequestSpec(
 
         @Schema(description = "희망 일일 토큰 수. 비우면 서비스 기본값을 받습니다.")
         @Min(value = 1, message = "일일 토큰 수는 1 이상이어야 합니다.")
-        @Nullable Long reqDailyTokens) {
+        @Nullable Long reqDailyTokens,
+
+        /**
+         * Required, and an empty list is a valid answer. A request that says
+         * nothing is refused rather than read as some default, so what the
+         * reviewer sees as asked for is always what the applicant chose.
+         */
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
+                PassthroughEndpoints.WEB_SEARCH, PassthroughEndpoints.PDF_OCR,
+                PassthroughEndpoints.CONTAINERS, PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS, PassthroughEndpoints.RERANK,
+                PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
+                PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
+                PassthroughEndpoints.FILES}),
+                arraySchema = @Schema(description = "신청자가 고른 기능 권한. 필수이며 빈 배열도 받습니다. "
+                                + "승인 화면의 초깃값이 되고, 무엇을 부여할지는 승인자가 정합니다. "
+                                + "지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, images, "
+                                + "embeddings이고 나머지는 422로 거절합니다. web_search와 pdf_ocr은 "
+                                + "chat과 함께 골라야 합니다."))
+        @NotNull(message = "필요한 기능을 골라 주세요. 아무 기능도 쓰지 않으려면 빈 배열을 보내 주세요.")
+        @Size(max = 20, message = "기능은 최대 20개까지 고를 수 있습니다.")
+        List<String> reqPassthroughEndpoints) {
 }

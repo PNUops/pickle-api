@@ -153,11 +153,10 @@ public class AccountService {
         for (WorkspaceMember member : liveMemberships) {
             Workspace workspace = member.getWorkspace();
             if (member.getRole() == WorkspaceMemberRole.OWNER && workspace.getKind() != WorkspaceKind.PERSONAL
-                    && workspaceMemberRepository.countByWorkspaceIdAndRole(workspace.getId(), WorkspaceMemberRole.OWNER) == 1
-                    && vmRepository.countActiveByWorkspaceId(workspace.getId(), VmStatus.DELETED) > 0) {
+                    && workspaceMemberRepository.countByWorkspaceIdAndRole(workspace.getId(), WorkspaceMemberRole.OWNER) <= 1) {
                 throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_SOLE_OWNER_OF_ACTIVE_WORKSPACE,
                         "탈퇴할 수 없습니다",
-                        "삭제되지 않은 VM을 보유한 워크스페이스의 유일한 소유자입니다. 소유권을 이전하거나 VM을 먼저 삭제해 주세요.");
+                        "워크스페이스의 마지막 소유자입니다. 소유자를 위임하거나 워크스페이스를 삭제한 뒤 다시 시도해 주세요.");
             }
         }
         personalWorkspace(liveMemberships).ifPresent(workspace -> {

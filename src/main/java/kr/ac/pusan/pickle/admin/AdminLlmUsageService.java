@@ -61,8 +61,17 @@ public class AdminLlmUsageService {
      * capability is not the route name, and {@code images} covering both the
      * paid generation route and the free catalogue lookup is the whole reason
      * the two vocabularies are kept apart.
+     *
+     * <p>{@code chat} lists the chat-protocol routes the gateway will open
+     * under it as well as {@code chat} itself; a route not served yet simply
+     * counts nothing. A capability judged from the request body rather than
+     * the route ({@code web_search}, {@code pdf_ocr}) has no entry, because a
+     * usage event does not record which plugin or engine a request used, and
+     * a row built from the chat routes would count every chat request as a
+     * use of it.
      */
     private static final Map<String, String> ROUTES_BY_CAPABILITY = Map.of(
+            PassthroughEndpoints.CHAT, "{chat,messages,responses,completions}",
             PassthroughEndpoints.IMAGES, "{images,images_models}",
             PassthroughEndpoints.EMBEDDINGS, "{embeddings}");
     private static final List<String> PRESSURE_REASONS = List.of(
@@ -584,8 +593,10 @@ public class AdminLlmUsageService {
     }
 
     /**
-     * One row per capability, always, including the ones nobody holds. An
-     * absent row would read as "no data" where the useful answer is a zero.
+     * One row per grantable capability whose use a route can show, always,
+     * including the ones nobody holds. An absent row would read as "no data"
+     * where the useful answer is a zero. Names that cannot be granted yet are
+     * left out: a row of zeros for a capability nobody may hold says nothing.
      *
      * <p>The routes a capability opens are listed here rather than derived,
      * because they are not the same word: {@code images} opens the generation
@@ -594,8 +605,11 @@ public class AdminLlmUsageService {
     private List<LlmUsagePassthroughGrantResponse> passthroughGrants(ScopeContext context,
             LocalDate from, LocalDate to) {
         List<LlmUsagePassthroughGrantResponse> rows = new ArrayList<>();
-        for (String capability : PassthroughEndpoints.sorted()) {
+        for (String capability : PassthroughEndpoints.GRANTABLE) {
             String routes = ROUTES_BY_CAPABILITY.get(capability);
+            if (routes == null) {
+                continue;
+            }
             SqlParts keyParts = scopedParts(context, "k.org_id", "k.workspace_id");
             List<Object> grantArgs = new ArrayList<>();
             grantArgs.add(capability);

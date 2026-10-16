@@ -89,4 +89,11 @@ public class VmAccessGrantController {
             HttpServletRequest httpRequest) {
         service.remove(principal, ResourceType.VM, vmId, grantId, clientIp(httpRequest));
     }
+    @PostMapping("/preview")
+    public kr.ac.pusan.pickle.access.dto.ActorAccessImpact previewVmAccessChange(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID vmId,
+            @Valid @RequestBody kr.ac.pusan.pickle.access.dto.ResourceAccessChangePreviewRequest request) {
+        return service.preview(actor, ResourceType.VM, vmId, request, false);
+    }
+
 }

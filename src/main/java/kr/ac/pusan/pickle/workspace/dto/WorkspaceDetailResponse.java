@@ -14,11 +14,11 @@ public record WorkspaceDetailResponse(
         WorkspaceKind kind,
         String name,
         @Nullable String description,
-        WorkspaceMemberRole myRole,
+        @Nullable WorkspaceMemberRole myRole,
         List<WorkspaceMemberResponse> members,
         Instant createdAt) {
 
-    public static WorkspaceDetailResponse from(Workspace workspace, WorkspaceMemberRole myRole,
+    public static WorkspaceDetailResponse from(Workspace workspace, @Nullable WorkspaceMemberRole myRole,
             List<WorkspaceMemberResponse> members) {
         return new WorkspaceDetailResponse(workspace.getPublicId(), workspace.getKind(), workspace.getName(),
                 workspace.getDescription(), myRole, members, workspace.getCreatedAt());

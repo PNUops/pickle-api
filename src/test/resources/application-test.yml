@@ -22,6 +22,27 @@ spring:
     enabled: true
 
 pickle:
+  dev-inventory:
+    root-domain: pusan.dev
+    node-name: pve1
+    node-api-host: https://pve1:8006
+    node-cpu-threads: 40
+    node-memory-mb: 79872
+    node-vm-bridge: vmbr2
+    node-storage: local-lvm
+    ip-pool-name: guest-private
+    ip-pool-cidr: 172.29.0.0/16
+    ip-pool-gateway: 172.29.0.1
+    ip-pool-dns: 8.8.8.8
+    ip-pool-reserved-ranges: '[{"from":"172.29.0.0","to":"172.29.0.255"},{"from":"172.29.255.0","to":"172.29.255.255"}]'
+    template-vmid: 1001
+    vmid-start: 100000
+    relay-name: lightsail-1
+    relay-source-ip: 10.100.100.1
+    relay-public-host: relay.invalid
+    relay-port-start: 10000
+    relay-port-end: 19999
+    enable-gateways: true
   seed:
     # Test-only fixtures: the base document carries no seed password, so the
     # dev/test seeder takes its values from here (dev takes them from the env).

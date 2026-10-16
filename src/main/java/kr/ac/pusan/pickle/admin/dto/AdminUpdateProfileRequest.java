@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin.dto;
 
+import kr.ac.pusan.pickle.access.dto.AccessConfirmation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 import kr.ac.pusan.pickle.user.UserPosition;
@@ -47,6 +48,12 @@ public class AdminUpdateProfileRequest {
     /** Why the correction was made; recorded in the audit entry. */
     @Size(max = 200, message = "사유는 200자 이하여야 합니다.")
     private @Nullable String reason;
+
+    @jakarta.validation.Valid
+    private @Nullable AccessConfirmation confirmation;
+
+    public @Nullable AccessConfirmation getConfirmation() { return confirmation; }
+    public void setConfirmation(@Nullable AccessConfirmation confirmation) { this.confirmation = confirmation; }
 
     public @Nullable UserPosition getPosition() {
         return position;

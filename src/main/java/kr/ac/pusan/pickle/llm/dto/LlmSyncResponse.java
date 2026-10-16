@@ -97,17 +97,16 @@ public sealed interface LlmSyncResponse {
             // above because "not listed" and "listed as refused" are different
             // decisions and only the gateway can combine them.
             List<String> creditDeniedModels,
-            // The passthrough surface this key may reach, as capability tokens
-            // from a closed set rather than paths. A third member and not a
-            // third meaning on either list above, because its empty value goes
-            // the other way: empty grants nothing. A path nobody granted must
-            // not open by the mere act of the gateway learning to serve it.
+            // The capabilities this key may use, as tokens from a closed set
+            // rather than paths. A third member and not a third meaning on
+            // either list above, because its empty value goes the other way:
+            // empty grants nothing. A route nobody granted must not open by the
+            // mere act of the gateway learning to serve it.
             //
-            // It governs only the paths the passthrough surface adds. Chat
-            // completions and the model catalogue are outside it, which is also
-            // what makes the member safe to omit: an older control plane that
-            // sends none is describing "no passthrough", and those are exactly
-            // the paths an older gateway does not serve.
+            // chat is in this set (V139), so the member is no longer safe to
+            // omit against a gateway that enforces chat: absent reads as empty,
+            // and empty refuses chat. That is why a rollback takes the gateway
+            // back first. The model catalogue stays outside it.
             List<String> passthroughEndpoints,
             KeyLimits limits,
             boolean quotaExhausted,

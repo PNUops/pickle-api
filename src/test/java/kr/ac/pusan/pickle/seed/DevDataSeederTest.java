@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.seed;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -11,8 +12,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Seed accounts follow the configured PICKLE_SEED_* password: a stale hash is
@@ -38,6 +41,9 @@ class DevDataSeederTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void staleHashIsReencodedToConfiguredPassword() throws Exception {
@@ -70,5 +76,15 @@ class DevDataSeederTest {
         Org org = orgRepository.findFirstByNameOrderByIdAsc(DevDataSeeder.ORG_NAME).orElseThrow();
         assertThat(org.getName()).isEqualTo(DevDataSeeder.ORG_NAME);
         assertThat(org.isHidden()).isTrue();
+    }
+
+    @Test
+    @Transactional
+    void refusesAnExistingDatabaseWithoutTheDevelopmentMarker() {
+        jdbcTemplate.update("delete from settings where key = 'dev_environment_marker'");
+
+        assertThatThrownBy(() -> seeder.run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("development marker");
     }
 }

@@ -14,6 +14,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A domain (FQDN) owned by a workspace. Platform subdomains (AUTO/PLATFORM)
@@ -66,6 +67,10 @@ public class Domain {
     /** The VM this name serves, when it serves one. Null for EXTERNAL. */
     @Column(name = "vm_id")
     private Long vmId;
+
+    /** Exact issuing request, absent for legacy and non-request issuance. */
+    @Column(name = "request_id")
+    private @Nullable Long requestId;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -222,6 +227,16 @@ public class Domain {
 
     public Long getOrgId() {
         return orgId;
+    }
+
+    public @Nullable Long getRequestId() { return requestId; }
+
+    /** Binding happens within the same approval transaction as issuance. */
+    public void bindRequest(long issuingRequestId) {
+        if (requestId != null && requestId != issuingRequestId) {
+            throw new IllegalStateException("발급 신청 연결을 변경할 수 없습니다.");
+        }
+        requestId = issuingRequestId;
     }
 
     public Long getVmId() {

@@ -1,11 +1,48 @@
 ---
 components:
   schemas:
+    AccessConfirmation:
+      properties:
+        confirmed:
+          description: "미리보기의 권한 증가를 명시적으로 확인했을 때만 true"
+          type: "boolean"
+        fingerprint:
+          description: "미리보기에서 받은 정확한 대상·변경·현재 권한의 지문"
+          type: "string"
+        purpose:
+          description: "권한을 얻는 목적. 증가한 권한과 함께 감사에 기록됩니다."
+          maxLength: 200
+          minLength: 0
+          type: "string"
+      type: "object"
     AccessGranteeType:
       enum:
       - "USER"
       - "WORKSPACE"
       type: "string"
+    AccessIncrease:
+      properties:
+        afterRole:
+          type: "string"
+        beforeRole:
+          type:
+          - "string"
+          - "null"
+        resourceType:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceType"
+          - type: "null"
+        targetId:
+          format: "uuid"
+          type: "string"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "afterRole"
+      - "targetId"
+      - "workspaceId"
+      type: "object"
     Action:
       enum:
       - "ACCEPT"
@@ -49,8 +86,29 @@ components:
       - "createdAt"
       - "id"
       type: "object"
+    ActorAccessImpact:
+      properties:
+        fingerprint:
+          type: "string"
+        increases:
+          items:
+            $ref: "#/components/schemas/AccessIncrease"
+          type: "array"
+        pendingResourceOwners:
+          items:
+            $ref: "#/components/schemas/PendingResourceOwner"
+          type: "array"
+      required:
+      - "fingerprint"
+      - "increases"
+      - "pendingResourceOwners"
+      type: "object"
     AddResourceAccessGrantRequest:
       properties:
+        confirmation:
+          anyOf:
+          - $ref: "#/components/schemas/AccessConfirmation"
+          - type: "null"
         granteeType:
           $ref: "#/components/schemas/AccessGranteeType"
           description: "USER는 지정된 사용자 한 명, WORKSPACE은 소유 워크스페이스 전체"
@@ -68,6 +126,26 @@ components:
       - "granteeType"
       - "role"
       type: "object"
+    AdminApprovalImageReference:
+      properties:
+        id:
+          format: "uuid"
+          type: "string"
+        name:
+          type: "string"
+        selectableNow:
+          description: "동일 revision의 호환 ACTIVE replica가 ACTIVE 노드에 있는지. 이 값은 개별 VM\
+            \ 용량이나 실제 생성 완료를 보장하지 않습니다."
+          type: "boolean"
+        version:
+          format: "int32"
+          type: "integer"
+      required:
+      - "id"
+      - "name"
+      - "selectableNow"
+      - "version"
+      type: "object"
     AdminBulkAccessAction:
       enum:
       - "GRANT"
@@ -78,8 +156,9 @@ components:
       properties:
         action:
           $ref: "#/components/schemas/AdminBulkAccessAction"
-          description: "GRANT는 없는 권한을 만들고, CHANGE는 있는 권한의 등급을 바꾸며, REVOKE는 권한을 지웁니\
-            다."
+          description: "GRANT는 없는 권한을 만들고, CHANGE는 있는 권한의 등급을 바꿉니다. 둘은 활성 구성원에게만 허\
+            용됩니다. REVOKE는 기존 개인 권한을 지우며 비활성 계정과 구성원 해제 후에도 가능합니다. 회수할 개인 권한이 없으면 NO_GRANT로\
+            \ 거부합니다. 워크스페이스 전체 부여는 그대로 둡니다."
         role:
           anyOf:
           - $ref: "#/components/schemas/ResourceRole"
@@ -134,6 +213,69 @@ components:
       - "batchId"
       - "items"
       type: "object"
+    AdminBulkChangeCurrentObservation:
+      properties:
+        observedAt:
+          format: "date-time"
+          type: "string"
+        refusal:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkChangeReason"
+          - type: "null"
+        targetId:
+          format: "uuid"
+          type: "string"
+        values:
+          additionalProperties: {}
+          description: "현재 DB가 알고 있는 대상 값입니다. 요청과 값이 같아도 이 적용의 외부 완료를 증명하지 않습니다."
+          type: "object"
+      required:
+      - "observedAt"
+      - "targetId"
+      - "values"
+      type: "object"
+    AdminBulkChangeEffect:
+      properties:
+        externalReference:
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        kind:
+          type: "string"
+        observedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        outcome:
+          type: "string"
+        queueObservedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        queueState:
+          description: "현재 JobRunr 상태 관측. SUCCEEDED도 외부 자원의 물리적 완료를 뜻하지 않습니다."
+          type:
+          - "string"
+          - "null"
+        registeredAt:
+          format: "date-time"
+          type: "string"
+        targetId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "id"
+      - "kind"
+      - "outcome"
+      - "registeredAt"
+      type: "object"
     AdminBulkChangeFieldDiff:
       properties:
         field:
@@ -161,8 +303,52 @@ components:
       - "DOMAIN_VERIFY"
       - "ACCESS"
       type: "string"
+    AdminBulkChangeOperationResponse:
+      properties:
+        change:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkChangeSpec"
+          - type: "null"
+        committedAt:
+          format: "date-time"
+          type: "string"
+        effects:
+          items:
+            $ref: "#/components/schemas/AdminBulkChangeEffect"
+          type: "array"
+        observations:
+          items:
+            $ref: "#/components/schemas/AdminBulkChangeCurrentObservation"
+          type: "array"
+        operationId:
+          format: "uuid"
+          type: "string"
+        previewId:
+          format: "uuid"
+          type: "string"
+        result:
+          $ref: "#/components/schemas/AdminBulkChangeApplyResponse"
+        status:
+          description: "COMMITTED는 DB 변경과 결과의 커밋입니다. 큐 접수나 외부 완료를 뜻하지 않습니다."
+          type: "string"
+        targetType:
+          $ref: "#/components/schemas/AdminBulkChangeTargetType"
+      required:
+      - "committedAt"
+      - "effects"
+      - "observations"
+      - "operationId"
+      - "previewId"
+      - "result"
+      - "status"
+      - "targetType"
+      type: "object"
     AdminBulkChangePreviewItem:
       properties:
+        actorAccessImpact:
+          anyOf:
+          - $ref: "#/components/schemas/ActorAccessImpact"
+          - type: "null"
         applicable:
           description: "true면 적용할 수 있습니다. fields가 비어 있으면 이미 그 값이라 바뀌지 않습니다."
           type: "boolean"
@@ -195,12 +381,37 @@ components:
       type: "object"
     AdminBulkChangePreviewResponse:
       properties:
+        change:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkChangeSpec"
+          - type: "null"
+        consumedOperationId:
+          description: "이 미리보기로 이미 커밋된 본인 적용의 ID. 새 적용을 만들지 않고 기존 결과를 여는 데 씁니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        expiresAt:
+          format: "date-time"
+          type: "string"
         items:
           items:
             $ref: "#/components/schemas/AdminBulkChangePreviewItem"
           type: "array"
+        previewId:
+          format: "uuid"
+          type: "string"
+        targetType:
+          $ref: "#/components/schemas/AdminBulkChangeTargetType"
       required:
+      - "createdAt"
+      - "expiresAt"
       - "items"
+      - "previewId"
+      - "targetType"
       type: "object"
     AdminBulkChangeReason:
       description: "대상 하나가 변경되지 않은 이유. NOT_FOUND: 대상이 없거나 이 계정의 범위 밖입니다. FORBIDDEN:\
@@ -223,6 +434,12 @@ components:
       type: "string"
     AdminBulkChangeRequest:
       properties:
+        accessConfirmations:
+          additionalProperties:
+            $ref: "#/components/schemas/AccessConfirmation"
+          type:
+          - "object"
+          - "null"
         change:
           $ref: "#/components/schemas/AdminBulkChangeSpec"
         fingerprints:
@@ -232,6 +449,18 @@ components:
             \ 다시 계산해 다른 대상은 STALE로 답하고 쓰지 않습니다."
           type:
           - "object"
+          - "null"
+        operationId:
+          description: "적용에서 필수. 응답 유실 재시도에도 유지하는 클라이언트 생성 ID. batchId와 같습니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        previewId:
+          description: "적용에서 필수인 저장 미리보기 ID"
+          format: "uuid"
+          type:
+          - "string"
           - "null"
         targetIds:
           description: "대상의 공개 ID. 1개 이상 200개 이하, 중복 없이."
@@ -386,10 +615,14 @@ components:
           - "integer"
           - "null"
         creditAllowedModels:
-          $ref: "#/components/schemas/AdminBulkListChange"
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkListChange"
+          - type: "null"
           description: "유료 모델 허용 목록에 적용할 변경. 생략하면 그대로 둡니다."
         creditDeniedModels:
-          $ref: "#/components/schemas/AdminBulkListChange"
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkListChange"
+          - type: "null"
           description: "유료 모델 차단 목록에 적용할 변경. 생략하면 그대로 둡니다."
         creditLimit:
           description: "금액 한도(USD 크레딧). 생략하면 그대로 둡니다. null은 허용하지 않고, 유료 모델을 닫으려면 0을\
@@ -409,8 +642,12 @@ components:
           - "integer"
           - "null"
         passthroughEndpoints:
-          $ref: "#/components/schemas/AdminBulkListChange"
-          description: "기능 권한 목록에 적용할 변경. 생략하면 그대로 둡니다. 값은 images와 embeddings입니다."
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkListChange"
+          - type: "null"
+          description: "기능 권한 목록에 적용할 변경. 생략하면 그대로 둡니다. 현재 변경 요청에는 chat, web_search,\
+            \ pdf_ocr, images, embeddings를 지정할 수 있습니다. 결과 목록의 web_search와 pdf_ocr는\
+            \ chat과 함께 부여해야 합니다."
         rpm:
           description: "분당 요청 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다."
           format: "int32"
@@ -905,11 +1142,22 @@ components:
         orgName:
           type: "string"
         passthroughEndpoints:
-          description: "이 키에 부여된 기능 권한. 빈 배열은 부여 없음. 모델 목록 둘과 반대로 채워야 열린다."
+          description: "이 키에 부여된 기능 권한. 빈 배열은 부여 없음(chat 포함). 모델 목록 둘과 반대로 채워야 열린다\
+            ."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           type: "array"
         purpose:
@@ -1029,12 +1277,24 @@ components:
           - "string"
           - "null"
         passthroughEndpoints:
-          description: "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 하나도 쓸 수 없습니다. 모델 목록 둘과 반\
-            대로 이 목록은 채워야 열립니다. 채팅과 모델 조회는 이 값에 영향을 받지 않습니다."
+          description: "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 하나도 쓸 수 없습니다(chat 포함). 모\
+            델 목록 둘과 반대로 이 목록은 채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr,\
+            \ images, embeddings이고, web_search와 pdf_ocr은 chat과 함께 부여해야 합니다. 모델 조회는\
+            \ 이 값에 영향을 받지 않습니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           maxItems: 20
           minItems: 0
@@ -1678,6 +1938,76 @@ components:
       - "name"
       - "tokenIssued"
       type: "object"
+    AdminRequestGeneratedResourceResponse:
+      properties:
+        canReadDetail:
+          description: "현재 종류별 관리자 상세 조회 가능 여부. 도메인의 REMOVED 이력은 목록 범위에서 관측하되 상세는\
+            \ 열리지 않습니다."
+          type: "boolean"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        id:
+          format: "uuid"
+          type: "string"
+        name:
+          type: "string"
+        nodeId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        nodeName:
+          type:
+          - "string"
+          - "null"
+        orgId:
+          format: "uuid"
+          type: "string"
+        recipientId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        recordUpdatedAt:
+          description: "서버 기록이 갱신된 시각. 외부 시스템 적용이나 연결 성공을 측정한 시각이 아닙니다."
+          format: "date-time"
+          type: "string"
+        releasedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        renewDueAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        reservedUntil:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        state:
+          description: "종류별 서버 상태. VM은 CREATING/ERROR/RUNNING 등 VM 상태, LLM 키는 만료를\
+            \ 반영한 상태, GPU는 할당 상태, 도메인은 원래 행의 상태입니다. 서로 다른 상태를 완료 하나로 합치지 않습니다."
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "canReadDetail"
+      - "createdAt"
+      - "id"
+      - "name"
+      - "orgId"
+      - "recordUpdatedAt"
+      - "state"
+      - "type"
+      - "workspaceId"
+      type: "object"
     AdminRequestPeriodResponse:
       properties:
         displayName:
@@ -1708,6 +2038,160 @@ components:
       - "id"
       - "name"
       - "status"
+      type: "object"
+    AdminResourceDeadlineDates:
+      description: "종류별 저장 날짜. 해당 종류에 없는 날짜와 저장되지 않은 날짜는 null입니다. 기한 경과는 외부 처리 완료를\
+        \ 증명하지 않습니다."
+      properties:
+        allocatedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        deleteRequestedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        deleteScheduledFor:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        endDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        expiresAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        expiryStoppedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        grantedEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        grantedStartDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        leaseEndsAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        releasedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        renewDueAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        reservedUntil:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        startDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+      type: "object"
+    AdminResourceDeadlineKind:
+      description: "기한 종류. VM 사용 종료, LLM 키 만료, 외부 도메인 갱신·예약, GPU 승인기간·실제 임대 종료를 구분\
+        합니다."
+      enum:
+      - "VM_USAGE_END"
+      - "LLM_KEY_EXPIRY"
+      - "DOMAIN_RENEWAL"
+      - "DOMAIN_RESERVATION"
+      - "GPU_GRANT_END"
+      - "GPU_LEASE_END"
+      type: "string"
+    AdminResourceDeadlineResponse:
+      properties:
+        connectionStatus:
+          description: "GPU의 저장 연결 상태. 다른 종류는 null입니다."
+          type:
+          - "string"
+          - "null"
+        dates:
+          $ref: "#/components/schemas/AdminResourceDeadlineDates"
+        deadlineAt:
+          description: "현재 주 기한. 날짜 종료는 다음 날 0시(KST)로 정규화합니다. 이 시각 경과는 정지·회수·삭제 완료\
+            를 뜻하지 않습니다."
+          format: "date-time"
+          type: "string"
+        deadlineKind:
+          $ref: "#/components/schemas/AdminResourceDeadlineKind"
+        id:
+          format: "uuid"
+          type: "string"
+        inclusiveEndDate:
+          description: "그날까지 포함하는 종료일. VM·GPU 승인기간에 표시하며, LLM 키는 만료가 실제 KST 0시일 때만\
+            \ 전날을 표시합니다. 임의 시각의 기한에는 null입니다."
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        name:
+          type: "string"
+        observedAt:
+          description: "기한 판정과 함께 사용한 서버 시각. 마이크로초 정밀도입니다."
+          format: "date-time"
+          type: "string"
+        orgId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          type:
+          - "string"
+          - "null"
+        overdue:
+          description: "서버 관측 시각에 주 기한이 경과했는지. 실제 후속 처리 상태와 별개입니다."
+          type: "boolean"
+        sourceStatus:
+          description: "DB에 저장된 종류별 상태"
+          type: "string"
+        status:
+          description: "조회 시각의 종류별 상태. LLM 키는 정확한 만료 시각을 반영하며 다른 종류는 저장 상태입니다."
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        workspaceId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        workspaceName:
+          type:
+          - "string"
+          - "null"
+      required:
+      - "dates"
+      - "deadlineAt"
+      - "deadlineKind"
+      - "id"
+      - "name"
+      - "observedAt"
+      - "overdue"
+      - "sourceStatus"
+      - "status"
+      - "type"
       type: "object"
     AdminRouteView:
       properties:
@@ -1776,6 +2260,20 @@ components:
       - "vmName"
       - "workspaceId"
       - "workspaceName"
+      type: "object"
+    AdminSupportOrgOptionResponse:
+      properties:
+        id:
+          format: "uuid"
+          type: "string"
+        name:
+          type: "string"
+        status:
+          $ref: "#/components/schemas/OrgStatus"
+      required:
+      - "id"
+      - "name"
+      - "status"
       type: "object"
     AdminTaskResponse:
       properties:
@@ -1850,6 +2348,10 @@ components:
     AdminUpdateProfileRequest:
       minProperties: 1
       properties:
+        confirmation:
+          anyOf:
+          - $ref: "#/components/schemas/AccessConfirmation"
+          - type: "null"
         departmentCode:
           maxLength: 32
           minLength: 0
@@ -1879,11 +2381,468 @@ components:
           - "string"
           - "null"
       type: "object"
+    AdminUserProfileImpactAction:
+      enum:
+      - "PROFILE"
+      - "ENABLE"
+      type: "string"
+    AdminUserProfileImpactRequest:
+      properties:
+        action:
+          $ref: "#/components/schemas/AdminUserProfileImpactAction"
+        profile:
+          anyOf:
+          - $ref: "#/components/schemas/AdminUpdateProfileRequest"
+          - type: "null"
+      required:
+      - "action"
+      type: "object"
+    AdminUserProfileImpactResponse:
+      properties:
+        action:
+          $ref: "#/components/schemas/AdminUserProfileImpactAction"
+        actorAccessImpact:
+          $ref: "#/components/schemas/ActorAccessImpact"
+        candidateStatus:
+          $ref: "#/components/schemas/UserStatus"
+        claimsPossible:
+          type: "boolean"
+        invitations:
+          items:
+            $ref: "#/components/schemas/AdminUserProfileInvitationImpact"
+          type: "array"
+        observedAt:
+          format: "date-time"
+          type: "string"
+        studentNoWillChange:
+          type: "boolean"
+        userId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "action"
+      - "actorAccessImpact"
+      - "candidateStatus"
+      - "claimsPossible"
+      - "invitations"
+      - "observedAt"
+      - "studentNoWillChange"
+      - "userId"
+      type: "object"
+    AdminUserProfileInvitationImpact:
+      properties:
+        acceptedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        alreadyMember:
+          type: "boolean"
+        id:
+          format: "uuid"
+          type: "string"
+        matchedBy:
+          type: "string"
+        recipients:
+          items:
+            $ref: "#/components/schemas/AdminUserProfileRecipientImpact"
+          type: "array"
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+        status:
+          $ref: "#/components/schemas/WorkspaceInvitationStatus"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceKind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        workspaceName:
+          type: "string"
+      required:
+      - "alreadyMember"
+      - "id"
+      - "matchedBy"
+      - "recipients"
+      - "role"
+      - "status"
+      - "workspaceId"
+      - "workspaceKind"
+      - "workspaceName"
+      type: "object"
+    AdminUserProfileRecipientImpact:
+      properties:
+        grantedEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        orgId:
+          format: "uuid"
+          type: "string"
+        projectedStatus:
+          $ref: "#/components/schemas/RequestRecipientStatus"
+        requestId:
+          format: "uuid"
+          type: "string"
+        requestStatus:
+          $ref: "#/components/schemas/RequestStatus"
+        status:
+          $ref: "#/components/schemas/RequestRecipientStatus"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+      required:
+      - "orgId"
+      - "projectedStatus"
+      - "requestId"
+      - "requestStatus"
+      - "status"
+      - "type"
+      type: "object"
+    AdminUserResourceAccessResponse:
+      properties:
+        baseConditionsSatisfied:
+          description: "활성 계정, 소유 워크스페이스 구성원과 리소스 부여의 공통 조건만 충족했는지. 종류별 작업이나 실제 연결\
+            \ 성공을 보장하지 않습니다."
+          type: "boolean"
+        canRevoke:
+          description: "현재 관리자가 기존 일괄 접근 변경으로 이 사용자의 개인 부여를 회수할 수 있는지"
+          type: "boolean"
+        effectiveRole:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceRole"
+          - type: "null"
+        id:
+          format: "uuid"
+          type: "string"
+        name:
+          type: "string"
+        orgId:
+          format: "uuid"
+          type: "string"
+        orgName:
+          type: "string"
+        personalGrantRole:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceRole"
+          - type: "null"
+        reasons:
+          description: "공통 진단 사유. ACCOUNT_INACTIVE, NOT_WORKSPACE_MEMBER, NO_RESOURCE_GRANT,\
+            \ RESOURCE_ENDED, RESOURCE_NOT_READY. 종류별 상세 조건은 별도 확인이 필요합니다."
+          items:
+            type: "string"
+          type: "array"
+        requestId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        revokeReason:
+          description: "회수 조건. ALLOWED, FORBIDDEN, RESOURCE_NOT_FOUND, NO_PERSONAL_GRANT.\
+            \ 기존 개인 부여의 회수는 계정 비활성이나 구성원 해제 이후에도 가능합니다."
+          type: "string"
+        standingRights:
+          type: "boolean"
+        status:
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        userStatus:
+          $ref: "#/components/schemas/UserStatus"
+        workspaceGrantRole:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceRole"
+          - type: "null"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceName:
+          type: "string"
+        workspaceRole:
+          anyOf:
+          - $ref: "#/components/schemas/WorkspaceMemberRole"
+          - type: "null"
+      required:
+      - "baseConditionsSatisfied"
+      - "canRevoke"
+      - "id"
+      - "name"
+      - "orgId"
+      - "orgName"
+      - "reasons"
+      - "revokeReason"
+      - "standingRights"
+      - "status"
+      - "type"
+      - "userStatus"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
+    AdminUserSupportCapabilitiesResponse:
+      properties:
+        canCorrectProfile:
+          description: "프로필 정정과 정정 영향 미리보기 가능 여부"
+          type: "boolean"
+        canEnableAccount:
+          description: "계정 활성화와 활성화 영향 미리보기 가능 여부"
+          type: "boolean"
+        profileVisible:
+          description: "학생 지원 프로필 조회 가능 여부"
+          type: "boolean"
+      required:
+      - "canCorrectProfile"
+      - "canEnableAccount"
+      - "profileVisible"
+      type: "object"
+    AdminUserSupportInvitation:
+      properties:
+        acceptedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        matchedBy:
+          type: "string"
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+        status:
+          $ref: "#/components/schemas/WorkspaceInvitationStatus"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceKind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        workspaceName:
+          type: "string"
+      required:
+      - "id"
+      - "matchedBy"
+      - "role"
+      - "status"
+      - "workspaceId"
+      - "workspaceKind"
+      - "workspaceName"
+      type: "object"
+    AdminUserSupportMembership:
+      properties:
+        resourceCounts:
+          items:
+            $ref: "#/components/schemas/AdminUserSupportResourceCount"
+          type: "array"
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceKind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        workspaceName:
+          type: "string"
+      required:
+      - "resourceCounts"
+      - "role"
+      - "workspaceId"
+      - "workspaceKind"
+      - "workspaceName"
+      type: "object"
+    AdminUserSupportRelatedRequest:
+      properties:
+        applicant:
+          type: "boolean"
+        grantedEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        orgId:
+          format: "uuid"
+          type: "string"
+        orgName:
+          type: "string"
+        reason:
+          type:
+          - "string"
+          - "null"
+        recipientId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        recipientStatus:
+          anyOf:
+          - $ref: "#/components/schemas/RequestRecipientStatus"
+          - type: "null"
+        resourceId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        status:
+          $ref: "#/components/schemas/RequestStatus"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceName:
+          type: "string"
+      required:
+      - "applicant"
+      - "id"
+      - "orgId"
+      - "orgName"
+      - "status"
+      - "type"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
+    AdminUserSupportResourceCount:
+      properties:
+        count:
+          description: "기관 필터를 적용한 종류별 행 수. 종료된 이력을 포함하며 도메인은 모든 종류를 셉니다."
+          format: "int64"
+          type: "integer"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+      required:
+      - "count"
+      - "type"
+      type: "object"
+    AdminUserSupportResponse:
+      properties:
+        invitations:
+          items:
+            $ref: "#/components/schemas/AdminUserSupportInvitation"
+          type: "array"
+        invitationsVisible:
+          type: "boolean"
+        memberships:
+          items:
+            $ref: "#/components/schemas/AdminUserSupportMembership"
+          type: "array"
+        observedAt:
+          format: "date-time"
+          type: "string"
+        requests:
+          items:
+            $ref: "#/components/schemas/AdminUserSupportRelatedRequest"
+          type: "array"
+        resources:
+          description: "학생 지원 권한으로 전역 조회한 접근 목록형 리소스. 기관 선택은 필터입니다. 도메인은 EXTERNAL만\
+            \ 포함하며 VM 연결 도메인은 워크스페이스 도메인 목록과 연결 VM에서 확인합니다. 종료된 리소스 이력도 포함합니다."
+          items:
+            $ref: "#/components/schemas/AdminUserResourceAccessResponse"
+          type: "array"
+        userId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "invitations"
+      - "invitationsVisible"
+      - "memberships"
+      - "observedAt"
+      - "requests"
+      - "resources"
+      - "userId"
+      type: "object"
+    AdminVmPlacementCandidate:
+      properties:
+        fitsOneNow:
+          type: "boolean"
+        nodeId:
+          format: "uuid"
+          type: "string"
+        nodeName:
+          type: "string"
+      required:
+      - "fitsOneNow"
+      - "nodeId"
+      - "nodeName"
+      type: "object"
+    AdminVmPlacementPreviewRequest:
+      properties:
+        diskGb:
+          format: "int32"
+          minimum: 1
+          type: "integer"
+        imageId:
+          format: "uuid"
+          type: "string"
+        memoryMb:
+          format: "int32"
+          minimum: 256
+          type: "integer"
+        orgId:
+          format: "uuid"
+          type: "string"
+        vcpu:
+          format: "int32"
+          minimum: 1
+          type: "integer"
+      required:
+      - "diskGb"
+      - "imageId"
+      - "memoryMb"
+      - "orgId"
+      - "vcpu"
+      type: "object"
+    AdminVmPlacementPreviewResponse:
+      properties:
+        candidates:
+          items:
+            $ref: "#/components/schemas/AdminVmPlacementCandidate"
+          type: "array"
+        fitsAnyOneNow:
+          description: "현재 한 VM의 제안 사양이 맞는 노드가 있는지. N명 전체 용량 예약이나 승인 성공을 보장하지 않습니다\
+            ."
+          type: "boolean"
+        image:
+          $ref: "#/components/schemas/AdminApprovalImageReference"
+          description: "입력 이미지와 같은 논리 revision의 canonical 이미지 정보. 입력 식별자는 inputImageId로\
+            \ 확인합니다."
+        inputImageId:
+          description: "검증한 입력 이미지 식별자. 호환 replica를 입력하면 아래 image.id의 canonical 식별\
+            자와 다를 수 있습니다."
+          format: "uuid"
+          type: "string"
+        observedAt:
+          format: "date-time"
+          type: "string"
+        orgId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "candidates"
+      - "fitsAnyOneNow"
+      - "image"
+      - "inputImageId"
+      - "observedAt"
+      - "orgId"
+      type: "object"
     AdminWorkspaceDetailResponse:
       properties:
+        canDelete:
+          type: "boolean"
+        canInviteMembers:
+          type: "boolean"
+        canManageMembers:
+          type: "boolean"
+        canManageOwners:
+          type: "boolean"
+        canUpdateInfo:
+          type: "boolean"
         createdAt:
           format: "date-time"
           type: "string"
+        deleteBlockedReason:
+          type:
+          - "string"
+          - "null"
         description:
           type:
           - "string"
@@ -1906,6 +2865,11 @@ components:
           format: "int64"
           type: "integer"
       required:
+      - "canDelete"
+      - "canInviteMembers"
+      - "canManageMembers"
+      - "canManageOwners"
+      - "canUpdateInfo"
       - "createdAt"
       - "id"
       - "kind"
@@ -1916,6 +2880,10 @@ components:
       type: "object"
     AdminWorkspaceMemberResponse:
       properties:
+        canChangeRole:
+          type: "boolean"
+        canRemove:
+          type: "boolean"
         email:
           type: "string"
         joinedAt:
@@ -1923,6 +2891,9 @@ components:
           type: "string"
         name:
           type: "string"
+        supportDetailVisible:
+          description: "현재 관리자에게 이 구성원의 사용자 관계·지원 상세를 열람할 권한이 있는지 여부"
+          type: "boolean"
         userId:
           format: "uuid"
           type: "string"
@@ -1931,9 +2902,12 @@ components:
         workspaceRole:
           $ref: "#/components/schemas/WorkspaceMemberRole"
       required:
+      - "canChangeRole"
+      - "canRemove"
       - "email"
       - "joinedAt"
       - "name"
+      - "supportDetailVisible"
       - "userId"
       - "userStatus"
       - "workspaceRole"
@@ -2122,6 +3096,8 @@ components:
         approvedCount:
           format: "int64"
           type: "integer"
+        canReadDetail:
+          type: "boolean"
         email:
           type: "string"
         id:
@@ -2137,6 +3113,7 @@ components:
           type: "string"
       required:
       - "approvedCount"
+      - "canReadDetail"
       - "email"
       - "id"
       - "name"
@@ -2154,6 +3131,12 @@ components:
           anyOf:
           - $ref: "#/components/schemas/DomainContext"
           - type: "null"
+        generatedResources:
+          description: "이 신청의 실제 request_id로 연결된 자원의 기록과 상태. 자원 행 등록은 VM 프로비저닝 완료가\
+            \ 아닙니다. 신청 FK가 없는 과거 도메인 이름에서 현재 자원 ID를 추론하지 않습니다."
+          items:
+            $ref: "#/components/schemas/AdminRequestGeneratedResourceResponse"
+          type: "array"
         gpu:
           anyOf:
           - $ref: "#/components/schemas/GpuContext"
@@ -2169,9 +3152,23 @@ components:
           anyOf:
           - $ref: "#/components/schemas/LlmKeyContext"
           - type: "null"
+        observedAt:
+          format: "date-time"
+          type: "string"
         orgHeadroom:
           $ref: "#/components/schemas/OrgHeadroom"
           deprecated: true
+        orgId:
+          format: "uuid"
+          type: "string"
+        orgName:
+          type: "string"
+        recipientUserReadFlags:
+          additionalProperties:
+            type: "boolean"
+          description: "저장된 실제 대상 계정별 관리자 사용자 상세 조회 허용 여부. 현재 디렉터리 권한과 교집합이며, 워크스페\
+            이스를 떠난 계정도 포함합니다. 가입 전 식별자로 계정을 추정하지 않습니다."
+          type: "object"
         type:
           $ref: "#/components/schemas/ResourceType"
         vm:
@@ -2183,9 +3180,14 @@ components:
       required:
       - "applicant"
       - "applicantResources"
+      - "generatedResources"
       - "guidance"
       - "history"
+      - "observedAt"
       - "orgHeadroom"
+      - "orgId"
+      - "orgName"
+      - "recipientUserReadFlags"
       - "type"
       - "workspace"
       type: "object"
@@ -2269,12 +3271,24 @@ components:
           - "integer"
           - "null"
         grantedPassthroughEndpoints:
-          description: "이 키에 부여할 기능 권한. 비우면 기능을 하나도 쓸 수 없습니다. 모델 목록과 반대로 이 목록은 채워야\
-            \ 열립니다. 채팅과 모델 조회는 이 목록과 무관합니다."
+          description: "이 키에 부여할 기능 권한. 생략하거나 null이면 신청자가 고른 목록(reqPassthroughEndpoints)으\
+            로 승인하고, 빈 배열이면 기능을 하나도 쓸 수 없습니다(chat도 포함). 모델 목록과 반대로 이 목록은 채워야 열립니다.\
+            \ 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, images, embeddings이고, web_search와\
+            \ pdf_ocr은 chat과 함께 부여해야 합니다. 모델 조회는 이 목록과 무관합니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           maxItems: 20
           minItems: 0
@@ -2804,6 +3818,28 @@ components:
           type:
           - "integer"
           - "null"
+        reqPassthroughEndpoints:
+          description: "신청자가 고른 기능 권한. 필수이며 빈 배열도 받습니다. 승인 화면의 초깃값이 되고, 무엇을 부여할지는\
+            \ 승인자가 정합니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, images, embeddings이\
+            고 나머지는 422로 거절합니다. web_search와 pdf_ocr은 chat과 함께 골라야 합니다."
+          items:
+            enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
+            - "images"
+            - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
+            type: "string"
+          maxItems: 20
+          minItems: 0
+          type: "array"
         reqRpm:
           description: "희망 분당 요청 수. 비우면 서비스 기본값을 받습니다."
           format: "int32"
@@ -2829,6 +3865,8 @@ components:
           type:
           - "boolean"
           - "null"
+      required:
+      - "reqPassthroughEndpoints"
       type: "object"
     CreateOpenRouterAccountRequest:
       properties:
@@ -2864,18 +3902,6 @@ components:
           items:
             type: "string"
           maxItems: 50
-          minItems: 0
-          type:
-          - "array"
-          - "null"
-        defaultPassthroughEndpoints:
-          description: "승인 화면 프리필에 쓸 기능 권한 기본값. 비우면 아무 기능도 부여되지 않은 상태가 기본이 됩니다."
-          items:
-            enum:
-            - "images"
-            - "embeddings"
-            type: "string"
-          maxItems: 20
           minItems: 0
           type:
           - "array"
@@ -4055,6 +5081,8 @@ components:
       type: "object"
     HistoryEntry:
       properties:
+        canReadDetail:
+          type: "boolean"
         comment:
           type:
           - "string"
@@ -4063,6 +5091,9 @@ components:
           anyOf:
           - $ref: "#/components/schemas/ReviewDecision"
           - type: "null"
+        orgId:
+          format: "uuid"
+          type: "string"
         requestId:
           format: "uuid"
           type: "string"
@@ -4080,6 +5111,8 @@ components:
         type:
           $ref: "#/components/schemas/ResourceType"
       required:
+      - "canReadDetail"
+      - "orgId"
       - "requestId"
       - "resourceName"
       - "status"
@@ -4092,6 +5125,10 @@ components:
       type: "string"
     InviteWorkspaceMembersRequest:
       properties:
+        confirmation:
+          anyOf:
+          - $ref: "#/components/schemas/AccessConfirmation"
+          - type: "null"
         entries:
           description: "초대할 사람 목록. 1명에서 200명까지이며, 한 항목에는 이메일과 학번 중 하나만 씁니다."
           items:
@@ -4689,6 +5726,8 @@ components:
       type: "object"
     LlmKeyBrief:
       properties:
+        canReadDetail:
+          type: "boolean"
         concurrency:
           format: "int32"
           type:
@@ -4717,6 +5756,9 @@ components:
           type: "string"
         name:
           type: "string"
+        orgId:
+          format: "uuid"
+          type: "string"
         rpm:
           format: "int32"
           type:
@@ -4737,10 +5779,12 @@ components:
         workspaceName:
           type: "string"
       required:
+      - "canReadDetail"
       - "creditAxisConnected"
       - "creditLimit"
       - "id"
       - "name"
+      - "orgId"
       - "status"
       - "workspaceName"
       type: "object"
@@ -4872,12 +5916,22 @@ components:
           description: "키 이름"
           type: "string"
         passthroughEndpoints:
-          description: "이 키에 부여된 기능 권한. 빈 배열이면 기능을 하나도 쓸 수 없습니다. 모델 목록 둘과 반대로 이 목록\
-            은 채워야 열립니다. 채팅과 모델 조회는 이 목록과 무관합니다."
+          description: "이 키에 부여된 기능 권한. 빈 배열이면 기능을 하나도 쓸 수 없습니다(chat 포함). 모델 목록 둘과\
+            \ 반대로 이 목록은 채워야 열립니다. 모델 조회는 이 목록과 무관합니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           type: "array"
         purpose:
@@ -5133,11 +6187,21 @@ components:
           - "integer"
           - "null"
         grantedPassthroughEndpoints:
-          description: "승인자가 부여한 기능 권한. 빈 배열이면 부여된 기능이 없습니다."
+          description: "승인자가 부여한 기능 권한. 빈 배열이면 부여된 기능이 없습니다. 검토 전 신청은 빈 배열입니다."
           items:
             enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
             - "images"
             - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
             type: "string"
           type: "array"
         grantedRpm:
@@ -5163,6 +6227,25 @@ components:
           type:
           - "integer"
           - "null"
+        reqPassthroughEndpoints:
+          description: "신청자가 고른 기능 권한. 승인 화면의 초깃값입니다. 이 항목이 생기기 전의 신청은 [\"chat\"]으\
+            로 이관되었습니다."
+          items:
+            enum:
+            - "chat"
+            - "web_search"
+            - "pdf_ocr"
+            - "containers"
+            - "images"
+            - "embeddings"
+            - "rerank"
+            - "speech"
+            - "transcriptions"
+            - "videos"
+            - "batches"
+            - "files"
+            type: "string"
+          type: "array"
         reqRpm:
           description: "희망 분당 요청 수"
           format: "int32"
@@ -5185,6 +6268,7 @@ components:
       - "grantedCreditAllowedModels"
       - "grantedCreditDeniedModels"
       - "grantedPassthroughEndpoints"
+      - "reqPassthroughEndpoints"
       - "useCampusModels"
       - "useCommercialModels"
       type: "object"
@@ -6105,7 +7189,8 @@ components:
     LlmUsagePassthroughGrantResponse:
       properties:
         capability:
-          description: "기능 권한 값. images 또는 embeddings입니다."
+          description: "기능 권한 값. chat, images, embeddings 중 하나입니다. 요청 본문으로 판정하는 기능\
+            (web_search, pdf_ocr)은 사용량 이벤트가 경로만 기록해 사용을 셀 수 없으므로 행이 없습니다."
           type: "string"
         grantedKeys:
           description: "지금 이 기능을 부여받은 키 수"
@@ -6491,6 +7576,8 @@ components:
       type: "object"
     MemberBrief:
       properties:
+        canReadDetail:
+          type: "boolean"
         name:
           type: "string"
         role:
@@ -6498,10 +7585,14 @@ components:
         userId:
           format: "uuid"
           type: "string"
+        userStatus:
+          $ref: "#/components/schemas/UserStatus"
       required:
+      - "canReadDetail"
       - "name"
       - "role"
       - "userId"
+      - "userStatus"
       type: "object"
     Membership:
       properties:
@@ -6568,6 +7659,94 @@ components:
       required:
       - "otpauthUri"
       - "secret"
+      type: "object"
+    ModelPriceAxis:
+      description: "가격 축 하나."
+      properties:
+        axis:
+          description: "벤더가 쓰는 축 이름."
+          example: "input_cache_read"
+          type: "string"
+        price:
+          description: "가격(USD). 단위는 unit을 따릅니다."
+          type: "number"
+        unit:
+          $ref: "#/components/schemas/ModelPriceUnit"
+          description: "가격 단위."
+      required:
+      - "axis"
+      - "price"
+      - "unit"
+      type: "object"
+    ModelPriceTier:
+      description: "구간 가격 하나. 값이 있는 조건이 모두 맞을 때 적용됩니다."
+      properties:
+        axes:
+          description: "이 구간에서 바뀌는 가격 축."
+          items:
+            $ref: "#/components/schemas/ModelPriceAxis"
+          type: "array"
+        minPromptTokens:
+          description: "입력 토큰이 이 값을 넘는 요청에 적용됩니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        otherConditions:
+          description: "해석하지 못한 조건의 벤더 이름. 비어 있지 않으면 위 조건만으로는 적용 범위를 다 알 수 없습니다."
+          items:
+            type: "string"
+          type: "array"
+        utcDays:
+          description: "적용 요일(UTC, 영어 소문자). 비어 있으면 요일 조건이 없습니다."
+          example:
+          - "saturday"
+          - "sunday"
+          items:
+            type: "string"
+          type: "array"
+        utcEndMinute:
+          description: "적용 끝 시각(제외). UTC 자정부터 센 분이고 1440은 자정입니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        utcStartMinute:
+          description: "적용 시작 시각. UTC 자정부터 센 분입니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "axes"
+      - "otherConditions"
+      - "utcDays"
+      type: "object"
+    ModelPriceUnit:
+      description: "가격 단위. PER_MILLION_TOKENS는 100만 토큰당, PER_CALL은 그 축이 세는 호출 1회당\
+        \ USD입니다(web_search는 검색 1회, request는 API 요청 1회). UNKNOWN은 단위를 알 수 없어 벤더 값을\
+        \ 그대로 담은 것입니다."
+      enum:
+      - "PER_MILLION_TOKENS"
+      - "PER_CALL"
+      - "UNKNOWN"
+      type: "string"
+    ModelPricing:
+      description: "모델의 가격 축 전체. 벤더가 공시한 축을 모두 담으며 입력과 출력도 포함합니다."
+      properties:
+        axes:
+          description: "기본 가격 축. 0은 그 축이 무료라는 뜻입니다."
+          items:
+            $ref: "#/components/schemas/ModelPriceAxis"
+          type: "array"
+        tiers:
+          description: "조건이 맞을 때 기본 가격 대신 적용되는 구간 가격. 없으면 비어 있습니다."
+          items:
+            $ref: "#/components/schemas/ModelPriceTier"
+          type: "array"
+      required:
+      - "axes"
+      - "tiers"
       type: "object"
     NodeLiveResponse:
       properties:
@@ -7313,15 +8492,6 @@ components:
           items:
             type: "string"
           type: "array"
-        defaultPassthroughEndpoints:
-          description: "승인 화면이 프리필에 쓰는 기능 권한 기본값. 복사 원본이지 상속원이 아니라서 여기를 바꿔도 이미 발급된\
-            \ 키는 그대로입니다."
-          items:
-            enum:
-            - "images"
-            - "embeddings"
-            type: "string"
-          type: "array"
         eligibleForBinding:
           description: "현재 positive-credit key binding에 선택할 수 있는지"
           type: "boolean"
@@ -7364,7 +8534,6 @@ components:
       - "credits"
       - "defaultCreditAllowedModels"
       - "defaultCreditDeniedModels"
-      - "defaultPassthroughEndpoints"
       - "eligibleForBinding"
       - "id"
       - "name"
@@ -7398,6 +8567,11 @@ components:
         name:
           description: "벤더가 표시하는 이름."
           type: "string"
+        pricing:
+          anyOf:
+          - $ref: "#/components/schemas/ModelPricing"
+          - type: "null"
+          description: "입력과 출력을 포함한 가격 축 전체. 목록이 아직 이 정보를 받지 않았으면 비어 있습니다."
         promptPricePerMillion:
           description: "백만 토큰당 입력 가격(USD). 모르면 비어 있고, 0은 무료를 뜻합니다."
           type:
@@ -7889,6 +9063,31 @@ components:
         content:
           items:
             $ref: "#/components/schemas/AdminPortMappingResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
+    PageResponseAdminResourceDeadlineResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminResourceDeadlineResponse"
           type: "array"
         page:
           format: "int32"
@@ -8439,6 +9638,11 @@ components:
         name:
           description: "표시 이름"
           type: "string"
+        pricing:
+          anyOf:
+          - $ref: "#/components/schemas/ModelPricing"
+          - type: "null"
+          description: "입력과 출력을 포함한 가격 축 전체. 목록이 아직 이 정보를 받지 않았으면 비어 있습니다"
         promptPricePerMillion:
           description: "입력 100만 토큰당 USD. 모르면 비어 있습니다"
           type:
@@ -8526,6 +9730,27 @@ components:
           type: "string"
       required:
       - "email"
+      type: "object"
+    PendingResourceOwner:
+      properties:
+        projectedStatus:
+          type: "string"
+        requestId:
+          format: "uuid"
+          type: "string"
+        resourceType:
+          $ref: "#/components/schemas/ResourceType"
+        role:
+          type: "string"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "projectedStatus"
+      - "requestId"
+      - "resourceType"
+      - "role"
+      - "workspaceId"
       type: "object"
     PortForwardApplyState:
       enum:
@@ -9003,8 +10228,8 @@ components:
           format: "uuid"
           type: "string"
         invitee:
-          description: "초대할 때 적은 이메일 또는 학번. 신청자, 워크스페이스 소유자, 승인 권한이 있는 관리자에게만 보입니다\
-            ."
+          description: "초대할 때 적은 이메일 또는 학번. 신청자, 워크스페이스 소유자, 학생 지원 권한이 있는 관리자에게만 보\
+            입니다."
           type:
           - "string"
           - "null"
@@ -9186,6 +10411,37 @@ components:
       - "allocatedVcpu"
       - "guidance"
       type: "object"
+    ResourceAccessChangeAction:
+      enum:
+      - "ADD"
+      - "UPDATE"
+      - "REMOVE"
+      type: "string"
+    ResourceAccessChangePreviewRequest:
+      properties:
+        action:
+          $ref: "#/components/schemas/ResourceAccessChangeAction"
+        grantId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        granteeType:
+          anyOf:
+          - $ref: "#/components/schemas/AccessGranteeType"
+          - type: "null"
+        role:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceRole"
+          - type: "null"
+        userId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "action"
+      type: "object"
     ResourceAccessGrantView:
       description: "VM 접근 권한 한 건. 대상은 지정된 사용자 한 명이거나 소유 워크스페이스 전체입니다."
       properties:
@@ -9215,6 +10471,9 @@ components:
     ResourceAccessListResponse:
       description: "리소스 접근 권한 목록과, 그 목록이 어느 리소스의 것인지 알려 주는 최소 정보"
       properties:
+        canManageAccess:
+          description: "현재 수행자가 이 목록을 변경할 수 있는지"
+          type: "boolean"
         grants:
           description: "접근 권한 항목"
           items:
@@ -9224,6 +10483,7 @@ components:
           $ref: "#/components/schemas/ResourceBrief"
           description: "이 목록이 속한 리소스"
       required:
+      - "canManageAccess"
       - "grants"
       - "resource"
       type: "object"
@@ -10067,19 +11327,6 @@ components:
           type:
           - "array"
           - "null"
-        defaultPassthroughEndpoints:
-          description: "새 기능 권한 기본값. 생략하면 유지하고, null이나 빈 배열이면 기본값을 지웁니다. 이 쓰기는 게이트\
-            웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 영향이 없습니다."
-          items:
-            enum:
-            - "images"
-            - "embeddings"
-            type: "string"
-          maxItems: 20
-          minItems: 0
-          type:
-          - "array"
-          - "null"
         name:
           description: "새 account 이름. 생략하면 유지하며 null은 허용하지 않습니다."
           maxLength: 120
@@ -10224,6 +11471,10 @@ components:
       type: "object"
     UpdateResourceAccessGrantRequest:
       properties:
+        confirmation:
+          anyOf:
+          - $ref: "#/components/schemas/AccessConfirmation"
+          - type: "null"
         role:
           $ref: "#/components/schemas/ResourceRole"
           description: "새 등급. 워크스페이스 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다."
@@ -10315,6 +11566,10 @@ components:
       type: "object"
     UpdateWorkspaceMemberRequest:
       properties:
+        confirmation:
+          anyOf:
+          - $ref: "#/components/schemas/AccessConfirmation"
+          - type: "null"
         role:
           $ref: "#/components/schemas/WorkspaceMemberRole"
       required:
@@ -10398,6 +11653,8 @@ components:
           type:
           - "string"
           - "null"
+        supportCapabilities:
+          $ref: "#/components/schemas/AdminUserSupportCapabilitiesResponse"
         withdrawnAt:
           format: "date-time"
           type:
@@ -10415,6 +11672,7 @@ components:
       - "role"
       - "status"
       - "statusChanges"
+      - "supportCapabilities"
       type: "object"
     UserAdminViewResponse:
       properties:
@@ -10608,6 +11866,8 @@ components:
       type: "string"
     VmBriefResponse:
       properties:
+        canReadDetail:
+          type: "boolean"
         diskGb:
           format: "int32"
           type: "integer"
@@ -10624,16 +11884,21 @@ components:
           type: "integer"
         name:
           type: "string"
+        orgId:
+          format: "uuid"
+          type: "string"
         status:
           $ref: "#/components/schemas/VmStatus"
         vcpu:
           format: "int32"
           type: "integer"
       required:
+      - "canReadDetail"
       - "diskGb"
       - "id"
       - "memoryMb"
       - "name"
+      - "orgId"
       - "status"
       - "vcpu"
       type: "object"
@@ -10647,6 +11912,10 @@ components:
         orgHeadroom:
           $ref: "#/components/schemas/OrgHeadroom"
           deprecated: true
+        requestedImage:
+          anyOf:
+          - $ref: "#/components/schemas/AdminApprovalImageReference"
+          - type: "null"
         workspaceResources:
           $ref: "#/components/schemas/Resources"
       required:
@@ -11493,7 +12762,9 @@ components:
             $ref: "#/components/schemas/WorkspaceMemberResponse"
           type: "array"
         myRole:
-          $ref: "#/components/schemas/WorkspaceMemberRole"
+          anyOf:
+          - $ref: "#/components/schemas/WorkspaceMemberRole"
+          - type: "null"
         name:
           type: "string"
       required:
@@ -11501,7 +12772,6 @@ components:
       - "id"
       - "kind"
       - "members"
-      - "myRole"
       - "name"
       type: "object"
     WorkspaceInvitationEntry:
@@ -11605,6 +12875,12 @@ components:
       required:
       - "outcome"
       type: "object"
+    WorkspaceInvitationStatus:
+      enum:
+      - "PENDING"
+      - "ACCEPTED"
+      - "CANCELED"
+      type: "string"
     WorkspaceKind:
       enum:
       - "PERSONAL"
@@ -11648,6 +12924,8 @@ components:
           items:
             $ref: "#/components/schemas/VmBriefResponse"
           type: "array"
+        canReadDetail:
+          type: "boolean"
         id:
           format: "uuid"
           type: "string"
@@ -11665,6 +12943,7 @@ components:
           description: "호환용 VM 합계. 새 클라이언트는 vm.workspaceResources.totals를 사용합니다."
       required:
       - "activeVms"
+      - "canReadDetail"
       - "id"
       - "kind"
       - "members"
@@ -11708,7 +12987,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.96.0"
+  version: "0.104.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -11907,9 +13186,14 @@ paths:
       - "admin-audit-controller"
   /admin/bulk-changes:
     post:
-      description: "미리보기와 같은 본문에 fingerprint를 더해 적용합니다. 서버는 미리보기를 믿지 않고 적용 시점에 대상마\
-        다 다시 판정하며, 미리보기 뒤 바뀐 대상은 STALE로 답하고 쓰지 않습니다. 한 대상의 실패가 다른 대상을 되돌리지 않고, 되돌리\
-        기는 없습니다. 대상별 감사 기록은 단일 변경과 같은 이름으로 남고 같은 batchId를 담습니다."
+      description: "저장된 미리보기와 같은 변경·대상·fingerprint에 previewId와 클라이언트가 한 번 생성한 operationId를\
+        \ 더해 적용합니다. operationId는 결과의 batchId와 같습니다. 새 적용은 미리보기 저장 후 24시간까지만 허용합니다\
+        . 같은 수행자가 같은 식별자·본문으로 재시도하면 현재 접근 범위로 가린 저장 결과만 반환하며 변경이나 후속 작업을 다시 실행하지 않\
+        습니다. 이 재시도는 미리보기 만료 뒤에도 가능합니다. 같은 수행자의 식별자에 다른 본문을 결합하면 409, 타인의 기록은 404로\
+        \ 거절합니다. 새 적용은 대상마다 다시 판정하고 바뀐 확인값은 STALE, 업무상 거절은 SKIPPED로 저장합니다. 예기치 않은\
+        \ 트랜잭션 오류는 전체 변경과 결과를 롤백합니다. 커밋 후 callback 오류는 이미 커밋된 결과를 되돌리지 않으며 effects에\
+        서 관측합니다. APPLIED는 DB 커밋을 뜻하고 외부 완료를 보장하지 않습니다. 대상별 감사 기록은 단일 변경과 같은 이름으로 남\
+        고 같은 batchId를 담습니다."
       operationId: "applyAdminBulkChange"
       requestBody:
         content:
@@ -11933,12 +13217,63 @@ paths:
       summary: "관리자 일괄 변경 적용"
       tags:
       - "admin"
+  /admin/bulk-changes/operations:
+    get:
+      description: "본인의 최근 커밋 결과 최대 20개를 현재 접근 범위로 가려서 조회합니다. 대상과 후속 작업을 변경하지 않습니다\
+        ."
+      operationId: "listAdminBulkChangeOperations"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/AdminBulkChangeOperationResponse"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "본인의 최근 일괄 변경 결과 조회"
+      tags:
+      - "admin"
+  /admin/bulk-changes/operations/{operationId}:
+    get:
+      description: "본인의 커밋된 적용 결과와 callback 접수 관측을 조회합니다. 재실행하지 않으며 DB 커밋, queue 접\
+        수와 외부 완료는 별개입니다."
+      operationId: "getAdminBulkChangeOperation"
+      parameters:
+      - in: "path"
+        name: "operationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminBulkChangeOperationResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "저장된 일괄 변경 결과 조회"
+      tags:
+      - "admin"
   /admin/bulk-changes/preview:
     post:
-      description: "여러 대상에 한 가지 변경을 적용하면 어떻게 되는지 대상마다 답합니다. 아무것도 쓰지 않습니다. 범위 밖이거나\
-        \ 역할이 허용하지 않는 대상, 현재 상태에서 할 수 없는 대상은 이유와 함께 applicable=false로, 이미 그 값인 대상은\
-        \ 바뀔 필드 없이 applicable=true로 답합니다. 대상마다 fingerprint를 주며 적용 요청에 그대로 돌려보냅니다.\
-        \ 대상은 최대 200개입니다."
+      description: "여러 대상에 한 가지 변경을 적용하면 어떻게 되는지 대상마다 답합니다. 미리보기 기록만 저장하며 대상은 변경하지\
+        \ 않습니다. 범위 밖이거나 역할이 허용하지 않는 대상, 현재 상태에서 할 수 없는 대상은 이유와 함께 applicable=false로\
+        , 이미 그 값인 대상은 바뀔 필드 없이 applicable=true로 답합니다. 대상마다 fingerprint를 주며 적용 요청에\
+        \ 그대로 돌려보냅니다. 대상은 최대 200개입니다."
       operationId: "previewAdminBulkChange"
       requestBody:
         content:
@@ -11960,6 +13295,34 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "관리자 일괄 변경 미리보기"
+      tags:
+      - "admin"
+  /admin/bulk-changes/previews/{previewId}:
+    get:
+      description: "본인의 미리보기를 현재 대상별 변경 권한으로 다시 조회합니다. 접근할 수 없는 대상의 이름, 값, 확인값과 변경\
+        \ 내용은 가립니다."
+      operationId: "getAdminBulkChangePreview"
+      parameters:
+      - in: "path"
+        name: "previewId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminBulkChangePreviewResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "저장된 일괄 변경 미리보기 조회"
       tags:
       - "admin"
   /admin/campus-ip-requests:
@@ -12195,6 +13558,12 @@ paths:
           format: "uuid"
           type: "string"
       - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
         name: "kind"
         required: false
         schema:
@@ -12234,6 +13603,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-publishing-controller"
+  /admin/domains/{domainId}:
+    get:
+      description: "학생 지원 권한으로 정확한 도메인 ID의 현재 저장 metadata를 전역 조회합니다. 목록과 같은 기간·해제·\
+        DNS 상태를 반환하며 외부 조회나 변경을 실행하지 않습니다. 삭제된 도메인과 기관·워크스페이스의 필수 식별 정보를 확인할 수 없는\
+        \ 도메인은 404입니다."
+      operationId: "getAdminDomain"
+      parameters:
+      - in: "path"
+        name: "domainId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminDomainView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "도메인 단건 열람"
       tags:
       - "admin-publishing-controller"
   /admin/domains/{domainId}/force-release:
@@ -13205,8 +14603,8 @@ paths:
       - "admin"
   /admin/llm/keys:
     get:
-      description: "기관과 워크스페이스, 발급 신청, 상태, 검색어로 키를 조회합니다. 키 평문과 해시, 평문 앞부분은 반환하지 않\
-        습니다."
+      description: "학생 지원 권한으로 키 metadata를 전역 조회하며 기관과 워크스페이스, 발급 신청, 상태, 검색어는 필터입\
+        니다. 키 평문과 해시, 평문 앞부분은 반환하지 않습니다."
       operationId: "listAdminLlmKeys"
       parameters:
       - in: "query"
@@ -13280,7 +14678,8 @@ paths:
       - "admin"
   /admin/llm/keys/{keyId}:
     get:
-      description: "기관 범위 안의 키 운영 상태와 한도를 조회합니다. 인증 비밀이나 기록된 본문은 반환하지 않습니다."
+      description: "학생 지원 권한으로 키 운영 상태와 한도 metadata를 전역 조회합니다. 인증 비밀이나 기록된 본문은 반환하\
+        지 않습니다."
       operationId: "getAdminLlmKey"
       parameters:
       - in: "path"
@@ -13376,9 +14775,9 @@ paths:
       - "admin"
   /admin/llm/keys/{keyId}/models:
     get:
-      description: "이 키로 부를 수 있는 모델입니다. 키 소유자가 보는 것과 같은 값이고 같은 계산을 씁니다. 허용 목록을 정할\
-        \ 때 그 목록이 실제로 무엇을 남기는지 확인하는 자리입니다. 최종 판정은 호출 시점에 이뤄지므로 여기 있는 모델이 항상 응답한다는\
-        \ 보장은 아닙니다."
+      description: "학생 지원 권한으로 전역 조회하는 이 키로 부를 수 있는 모델입니다. 키 소유자가 보는 것과 같은 값이고 같은\
+        \ 계산을 씁니다. 허용 목록을 정할 때 그 목록이 실제로 무엇을 남기는지 확인하는 자리입니다. 최종 판정은 호출 시점에 이뤄지므로\
+        \ 여기 있는 모델이 항상 응답한다는 보장은 아닙니다."
       operationId: "listAdminLlmKeyModels"
       parameters:
       - in: "path"
@@ -13465,9 +14864,10 @@ paths:
       - "admin"
   /admin/llm/keys/{keyId}/usage:
     get:
-      description: "이 키의 일별 사용량과, 키 소유자 화면에는 없는 분해 셋입니다. 일별 사용량은 소유자가 보는 것과 같은 값이고\
-        \ 같은 계산을 씁니다. 분해 셋은 일별 금액, 경로별 사용, 공급자가 요청과 다른 모델로 응답한 사례입니다. 하루는 한국 시간 기준\
-        이고 호출이 없던 날도 0으로 채워집니다. 게이트웨이가 배치로 보고하므로 오늘 자 값은 아직 채워지는 중입니다."
+      description: "학생 지원 권한으로 전역 조회하는 이 키의 일별 사용량과, 키 소유자 화면에는 없는 분해 셋입니다. 일별 사용량\
+        은 소유자가 보는 것과 같은 값이고 같은 계산을 씁니다. 분해 셋은 일별 금액, 경로별 사용, 공급자가 요청과 다른 모델로 응답한 사\
+        례입니다. 하루는 한국 시간 기준이고 호출이 없던 날도 0으로 채워집니다. 게이트웨이가 배치로 보고하므로 오늘 자 값은 아직 채워지는\
+        \ 중입니다."
       operationId: "getAdminLlmKeyUsage"
       parameters:
       - in: "path"
@@ -14712,6 +16112,42 @@ paths:
           format: "uuid"
           type: "string"
       - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "q"
+        required: false
+        schema:
+          maxLength: 100
+          minLength: 0
+          type: "string"
+      - in: "query"
+        name: "requestedEndFrom"
+        required: false
+        schema:
+          format: "date"
+          type: "string"
+      - in: "query"
+        name: "requestedEndTo"
+        required: false
+        schema:
+          format: "date"
+          type: "string"
+      - in: "query"
+        name: "reqIndefinite"
+        required: false
+        schema:
+          type: "boolean"
+      - in: "query"
+        name: "relatedUserId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
         name: "page"
         required: false
         schema:
@@ -14914,6 +16350,268 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-request-controller"
+  /admin/resource-access/{resourceType}/{resourceId}:
+    get:
+      operationId: "getAdminResourceAccess"
+      parameters:
+      - in: "path"
+        name: "resourceType"
+        required: true
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "path"
+        name: "resourceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResourceAccessListResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-resource-access-controller"
+    post:
+      operationId: "addAdminResourceAccessGrant"
+      parameters:
+      - in: "path"
+        name: "resourceType"
+        required: true
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "path"
+        name: "resourceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddResourceAccessGrantRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResourceAccessGrantView"
+          description: "Created"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-resource-access-controller"
+  /admin/resource-access/{resourceType}/{resourceId}/preview:
+    post:
+      operationId: "previewAdminResourceAccessChange"
+      parameters:
+      - in: "path"
+        name: "resourceType"
+        required: true
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "path"
+        name: "resourceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceAccessChangePreviewRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ActorAccessImpact"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-resource-access-controller"
+  /admin/resource-access/{resourceType}/{resourceId}/{grantId}:
+    delete:
+      operationId: "removeAdminResourceAccessGrant"
+      parameters:
+      - in: "path"
+        name: "resourceType"
+        required: true
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "path"
+        name: "resourceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "grantId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-resource-access-controller"
+    patch:
+      operationId: "updateAdminResourceAccessGrant"
+      parameters:
+      - in: "path"
+        name: "resourceType"
+        required: true
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "path"
+        name: "resourceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "grantId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateResourceAccessGrantRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResourceAccessGrantView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-resource-access-controller"
+  /admin/resource-deadlines:
+    get:
+      description: "전역 지원 메타데이터를 자원당 주 기한 하나로 조회합니다. 기관·워크스페이스는 선택 필터이며 없는 식별자는 빈\
+        \ 목록입니다. VM은 사용 종료일, LLM 키는 만료 시각, 외부 도메인은 갱신 또는 해제 뒤 예약 종료, GPU는 대기 중 승인\
+        \ 종료일 또는 할당·반납 중 실제 임대 종료입니다. 종료 상태와 주 기한 없는 자원은 제외합니다. expiringInDays는 1~365의\
+        \ KST 달력 창으로 오늘부터 오늘+N일까지입니다. VM·대기 GPU는 종료일 양끝을 포함합니다. LLM 키는 관측 시각보다 미래이\
+        면서 오늘+N 다음 날 0시(KST)까지 포함하여 그날까지 사용 가능한 키를 담습니다. 도메인·GPU 임대의 정확한 시각은 관측 시각\
+        보다 미래이며 같은 다음 날 0시 미만입니다. expired=true는 날짜 종료가 오늘보다 이전이거나 정확한 기한이 관측 시각 이하\
+        인 자원입니다. 두 창을 함께 지정하면 교집합이므로 빈 목록입니다. 관측 시각과 count·페이지는 같은 DB snapshot이며 기\
+        한 경과를 외부 완료로 해석하지 않습니다. 실제 변경 권한은 기존 단건 경로의 기관 범위를 따릅니다."
+      operationId: "listAdminResourceDeadlines"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "type"
+        required: false
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "query"
+        name: "deadlineKind"
+        required: false
+        schema:
+          $ref: "#/components/schemas/AdminResourceDeadlineKind"
+      - in: "query"
+        name: "expiringInDays"
+        required: false
+        schema:
+          format: "int32"
+          maximum: 365
+          minimum: 1
+          type: "integer"
+      - in: "query"
+        name: "expired"
+        required: false
+        schema:
+          type: "boolean"
+      - in: "query"
+        name: "sort"
+        required: false
+        schema:
+          enum:
+          - "deadlineAt"
+          - "-deadlineAt"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminResourceDeadlineResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 통합 자원 기한 목록"
+      tags:
+      - "admin-resource-deadline-controller"
   /admin/routes:
     get:
       operationId: "listAdminRoutes"
@@ -15136,6 +16834,29 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-summary-controller"
+  /admin/support-orgs:
+    get:
+      description: "비활성 기관을 포함한 기관 ID·이름·상태만 조회합니다. 기관 설정이나 자격증명, 배정·운영 권한을 제공하지 않\
+        습니다."
+      operationId: "listAdminSupportOrgs"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/AdminSupportOrgOptionResponse"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "학생 지원 조회의 기관 필터 목록"
+      tags:
+      - "admin-support-org-controller"
   /admin/system-summary:
     get:
       operationId: "getSystemSummary"
@@ -15593,6 +17314,8 @@ paths:
       - "admin-controller"
   /admin/users/{userId}/profile:
     patch:
+      description: "기관 운영자·관리자는 시스템 계층 계정을 제외한 사용자의 프로필을 전역 정정하며 시스템 관리자는 모든 계정을 정\
+        정합니다. 기존 프로필 변경 로직으로 초대 연결과 알림, 감사를 처리합니다. 계정 상태와 MFA, 기관 역할은 변경하지 않습니다."
       operationId: "updateUserProfile"
       parameters:
       - in: "path"
@@ -15620,8 +17343,123 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "사용자 프로필 정정"
       tags:
       - "admin-user-controller"
+  /admin/users/{userId}/profile-impact:
+    post:
+      description: "제안된 프로필 또는 복원할 계정 상태에서 수락 가능한 초대와 가입 대기 신청의 다음 상태를 조회합니다. 프로필\
+        \ 정정은 기관 관리자·운영자와 시스템 관리자가, 계정 활성화 미리보기는 시스템 관리자만 수행합니다. 값을 저장하거나 초대를 수락하지\
+        \ 않습니다. 미리보기는 예약이 아니며 생성 대기는 실제 생성 완료가 아닙니다."
+      operationId: "previewAdminUserProfileImpact"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserProfileImpactRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminUserProfileImpactResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "프로필 정정과 계정 활성화의 초대 영향 미리보기"
+      tags:
+      - "admin-user-support-controller"
+  /admin/users/{userId}/support:
+    get:
+      description: "학생 지원 권한으로 구성원·초대·신청·리소스 관계를 전역 조회합니다. 기관은 선택 필터입니다. 저장된 학번과 대\
+        기 초대의 연결, 생성 대기와 실제 리소스 상태를 구분합니다."
+      operationId: "getAdminUserSupport"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminUserSupportResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "사용자의 관계와 실제 신청 결과 조회"
+      tags:
+      - "admin-user-support-controller"
+  /admin/users/{userId}/support/access:
+    get:
+      description: "학생 지원 권한으로 지정 리소스의 구성원과 부여, 계정 및 리소스 상태를 설명합니다. 실제 사용자 인가와 연결\
+        \ 상태는 변경하지 않으며 종류별 작업 성공을 보장하지 않습니다."
+      operationId: "getAdminUserResourceAccess"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "type"
+        required: true
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "query"
+        name: "resourceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminUserResourceAccessResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "사용자와 리소스의 공통 접근 조건 조회"
+      tags:
+      - "admin-user-support-controller"
   /admin/vm-flavors:
     get:
       operationId: "listAdminVmFlavors"
@@ -15696,6 +17534,34 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-flavor-controller"
+  /admin/vm-placement/preview:
+    post:
+      description: "신청 저장 전과 승인 검토에서 같은 이미지 revision과 한 VM 사양을 조회합니다. 호환 ACTIVE replica와\
+        \ ACTIVE 노드, 실제 배치 용량 계산을 재사용합니다. 용량을 예약하거나 승인 규칙을 바꾸지 않으며 다인 전체 생성이나 외부 적\
+        용 완료를 보장하지 않습니다."
+      operationId: "previewAdminVmPlacement"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminVmPlacementPreviewRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminVmPlacementPreviewResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "제안 VM 사양의 현재 한 VM 배치 조건 조회"
+      tags:
+      - "admin-vm-placement-controller"
   /admin/vms:
     get:
       operationId: "listAdminVms"
@@ -16189,6 +18055,26 @@ paths:
       tags:
       - "admin-workspace-controller"
   /admin/workspaces/{workspaceId}:
+    delete:
+      operationId: "deleteAdminWorkspace"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-workspace-controller"
     get:
       operationId: "getAdminWorkspace"
       parameters:
@@ -16213,10 +18099,40 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-workspace-controller"
+    patch:
+      operationId: "updateAdminWorkspace"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminWorkspaceDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-workspace-controller"
   /admin/workspaces/{workspaceId}/invitations:
     get:
-      description: "신청을 승인할 수 있는 관리자가 아직 가입하지 않은 사람을 신청 대상자로 고를 때 씁니다. 대기 중인 초대만 오\
-        래된 순서로 돌려줍니다."
+      description: "학생 지원 권한으로 아직 가입하지 않은 대상의 초대 정보를 조회합니다. 대기 중인 초대만 오래된 순서로 돌려줍니\
+        다."
       operationId: "listAdminWorkspaceInvitations"
       parameters:
       - in: "path"
@@ -16241,6 +18157,194 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "워크스페이스의 대기 중인 초대 목록"
+      tags:
+      - "admin-workspace-controller"
+    post:
+      operationId: "inviteAdminWorkspaceMembers"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteWorkspaceMembersRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InviteWorkspaceMembersResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-workspace-controller"
+  /admin/workspaces/{workspaceId}/invitations/preview:
+    post:
+      operationId: "previewAdminWorkspaceInvitations"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteWorkspaceMembersRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ActorAccessImpact"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-workspace-controller"
+  /admin/workspaces/{workspaceId}/invitations/{invitationId}:
+    delete:
+      operationId: "cancelAdminWorkspaceInvitation"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "invitationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-workspace-controller"
+  /admin/workspaces/{workspaceId}/members/{userId}:
+    delete:
+      operationId: "removeAdminWorkspaceMember"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-workspace-controller"
+    patch:
+      operationId: "updateAdminWorkspaceMemberRole"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceMemberRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceMemberResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-workspace-controller"
+  /admin/workspaces/{workspaceId}/members/{userId}/preview:
+    post:
+      operationId: "previewAdminWorkspaceMemberRole"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceMemberRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ActorAccessImpact"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-workspace-controller"
   /auth/login:
@@ -16704,6 +18808,37 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "접근 권한 부여"
+      tags:
+      - "dns-domain-access"
+  /dns-domains/{domainId}/access/preview:
+    post:
+      operationId: "previewDnsDomainAccessChange"
+      parameters:
+      - in: "path"
+        name: "domainId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceAccessChangePreviewRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ActorAccessImpact"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "dns-domain-access"
   /dns-domains/{domainId}/access/{grantId}:
@@ -17229,6 +19364,37 @@ paths:
       summary: "접근 권한 부여"
       tags:
       - "gpu-access"
+  /gpu-allocations/{allocationId}/access/preview:
+    post:
+      operationId: "previewGpuAccessChange"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceAccessChangePreviewRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ActorAccessImpact"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "gpu-access"
   /gpu-allocations/{allocationId}/access/{grantId}:
     delete:
       description: "접근 권한만 회수하며 연결된 가상머신은 재시작하지 않습니다."
@@ -17633,6 +19799,37 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "접근 권한 부여"
+      tags:
+      - "llm-key-access"
+  /llm-keys/{keyId}/access/preview:
+    post:
+      operationId: "previewLlmKeyAccessChange"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceAccessChangePreviewRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ActorAccessImpact"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "llm-key-access"
   /llm-keys/{keyId}/access/{grantId}:
@@ -18945,6 +21142,37 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "접근 권한 부여"
+      tags:
+      - "vm-access"
+  /vms/{vmId}/access/preview:
+    post:
+      operationId: "previewVmAccessChange"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceAccessChangePreviewRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ActorAccessImpact"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-access"
   /vms/{vmId}/access/{grantId}:

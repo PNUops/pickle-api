@@ -75,11 +75,23 @@ public class AdminPublishingController {
     public PageResponse<AdminDomainView> listAdminDomains(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
+            @RequestParam(required = false) UUID workspaceId,
             @RequestParam(required = false) DomainKind kind,
             @RequestParam(required = false) DomainStatus status,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return adminPublishingService.listDomains(principal, orgId, kind, status, page, size);
+        return adminPublishingService.listDomains(principal, orgId, workspaceId, kind, status, page, size);
+    }
+
+    @GetMapping("/domains/{domainId}")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
+    @Operation(operationId = "getAdminDomain", summary = "도메인 단건 열람",
+            description = "학생 지원 권한으로 정확한 도메인 ID의 현재 저장 metadata를 전역 조회합니다. "
+                    + "목록과 같은 기간·해제·DNS 상태를 반환하며 외부 조회나 변경을 실행하지 않습니다. "
+                    + "삭제된 도메인과 기관·워크스페이스의 필수 식별 정보를 확인할 수 없는 도메인은 404입니다.")
+    public AdminDomainView getAdminDomain(@AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID domainId) {
+        return adminPublishingService.getDomain(principal, domainId);
     }
 
     @GetMapping("/certificates")

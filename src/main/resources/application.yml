@@ -361,6 +361,29 @@ pickle:
     sysadmin-password: ${PICKLE_SEED_SYSADMIN_PASSWORD:}
     orgadmin-email: ${PICKLE_SEED_ORGADMIN_EMAIL:orgadmin@pickle.local}
     orgadmin-password: ${PICKLE_SEED_ORGADMIN_PASSWORD:}
+  dev-inventory:
+    # Safe placeholders. A real development Proxmox test must supply its own
+    # inventory, VMID band and scoped credential after checking the host.
+    root-domain: ${PICKLE_DEV_ROOT_DOMAIN:dev.pickle.test}
+    node-name: ${PICKLE_DEV_NODE_NAME:dev-pve}
+    node-api-host: ${PICKLE_DEV_NODE_API_HOST:https://dev-proxmox.invalid:8006}
+    node-cpu-threads: ${PICKLE_DEV_NODE_CPU_THREADS:4}
+    node-memory-mb: ${PICKLE_DEV_NODE_MEMORY_MB:4096}
+    node-vm-bridge: ${PICKLE_DEV_NODE_VM_BRIDGE:vmbr-dev}
+    node-storage: ${PICKLE_DEV_NODE_STORAGE:dev-storage}
+    ip-pool-name: ${PICKLE_DEV_IP_POOL_NAME:dev-guest}
+    ip-pool-cidr: ${PICKLE_DEV_IP_POOL_CIDR:192.0.2.0/24}
+    ip-pool-gateway: ${PICKLE_DEV_IP_POOL_GATEWAY:192.0.2.1}
+    ip-pool-dns: ${PICKLE_DEV_IP_POOL_DNS:192.0.2.53}
+    ip-pool-reserved-ranges: '${PICKLE_DEV_IP_POOL_RESERVED_RANGES:[]}'
+    template-vmid: ${PICKLE_DEV_TEMPLATE_VMID:9001}
+    vmid-start: ${PICKLE_DEV_VMID_START:900000000}
+    relay-name: ${PICKLE_DEV_RELAY_NAME:dev-relay}
+    relay-source-ip: ${PICKLE_DEV_RELAY_SOURCE_IP:192.0.2.2}
+    relay-public-host: ${PICKLE_DEV_RELAY_PUBLIC_HOST:relay.invalid}
+    relay-port-start: ${PICKLE_DEV_RELAY_PORT_START:30000}
+    relay-port-end: ${PICKLE_DEV_RELAY_PORT_END:30999}
+    enable-gateways: ${PICKLE_DEV_ENABLE_GATEWAYS:false}
   isolated-bootstrap:
     # The normal isolated profile is seed-free. A guarded one-shot must opt in
     # with this flag and the separate isolated-bootstrap profile.
@@ -377,6 +400,31 @@ spring:
       on-profile: dev
 
 pickle:
+  console:
+    base-url: ${PICKLE_CONSOLE_BASE_URL:https://dev.pickle.test}
+  auth:
+    verification-base-url: ${PICKLE_VERIFICATION_BASE_URL:https://dev.pickle.test/verify-email}
+    password-reset-base-url: ${PICKLE_PASSWORD_RESET_BASE_URL:https://dev.pickle.test/reset-password}
+  oauth:
+    google:
+      redirect-uri: ${PICKLE_GOOGLE_REDIRECT_URI:https://dev.pickle.test/auth/google/callback}
+  proxmox:
+    # A token is never supplied by this profile. The placeholder cannot reach PVE.
+    ca-cert-path: ${PICKLE_PROXMOX_CA_CERT:}
+  sshgw:
+    allowed-source-ip: ${PICKLE_SSHGW_SOURCE_IP:192.0.2.3}
+  relay:
+    restricted-source-ips: ${PICKLE_RELAY_RESTRICTED_SOURCE_IPS:192.0.2.2}
+  llm-gateway:
+    allowed-source-ip: ${PICKLE_LLM_GATEWAY_SOURCE_IP:192.0.2.4}
+  openrouter:
+    base-url: ${PICKLE_OPENROUTER_URL:https://openrouter.invalid/api/v1}
+  proxy-agent:
+    base-url: ${PICKLE_PROXY_AGENT_URL:http://proxy-agent.invalid:9443}
+  terminal:
+    bridge-control-base-url: ${PICKLE_TERMINAL_BRIDGE_URL:http://terminal-bridge.invalid:8083}
+  publishing:
+    proxy-public-ip: ${PICKLE_PROXY_PUBLIC_IP:192.0.2.5}
   mail:
     # full mock-mail bodies (verification links = bearer tokens) go to this
     # service-user-only (rw-------) spool, not the journal
@@ -384,6 +432,10 @@ pickle:
   dns:
     # No zone to write in development: accept and do nothing.
     provider: ${PICKLE_DNS_PROVIDER:noop}
+
+jobrunr:
+  background-job-server:
+    enabled: ${PICKLE_DEV_JOBRUNR_ENABLED:false}
 
 ---
 # staging/prod: real SMTP (provider credentials come from the operator via env).

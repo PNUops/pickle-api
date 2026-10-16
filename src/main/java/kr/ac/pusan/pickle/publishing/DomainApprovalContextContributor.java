@@ -5,6 +5,7 @@ import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.ApprovalContextContributor;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.DomainContext;
 import kr.ac.pusan.pickle.request.Request;
+import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -40,7 +41,7 @@ public class DomainApprovalContextContributor implements ApprovalContextContribu
     }
 
     @Override
-    public Contribution contribute(Request request, List<Long> applicantWorkspaceIds) {
+    public Contribution contribute(Request request, List<Long> applicantWorkspaceIds, AuthenticatedUser actor) {
         String fqdn = jdbc.queryForObject(
                 "select label || '.' || root_domain from domain_request_details where request_id = ?",
                 String.class, request.getId());

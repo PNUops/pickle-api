@@ -40,7 +40,6 @@ import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountSelectionService;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAllocationQuery;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgScope;
@@ -120,7 +119,7 @@ public class AdminLlmKeyService {
             LlmApiKeyStatus status, String query, int page, int size) {
         Long requestedOrgId = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        OrgScope scope = AdminOrgScope.read(actor, orgId, requestedOrgId);
+        OrgScope scope = StudentSupportPolicy.filterScope(actor, orgId, requestedOrgId);
         Long requestedWorkspaceId = workspaceId == null ? null
                 : workspaceRepository.findByPublicId(workspaceId).map(Workspace::getId).orElse(null);
         Long requestedRequestId = requestId == null ? null
@@ -277,6 +276,13 @@ public class AdminLlmKeyService {
      * for a sharper reason: it is the only one that grants, and a SYS_MANAGER
      * outside this gate could hand a key image generation, which settles per
      * image, without moving any number.
+     *
+     * <p>Except {@code chat}. It spans both axes, so a key on self-serving
+     * models alone needs it as much as a funded one, and keeping it behind the
+     * money gate would leave a SYS_MANAGER unable to restore chat to a
+     * token-only key. The comparison is between sets without it: granting or
+     * withdrawing chat alone moves nothing here, and reordering moves nothing
+     * either. Every other capability is money-axis only and stays gated.
      */
     public static boolean moneyChanged(LlmKeyLimitRules.Normalized current,
             LlmKeyLimitRules.Normalized next) {
@@ -284,7 +290,8 @@ public class AdminLlmKeyService {
                 || !Objects.equals(current.creditLimitReset(), next.creditLimitReset())
                 || !current.creditAllowedModels().equals(next.creditAllowedModels())
                 || !current.creditDeniedModels().equals(next.creditDeniedModels())
-                || !current.passthroughEndpoints().equals(next.passthroughEndpoints());
+                || !PassthroughEndpoints.withoutChat(current.passthroughEndpoints())
+                        .equals(PassthroughEndpoints.withoutChat(next.passthroughEndpoints()));
     }
 
     /** The refusal a SYS_MANAGER meets on the money side, in one wording. */
@@ -370,12 +377,13 @@ public class AdminLlmKeyService {
             // this the key waits for the sweep, which is the same
             // several-minute silence a fresh approval used to get.
             long internalKeyId = key.getId();
-            afterCommit("enqueue openrouter provision " + key.getPublicId(), () -> {
+            AfterCommit.queue("enqueue openrouter provision " + key.getPublicId(), () -> {
                 try {
-                    jobScheduler.enqueue(() -> provisioner.provision(internalKeyId));
+                    return jobScheduler.enqueue(() -> provisioner.provision(internalKeyId)).toString();
                 } catch (RuntimeException e) {
                     log.warn("could not enqueue OpenRouter provisioning for a newly funded "
                             + "llm key; the sweep will pick it up", e);
+                    return null;
                 }
             });
         }
@@ -494,12 +502,13 @@ public class AdminLlmKeyService {
             // key on seeing this one, and the sweep would only return in a
             // few minutes; queue the attempt now, as the limits path does.
             long internalKeyId = key.getId();
-            afterCommit("enqueue openrouter provision " + key.getPublicId(), () -> {
+            AfterCommit.queue("enqueue openrouter provision " + key.getPublicId(), () -> {
                 try {
-                    jobScheduler.enqueue(() -> provisioner.provision(internalKeyId));
+                    return jobScheduler.enqueue(() -> provisioner.provision(internalKeyId)).toString();
                 } catch (RuntimeException e) {
                     log.warn("could not enqueue OpenRouter provisioning after an expiry change; "
                             + "the sweep will pick it up", e);
+                    return null;
                 }
             });
         }
@@ -584,8 +593,7 @@ public class AdminLlmKeyService {
      * are looking at one fact, and two computations of it would drift into two
      * answers about a fence.
      *
-     * <p>The institution scoping is this surface's own: an org-tier reviewer
-     * sees keys of the institutions they read, and a system-tier one sees all.
+     * <p>The institution scoping is this surface's own: every support reader sees key metadata across institutions.
      * Resource grants do not enter it, which is exactly why this is a separate
      * path rather than a widening of the holder's.
      */
@@ -606,8 +614,8 @@ public class AdminLlmKeyService {
      * the usage behind it is a guess.
      *
      * <p>The scoping is this surface's own, the same as the detail beside it:
-     * an org-tier reviewer sees keys of the institutions they read. Resource
-     * grants do not enter it.
+     * every support reader sees usage aggregates across institutions.
+     * Prompt and response content are not part of this projection.
      *
      * <p>The trend is the holder's own response, not a second query. The
      * breakdowns beside it are the part an administrator has and the holder
@@ -625,9 +633,7 @@ public class AdminLlmKeyService {
 
     private LlmApiKey requireReadable(AuthenticatedUser actor, UUID keyId) {
         LlmApiKey key = keyRepository.findByPublicId(keyId).orElseThrow(AdminLlmKeyService::notFound);
-        if (actor.role().isOrgTier() && !actor.reads(key.getOrgId())) {
-            throw notFound();
-        }
+        StudentSupportPolicy.requireRead(actor);
         return key;
     }
 

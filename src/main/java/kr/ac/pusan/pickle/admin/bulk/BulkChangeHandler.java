@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin.bulk;
 
+import kr.ac.pusan.pickle.access.dto.ActorAccessImpact;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +55,21 @@ abstract class BulkChangeHandler<T> {
         }
     }
 
+    void prepareApply(AuthenticatedUser actor, AdminBulkChangeRequest request) { }
+
+    @Nullable ActorAccessImpact actorAccessImpact(AuthenticatedUser actor, T target,
+            AdminBulkChangeSpec change) { return null; }
+
+    Map<String, Object> fingerprintValues(AuthenticatedUser actor, T target, AdminBulkChangeSpec change) {
+        return fingerprintValues(target, change);
+    }
+
+    @Nullable AdminBulkChangeReason write(AuthenticatedUser actor, T target, Judgement judgement,
+            AdminBulkChangeSpec change, UUID batchId, String ip,
+            kr.ac.pusan.pickle.access.dto.AccessConfirmation confirmation) {
+        return write(actor, target, judgement, change, batchId, ip);
+    }
+
     /** The kinds this handler serves. */
     abstract Set<AdminBulkChangeKind> kinds();
 
@@ -85,6 +101,15 @@ abstract class BulkChangeHandler<T> {
 
     /** Every value the change kind could touch, in a stable order. */
     abstract Map<String, Object> fingerprintValues(T target, AdminBulkChangeSpec change);
+
+    /** Explicit public values; internal fingerprint inputs never define the read surface. */
+    abstract Map<String, Object> observationValues(T target, AdminBulkChangeSpec change);
+
+    static Map<String, Object> publicValues(Map<String, Object> values, Set<String> fields) {
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        values.forEach((field, value) -> { if (fields.contains(field)) { result.put(field, value); } });
+        return result;
+    }
 
     abstract Judgement judge(AuthenticatedUser actor, T target, AdminBulkChangeSpec change,
             Instant now);

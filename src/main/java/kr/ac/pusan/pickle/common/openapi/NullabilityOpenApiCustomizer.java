@@ -43,6 +43,9 @@ final class NullabilityOpenApiCustomizer {
     private static final Set<String> HAND_DEFINED = Set.of("Problem");
 
     /** Generic page envelope: schema name pattern {@code PageResponse<Element>}. */
+    /** This presence-tracking change is also returned as a saved partial request. */
+    private static final Set<String> PARTIAL_RESPONSE_CLASSES = Set.of("AdminBulkLlmKeyLimitsChange");
+
     private static final String PAGE_PREFIX = "PageResponse";
 
     private NullabilityOpenApiCustomizer() {
@@ -144,6 +147,23 @@ final class NullabilityOpenApiCustomizer {
     }
 
     private static void applyToSchema(String name, Schema<?> schema, Class<?> record) {
+        if (!record.isRecord()) {
+            if (!PARTIAL_RESPONSE_CLASSES.contains(name)) {
+                throw new IllegalStateException("response class has no declared partial-field policy: " + name);
+            }
+            // A saved partial request preserves omission. Its fields stay optional,
+            // while explicit nulls follow the same opt-in as the request.
+            for (java.lang.reflect.Field field : record.getDeclaredFields()) {
+                Schema<?> prop = (Schema<?>) schema.getProperties().get(field.getName());
+                if (prop != null && field.getAnnotatedType().isAnnotationPresent(Nullable.class)
+                        && !"creditLimit".equals(field.getName())) {
+                    // creditLimit's nullable getter represents omission only;
+                    // an explicit null is refused by the existing request rule.
+                    markNullable(prop, schema, field.getName());
+                }
+            }
+            return;
+        }
         Set<String> props = schema.getProperties().keySet();
         List<String> required = new ArrayList<>();
         for (RecordComponent component : record.getRecordComponents()) {
@@ -271,7 +291,9 @@ final class NullabilityOpenApiCustomizer {
         // CLASSES (…Request) that back PATCH bodies.
         TypeFilter recordFilter = (metadataReader, metadataReaderFactory) ->
                 "java.lang.Record".equals(metadataReader.getClassMetadata().getSuperClassName())
-                        || metadataReader.getClassMetadata().getClassName().endsWith("Request");
+                        || metadataReader.getClassMetadata().getClassName().endsWith("Request")
+                        || PARTIAL_RESPONSE_CLASSES.stream().anyMatch(name -> metadataReader.getClassMetadata()
+                                .getClassName().endsWith("." + name));
         scanner.addIncludeFilter(recordFilter);
         Map<String, List<Class<?>>> index = new HashMap<>();
         for (BeanDefinition bd : scanner.findCandidateComponents(BASE_PACKAGE)) {

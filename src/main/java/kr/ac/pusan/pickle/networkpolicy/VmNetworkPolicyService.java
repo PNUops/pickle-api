@@ -85,7 +85,7 @@ public class VmNetworkPolicyService {
 
     @Transactional(readOnly = true)
     public VmNetworkPolicyView adminView(AuthenticatedUser actor, UUID vmId) {
-        return view(adminAccess.requireReadableVm(actor, vmId));
+        return view(adminAccess.requireReadablePolicyVm(actor, vmId));
     }
 
     public VmNetworkPolicyView adminUpdate(AuthenticatedUser actor, UUID vmId,

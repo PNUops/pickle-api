@@ -61,6 +61,26 @@ class ContractDriftTest {
 
     /** The implemented surface ("METHOD path") — runtime must expose exactly this. */
     private static final Set<String> IMPLEMENTED = Set.of(
+            "GET /admin/bulk-changes/previews/{previewId}",
+            "GET /admin/bulk-changes/operations/{operationId}",
+            "GET /admin/bulk-changes/operations",
+            "GET /admin/resource-access/{resourceType}/{resourceId}",
+            "POST /admin/resource-access/{resourceType}/{resourceId}",
+            "POST /admin/resource-access/{resourceType}/{resourceId}/preview",
+            "PATCH /admin/resource-access/{resourceType}/{resourceId}/{grantId}",
+            "DELETE /admin/resource-access/{resourceType}/{resourceId}/{grantId}",
+            "PATCH /admin/workspaces/{workspaceId}",
+            "DELETE /admin/workspaces/{workspaceId}",
+            "POST /admin/workspaces/{workspaceId}/invitations",
+            "POST /admin/workspaces/{workspaceId}/invitations/preview",
+            "DELETE /admin/workspaces/{workspaceId}/invitations/{invitationId}",
+            "PATCH /admin/workspaces/{workspaceId}/members/{userId}",
+            "DELETE /admin/workspaces/{workspaceId}/members/{userId}",
+            "POST /admin/workspaces/{workspaceId}/members/{userId}/preview",
+            "POST /vms/{vmId}/access/preview",
+            "POST /llm-keys/{keyId}/access/preview",
+            "POST /dns-domains/{domainId}/access/preview",
+            "POST /gpu-allocations/{allocationId}/access/preview",
             "GET /gpus",
             "GET /gpu-allocations",
             "GET /gpu-allocations/{allocationId}",
@@ -137,6 +157,7 @@ class ContractDriftTest {
             "GET /admin/requests",
             "GET /admin/requests/{requestId}",
             "GET /admin/requests/{requestId}/context",
+            "POST /admin/vm-placement/preview",
             "GET /admin/vms/{vmId}/network-policy",
             "PUT /admin/vms/{vmId}/network-policy",
             "POST /admin/requests/{requestId}/approve",
@@ -182,6 +203,7 @@ class ContractDriftTest {
             "PATCH /admin/nodes/{nodeId}",
             "GET /admin/os-images",
             "PATCH /admin/os-images/{imageId}",
+            "GET /admin/resource-deadlines",
             "GET /admin/vms",
             // HTTP publishing (multi-domain since contract v0.29.0).
             "POST /vms/{vmId}/domains",
@@ -192,6 +214,7 @@ class ContractDriftTest {
             "POST /domains/{domainId}/verify",
             "GET /admin/routes",
             "GET /admin/domains",
+            "GET /admin/domains/{domainId}",
             "GET /admin/domains/{domainId}/records",
             "PATCH /admin/domains/{domainId}/renewal",
             "GET /admin/domain-roots",
@@ -212,6 +235,7 @@ class ContractDriftTest {
             "GET /admin/announcements",
             "POST /admin/announcements/preview",
             "GET /admin/announcements/{announcementId}",
+            "GET /admin/support-orgs",
             "GET /admin/workspaces",
             "GET /admin/workspaces/{workspaceId}",
             "GET /admin/workspaces/{workspaceId}/invitations",
@@ -256,6 +280,9 @@ class ContractDriftTest {
             // Admin user surface (contract v0.9.0).
             "GET /admin/users",
             "GET /admin/users/{userId}",
+            "GET /admin/users/{userId}/support",
+            "GET /admin/users/{userId}/support/access",
+            "POST /admin/users/{userId}/profile-impact",
             "POST /admin/users/{userId}/disable",
             "POST /admin/users/{userId}/enable",
             // 2FA enrollment (contract v0.9.0).
@@ -408,6 +435,27 @@ class ContractDriftTest {
     }
 
     @Test
+    void savedBulkLimitsKeepCreditOptionalAndNonNullableWithoutLosingClearableFields() throws Exception {
+        JsonNode schemas = fetchRuntimeSpec().path("components").path("schemas");
+        JsonNode limits = schemas.path("AdminBulkLlmKeyLimitsChange");
+        JsonNode credit = limits.path("properties").path("creditLimit");
+        assertThat(credit.path("type").toString()).contains("number").doesNotContain("null");
+        assertThat(limits.path("required").toString()).doesNotContain("creditLimit");
+        for (String field : List.of("rpm", "tpm", "concurrency", "dailyTokens")) {
+            assertThat(limits.path("properties").path(field).path("type").toString()).contains("null");
+        }
+        assertThat(limits.path("properties").path("creditLimitReset").path("anyOf").toString()).contains("null");
+        for (String hidden : List.of("rpmSet", "tpmSet", "creditLimitSet", "empty")) {
+            assertThat(limits.path("properties").has(hidden)).isFalse();
+        }
+        JsonNode preview = schemas.path("AdminBulkChangePreviewResponse");
+        assertThat(preview.path("required").toString()).contains("previewId", "createdAt", "expiresAt", "items");
+        assertThat(preview.path("properties").path("consumedOperationId").path("type").toString()).contains("null");
+        assertThat(schemas.path("AdminBulkChangeOperationResponse").path("required").toString())
+                .contains("operationId", "previewId", "committedAt", "result", "effects", "observations");
+    }
+
+    @Test
     void runtimeExposesExactlyTheImplementedSet() throws Exception {
         assertThat(endpointsOf(fetchRuntimeSpec(), SERVER_PREFIX))
                 .as("springdoc runtime spec path+method set vs the implemented set")
@@ -415,10 +463,31 @@ class ContractDriftTest {
     }
 
     @Test
+    void accessChangeActionPublishesItsOwnExactMutationVocabulary() throws Exception {
+        JsonNode schemas = fetchRuntimeSpec().path("components").path("schemas");
+        assertThat(schemas.path("ResourceAccessChangePreviewRequest").path("properties").path("action")
+                .path("$ref").asText()).isEqualTo("#/components/schemas/ResourceAccessChangeAction");
+        List<String> values = new ArrayList<>();
+        schemas.path("ResourceAccessChangeAction").path("enum").forEach(value -> values.add(value.asText()));
+        assertThat(values).containsExactly("ADD", "UPDATE", "REMOVE");
+    }
+
+    @Test
     void runtimeOperationsHaveDistinctNonblankIds() throws Exception {
         assertThat(operationIdIssues(fetchRuntimeSpec()))
                 .as("runtime OpenAPI operationIds")
                 .isEmpty();
+    }
+
+    @Test
+    void userSupportSchemasDoNotReplaceExistingActionsOrMemberships() throws Exception {
+        JsonNode schemas = fetchRuntimeSpec().path("components").path("schemas");
+        assertThat(schemas.path("Action").path("enum").toString()).isEqualTo("[\"ACCEPT\",\"DROP\"]");
+        assertThat(schemas.path("AdminUserProfileImpactAction").path("enum").toString())
+                .isEqualTo("[\"PROFILE\",\"ENABLE\"]");
+        assertThat(schemas.path("Membership").path("properties").has("workspaceKind")).isTrue();
+        assertThat(schemas.path("Membership").path("properties").has("resourceCounts")).isFalse();
+        assertThat(schemas.path("AdminUserSupportMembership").path("properties").has("resourceCounts")).isTrue();
     }
 
     @Test

@@ -1118,7 +1118,7 @@ class PublishingTest {
     // ── admin scoping ────────────────────────────────────────────────────────
 
     @Test
-    void adminRoutesAreOrgScoped() throws Exception {
+    void adminRoutesExposeSafeResourceMetadata() throws Exception {
         long vmId = publishableVm("team-admin", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
 

@@ -31,5 +31,20 @@ public record AdminBulkChangeRequest(
 
         @Schema(description = "적용에서만 씁니다. 미리보기가 준 대상별 fingerprint를 전부 담습니다. "
                 + "서버는 적용 시점의 값을 다시 계산해 다른 대상은 STALE로 답하고 쓰지 않습니다.")
-        @Nullable Map<UUID, String> fingerprints) {
+        @Nullable Map<UUID, String> fingerprints,
+        @Valid @Nullable Map<UUID, kr.ac.pusan.pickle.access.dto.AccessConfirmation> accessConfirmations,
+        @Schema(description = "적용에서 필수인 저장 미리보기 ID") @Nullable UUID previewId,
+        @Schema(description = "적용에서 필수. 응답 유실 재시도에도 유지하는 클라이언트 생성 ID. batchId와 같습니다.")
+        @Nullable UUID operationId) {
+    public AdminBulkChangeRequest(AdminBulkChangeTargetType targetType, List<UUID> targetIds,
+            AdminBulkChangeSpec change, @Nullable Map<UUID, String> fingerprints) {
+        this(targetType, targetIds, change, fingerprints, null, null, null);
+    }
+
+    public AdminBulkChangeRequest(AdminBulkChangeTargetType targetType, List<UUID> targetIds,
+            AdminBulkChangeSpec change, @Nullable Map<UUID, String> fingerprints,
+            @Nullable Map<UUID, kr.ac.pusan.pickle.access.dto.AccessConfirmation> accessConfirmations) {
+        this(targetType, targetIds, change, fingerprints, accessConfirmations, null, null);
+    }
+
 }

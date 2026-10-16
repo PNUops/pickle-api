@@ -84,4 +84,11 @@ public class GpuAccessGrantController {
             HttpServletRequest httpRequest) {
         service.remove(principal, ResourceType.GPU, allocationId, grantId, clientIp(httpRequest));
     }
+    @PostMapping("/preview")
+    public kr.ac.pusan.pickle.access.dto.ActorAccessImpact previewGpuAccessChange(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID allocationId,
+            @Valid @RequestBody kr.ac.pusan.pickle.access.dto.ResourceAccessChangePreviewRequest request) {
+        return service.preview(actor, ResourceType.GPU, allocationId, request, false);
+    }
+
 }

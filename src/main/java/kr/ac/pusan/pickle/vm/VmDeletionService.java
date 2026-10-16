@@ -5,7 +5,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -143,8 +142,8 @@ public class VmDeletionService {
 
         // Best-effort graceful shutdown; its failure never touches the schedule.
         enqueueAfterCommit("enqueue vm gracefulShutdown #" + vmId, () -> deleteVmJob.gracefulShutdown(vmId));
-        publishWithOrgAdmins(vm, NotificationEvent.VM_DELETE_ACCEPTED,
-                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "scheduledFor", scheduledFor));
+        notificationService.publish(recipients(vm), NotificationEvent.VM_DELETE_ACCEPTED,
+                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "scheduledFor", scheduledFor), null);
         return new VmDeletionResponse(VmDeleteKind.SELF, scheduledFor, now, actor.publicId(), null, true);
     }
 
@@ -362,8 +361,8 @@ public class VmDeletionService {
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "overrodeProtection", overrodeProtection), ip);
         enqueueAfterCommit("enqueue vm deleteVm #" + vmId, () -> deleteVmJob.deleteVm(vmId));
-        publishWithOrgAdmins(vm, NotificationEvent.VM_DELETE_FORCE,
-                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()));
+        notificationService.publish(recipients(vm), NotificationEvent.VM_DELETE_FORCE,
+                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()), null);
         return new MessageResponse("강제 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다.");
     }
 
@@ -510,31 +509,17 @@ public class VmDeletionService {
     // ── notifications / enqueue ────────────────────────────────────────────
 
     /**
-     * Everyone this VM concerns — its grantees and the owners of the workspace that
-     * owns it (ACTIVE only).
+     * The VM's resource owners and the owners of its workspace (ACTIVE only).
      * Notifications are INSERTed in the deletion transaction itself, so they
      * exist iff the deletion intent committed; email leaves asynchronously via
      * the dispatcher.
      */
     private List<Long> recipients(Vm vm) {
-        return notificationService.vmAudienceIds(vm);
-    }
-
-    /**
-     * The VM's audience, plus the org's admins as administrators — their mail
-     * may be held and sent together. An admin who is also in the audience is
-     * told once, as a member of it.
-     */
-    private void publishWithOrgAdmins(Vm vm, NotificationEvent event, Map<String, Object> args) {
-        List<Long> audience = recipients(vm);
-        Set<Long> admins = new LinkedHashSet<>(notificationService.orgAdminIds(vm.getOrgId()));
-        admins.removeAll(audience);
-        notificationService.publish(audience, event, args, null);
-        notificationService.publishToAdmins(admins, event, args, null);
+        return notificationService.vmOwnerIds(vm);
     }
 
     /** Same after-commit trade-off as ApprovalService/VmLifecycleService. */
     private void enqueueAfterCommit(String label, JobLambda job) {
-        AfterCommit.run(label, () -> jobScheduler.enqueue(job));
+        AfterCommit.queue(label, () -> jobScheduler.enqueue(job).toString());
     }
 }
