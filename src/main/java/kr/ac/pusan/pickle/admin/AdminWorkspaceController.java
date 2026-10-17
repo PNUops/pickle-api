@@ -113,15 +113,17 @@ public class AdminWorkspaceController {
     @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
     public void cancelAdminWorkspaceInvitation(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID workspaceId,
-            @PathVariable UUID invitationId, jakarta.servlet.http.HttpServletRequest http) {
-        invitations.cancel(actor, workspaceId, invitationId, kr.ac.pusan.pickle.common.web.ClientIps.clientIp(http), true);
+            @PathVariable UUID invitationId, @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
+            kr.ac.pusan.pickle.workspace.dto.ConfirmTerminationRequest request, jakarta.servlet.http.HttpServletRequest http) {
+        invitations.cancel(actor, workspaceId, invitationId, kr.ac.pusan.pickle.common.web.ClientIps.clientIp(http), true, request.confirmation());
     }
     @org.springframework.web.bind.annotation.DeleteMapping("/{workspaceId}")
     @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
     public void deleteAdminWorkspace(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID workspaceId,
-            jakarta.servlet.http.HttpServletRequest http) {
-        workspaces.delete(actor, workspaceId, kr.ac.pusan.pickle.common.web.ClientIps.clientIp(http), true);
+            @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
+            kr.ac.pusan.pickle.workspace.dto.ConfirmTerminationRequest request, jakarta.servlet.http.HttpServletRequest http) {
+        workspaces.delete(actor, workspaceId, kr.ac.pusan.pickle.common.web.ClientIps.clientIp(http), true, request.confirmation());
     }
 
 }

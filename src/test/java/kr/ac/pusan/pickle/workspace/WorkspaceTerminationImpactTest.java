@@ -2,6 +2,8 @@ package kr.ac.pusan.pickle.workspace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import org.springframework.http.MediaType;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
@@ -300,6 +302,95 @@ class WorkspaceTerminationImpactTest {
         assertThat(read(path() + "?size=1&resourcePage=1", owner).at("/blockingResources/content/0/resourceReadable").asBoolean()).isTrue();
         grants.deleteById(workspaceGrant.getId());
         assertThat(read(path() + "?size=1", owner).get("fingerprint").asString()).isEqualTo(restricted.get("fingerprint").asString());
+    }
+
+    @Test
+    void emptyTerminationStillRequiresExplicitCurrentConfirmationForBothRoutes() throws Exception {
+        for (boolean support : List.of(false, true)) {
+            User actor = support ? user(UserRole.ORG_MANAGER) : owner;
+            String impactPath = support ? adminPath() : path();
+            String mutationPath = impactPath.replace("/termination-impact", "");
+            mvc.perform(delete(mutationPath)
+                    .header("Authorization", bearer(actor)).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isUnprocessableContent());
+            String fingerprint = read(impactPath, actor).get("fingerprint").asString();
+            for (java.util.Map<String, Object> invalid : List.of(
+                    java.util.Map.<String, Object>of("confirmation", java.util.Map.of("fingerprint", fingerprint, "confirmed", false)),
+                    java.util.Map.<String, Object>of("confirmation", java.util.Map.of("fingerprint", " ", "confirmed", true)))) {
+                mvc.perform(delete(mutationPath).header("Authorization", bearer(actor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(invalid))).andExpect(status().isUnprocessableContent());
+            }
+            assertThat(jdbc.queryForObject("select deleted_at is null from workspaces where id=?", Boolean.class, workspace)).isTrue();
+        }
+        User writer = user(UserRole.ORG_MANAGER);
+        String fingerprint = read(adminPath(), writer).get("fingerprint").asString();
+        terminate(adminPath(), writer, fingerprint, 204);
+    }
+
+    @Test
+    void preimageIncludesSubmittedRecipientsUntilConfirmationAndThenCleanupIsAtomic() throws Exception {
+        long pending = request(org, "SUBMITTED");
+        long undecided = recipient(pending, null, "QUEUED");
+        long approved = request(org, "APPROVED");
+        long waiting = recipient(approved, invitation("preimage"), "PENDING_JOIN");
+        long failed = recipient(approved, null, "FAILED");
+        JsonNode before = read(path(), owner);
+        assertThat(before.at("/summary/submittedRequests").asLong()).isEqualTo(1);
+        assertThat(before.at("/summary/closingRecipients").asLong()).isEqualTo(2);
+        terminate(path(), owner, before.get("fingerprint").asString(), 204);
+        assertThat(jdbc.queryForObject("select status::text from requests where id=?", String.class, pending)).isEqualTo("CANCELED");
+        assertThat(jdbc.queryForList("select status from request_recipients where id in (?,?) order by id", String.class, undecided, waiting)).containsExactly("CANCELED", "CANCELED");
+        assertThat(jdbc.queryForObject("select status from request_recipients where id=?", String.class, failed)).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("select status::text from requests where id=?", String.class, approved)).isEqualTo("APPROVED");
+    }
+
+    @Test
+    void sameCountsWithDifferentTargetsMustBeReconfirmedAndLeaveEverythingUnchanged() throws Exception {
+        long original = request(org, "SUBMITTED");
+        String fingerprint = read(path(), owner).get("fingerprint").asString();
+        jdbc.update("update requests set status='CANCELED' where id=?", original);
+        long replacement = request(org, "SUBMITTED");
+        terminate(path(), owner, fingerprint, 409);
+        assertThat(jdbc.queryForObject("select status::text from requests where id=?", String.class, replacement)).isEqualTo("SUBMITTED");
+        assertThat(jdbc.queryForObject("select deleted_at is null from workspaces where id=?", Boolean.class, workspace)).isTrue();
+        terminate(path(), owner, read(path(), owner).get("fingerprint").asString(), 204);
+    }
+
+    @Test
+    void invitationConfirmationCoversEveryExactLinkedRequestAndLeavesOtherRelations() throws Exception {
+        long invitation = invitation("closing");
+        long untouched = invitation("untouched");
+        long pending = request(org, "SUBMITTED"); long approved = request(org, "APPROVED");
+        long first = recipient(pending, invitation, "PENDING_JOIN");
+        long second = recipient(approved, invitation, "PENDING_JOIN");
+        long other = recipient(approved, untouched, "PENDING_JOIN");
+        long failed = recipient(request(org, "APPROVED"), invitation, "FAILED");
+        User supporter = user(UserRole.ORG_ADMIN);
+        terminate(adminInvitationPath(invitation), supporter, read(adminInvitationPath(invitation), supporter).get("fingerprint").asString(), 204);
+        assertThat(jdbc.queryForList("select status from request_recipients where id in (?,?) order by id", String.class, first, second)).containsExactly("CANCELED", "CANCELED");
+        assertThat(jdbc.queryForObject("select status from request_recipients where id=?", String.class, other)).isEqualTo("PENDING_JOIN");
+        assertThat(jdbc.queryForObject("select status from request_recipients where id=?", String.class, failed)).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("select status::text from requests where id=?", String.class, pending)).isEqualTo("SUBMITTED");
+        assertThat(jdbc.queryForObject("select status::text from requests where id=?", String.class, approved)).isEqualTo("APPROVED");
+    }
+
+    @Test
+    void confirmationFailureAndResourceBlockerRollBackAllCleanup() throws Exception {
+        long pending = request(org, "SUBMITTED"); long recipient = recipient(pending, null, "QUEUED");
+        String beforeResource = read(path(), owner).get("fingerprint").asString();
+        vm("blocker-" + UUID.randomUUID());
+        terminate(path(), owner, beforeResource, 409);
+        terminate(path(), owner, read(path(), owner).get("fingerprint").asString(), 409);
+        assertThat(jdbc.queryForObject("select status::text from requests where id=?", String.class, pending)).isEqualTo("SUBMITTED");
+        assertThat(jdbc.queryForObject("select status from request_recipients where id=?", String.class, recipient)).isEqualTo("QUEUED");
+        assertThat(jdbc.queryForObject("select count(*) from audit_logs where action='request.cancel' and target_id=?", Long.class, pub("requests", pending).toString())).isZero();
+    }
+
+    private void terminate(String impactPath, User actor, String fingerprint, int expected) throws Exception {
+        mvc.perform(delete(impactPath.replace("/termination-impact", ""))
+                .header("Authorization", bearer(actor)).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(java.util.Map.of("confirmation", java.util.Map.of("fingerprint", fingerprint, "confirmed", true)))))
+                .andExpect(status().is(expected));
     }
 
     private long vm(String slug) {

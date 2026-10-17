@@ -80,8 +80,9 @@ public class WorkspaceController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteWorkspace(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId,
+            @Valid @RequestBody kr.ac.pusan.pickle.workspace.dto.ConfirmTerminationRequest request,
             HttpServletRequest httpRequest) {
-        workspaceService.delete(principal, workspaceId, clientIp(httpRequest));
+        workspaceService.delete(principal, workspaceId, clientIp(httpRequest), false, request.confirmation());
     }
 
     @PostMapping("/{workspaceId}/invitations")
@@ -116,8 +117,9 @@ public class WorkspaceController {
     public void cancelWorkspaceInvitation(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId,
             @PathVariable UUID invitationId,
+            @Valid @RequestBody kr.ac.pusan.pickle.workspace.dto.ConfirmTerminationRequest request,
             HttpServletRequest httpRequest) {
-        invitationService.cancel(principal, workspaceId, invitationId, clientIp(httpRequest));
+        invitationService.cancel(principal, workspaceId, invitationId, clientIp(httpRequest), false, request.confirmation());
     }
 
     @PostMapping("/{workspaceId}/roster/resolve")

@@ -14,6 +14,7 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * Writes append-only {@code audit_logs} rows. Runs in its own transaction so
  * audit entries survive business-transaction rollbacks (e.g. failed logins).
+ * The explicit mandatory entry point instead joins the business transaction.
  * Detail maps are whitelisted field-by-field at call sites — never secrets.
  */
 @Service
@@ -43,6 +44,7 @@ public class AuditService {
     public static final String REQUEST_CANCEL = "request.cancel";
     public static final String REQUEST_APPROVE = "request.approve";
     public static final String REQUEST_REJECT = "request.reject";
+    public static final String REQUEST_RECIPIENT_CANCEL = "request.recipient_cancel";
     public static final String REQUEST_RECIPIENT_RETRY = "request.recipient_retry";
     /** A resource made for one recipient of an approved request, by the platform. */
     public static final String REQUEST_RECIPIENT_CREATE = "request.recipient_create";
@@ -284,6 +286,18 @@ public class AuditService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(Long actorId, String actorRole, String action, String targetType, UUID targetId,
+            Map<String, Object> detail, String ip) {
+        insert(actorId, actorRole, action, targetType, targetId, detail, ip);
+    }
+
+    /** The caller's business change and this generic audit INSERT are atomic. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordInTransaction(Long actorId, String actorRole, String action, String targetType, UUID targetId,
+            Map<String, Object> detail, String ip) {
+        insert(actorId, actorRole, action, targetType, targetId, detail, ip);
+    }
+
+    private void insert(Long actorId, String actorRole, String action, String targetType, UUID targetId,
             Map<String, Object> detail, String ip) {
         String detailJson = (detail == null || detail.isEmpty()) ? null : objectMapper.writeValueAsString(detail);
         jdbcTemplate.update("""

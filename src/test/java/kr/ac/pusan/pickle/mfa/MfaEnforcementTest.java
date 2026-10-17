@@ -40,6 +40,12 @@ class MfaEnforcementTest {
     private MfaService mfaService;
     @Autowired
     private TotpService totpService;
+    @Autowired
+    private kr.ac.pusan.pickle.request.RequestRecipientCancellationService recipientCancellations;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired
+    private org.springframework.transaction.support.TransactionTemplate tx;
 
     @Test
     void unenrolledAdminIsScopeRestrictedButCanReachEnrollmentSurfaces() throws Exception {
@@ -148,6 +154,79 @@ class MfaEnforcementTest {
         mockMvc.perform(get("/api/v1/workspaces")
                 .header("Authorization", "Bearer " + jwtService.createAccessToken(user)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void recipientCancellationRetainsMfaEnforcementOnBothSurfaces() throws Exception {
+        User admin = createUser("mfa.enforce.recipient@pusan.ac.kr", UserRole.SYS_ADMIN);
+        String token = jwtService.createAccessToken(admin);
+        for (String prefix : java.util.List.of("/api/v1/requests/", "/api/v1/admin/requests/")) {
+            String target = prefix + java.util.UUID.randomUUID() + "/recipients/" + java.util.UUID.randomUUID();
+            mockMvc.perform(get(target + "/cancellation-impact").header("Authorization", "Bearer " + token))
+                    .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(target + "/cancel")
+                    .header("Authorization", "Bearer " + token).contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
+        }
+    }
+
+    @Test
+    void currentSystemRoleRechecksEnrollmentAfterTheHttpPrincipalWasCaptured() {
+        User user = createUser("mfa.enforce.promoted.recipient@pusan.ac.kr", UserRole.USER);
+        var captured = new kr.ac.pusan.pickle.security.AuthenticatedUser(user.getId(), user.getPublicId(), user.getEmail(), UserRole.USER, java.util.Map.of());
+        user.setRole(UserRole.SYS_ADMIN);
+        userRepository.saveAndFlush(user);
+        for (boolean support : java.util.List.of(false, true)) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> recipientCancellations.cancel(captured,
+                    java.util.UUID.randomUUID(), java.util.UUID.randomUUID(),
+                    new kr.ac.pusan.pickle.request.dto.CancelRequestRecipientRequest("현재 MFA 확인", new kr.ac.pusan.pickle.workspace.dto.TerminationConfirmation("unused", true)), support, "127.0.0.1"))
+                    .isInstanceOf(kr.ac.pusan.pickle.common.error.ApiException.class).hasMessageContaining("MFA_ENROLLMENT_REQUIRED");
+        }
+    }
+
+    @Test
+    void aPromotionWhileHttpCancellationWaitsForTheAdministrationLockRetainsMfaEnforcement() throws Exception {
+        for (boolean support : java.util.List.of(false, true)) {
+            User actor = createUser("mfa.waiting.recipient." + support + "@pusan.ac.kr", support ? UserRole.ORG_MANAGER : UserRole.USER);
+            long orgId = kr.ac.pusan.pickle.support.SeedFixtures.seedOrgId(jdbc);
+            if (support) kr.ac.pusan.pickle.support.SeedFixtures.grantOrgRole(jdbc, actor.getId(), orgId, UserRole.ORG_MANAGER);
+            long workspaceId = jdbc.queryForObject("insert into workspaces(kind,name) values('PROJECT','MFA 합성') returning id", Long.class);
+            jdbc.update("insert into workspace_members(workspace_id,user_id,role) values(?,?,'OWNER')", workspaceId, actor.getId());
+            long requestId = kr.ac.pusan.pickle.support.RequestFixtures.insertVmRequest(jdbc, workspaceId, orgId, actor.getId(), "MFA 합성", null);
+            kr.ac.pusan.pickle.support.RequestFixtures.approveVmRequest(jdbc, requestId, actor.getId(), null, 1, 1024, 10);
+            jdbc.update("update requests set status='APPROVED' where id=?", requestId);
+            java.util.UUID recipientId = java.util.UUID.randomUUID();
+            jdbc.update("insert into request_recipients(public_id,request_id,user_id,status) values(?,?,?,'QUEUED')", recipientId, requestId, actor.getId());
+            String path = "/api/v1/" + (support ? "admin/" : "") + "requests/" + kr.ac.pusan.pickle.support.SeedFixtures.publicId(jdbc, "requests", requestId) + "/recipients/" + recipientId;
+            String token = jwtService.createAccessToken(actor);
+            String preview = mockMvc.perform(get(path + "/cancellation-impact").header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            String fingerprint = new tools.jackson.databind.ObjectMapper().readTree(preview).get("fingerprint").asString();
+            var pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<?>> response = new java.util.concurrent.atomic.AtomicReference<>();
+                tx.executeWithoutResult(transaction -> {
+                    jdbc.queryForObject("select pg_advisory_xact_lock(1129074511,1)::text", String.class);
+                    response.set(pool.submit(() -> {
+                        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path + "/cancel")
+                                .header("Authorization", "Bearer " + token).contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"reason\":\"승격 중 현재 MFA 확인\",\"confirmation\":{\"confirmed\":true,\"fingerprint\":\"" + fingerprint + "\"}}"))
+                                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
+                        return null;
+                    }));
+                    long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+                    while (jdbc.queryForObject("select count(*) from pg_locks where locktype='advisory' and classid=1129074511 and objid=1 and not granted", Long.class) == 0) {
+                        if (System.nanoTime() > deadline) throw new AssertionError("HTTP cancellation did not reach the administration lock");
+                        try { Thread.sleep(20); }
+                        catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }
+                    }
+                    jdbc.update("update users set role='SYS_ADMIN' where id=?", actor.getId());
+                });
+                response.get().get(15, java.util.concurrent.TimeUnit.SECONDS);
+            } finally { pool.shutdownNow(); }
+            org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("select status from request_recipients where public_id=?", String.class, recipientId)).isEqualTo("QUEUED");
+            org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("select count(*) from audit_logs where action='request.recipient_cancel' and target_id=?", Long.class, recipientId.toString())).isZero();
+        }
     }
 
     private void enroll(long userId) {

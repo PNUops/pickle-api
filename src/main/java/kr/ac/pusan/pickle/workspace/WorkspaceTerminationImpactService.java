@@ -45,6 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** Read-only snapshots of the same predicates used by automatic termination. */
 @Service
 public class WorkspaceTerminationImpactService {
+    private final LifecycleActors lifecycleActors;
     private final WorkspaceRepository workspaces;
     private final WorkspaceMemberRepository members;
     private final WorkspaceInvitationRepository invitations;
@@ -56,7 +57,8 @@ public class WorkspaceTerminationImpactService {
 
     public WorkspaceTerminationImpactService(WorkspaceRepository workspaces, WorkspaceMemberRepository members,
             WorkspaceInvitationRepository invitations, UserRepository users, JdbcTemplate jdbc,
-            ResourceAccessResolver access, VmRepository vms, VmSettingsService vmSettings) {
+            ResourceAccessResolver access, VmRepository vms, VmSettingsService vmSettings, LifecycleActors lifecycleActors) {
+        this.lifecycleActors = lifecycleActors;
         this.workspaces = workspaces; this.members = members; this.invitations = invitations;
         this.users = users; this.jdbc = jdbc;
         this.access = access; this.vms = vms; this.vmSettings = vmSettings;
@@ -65,6 +67,7 @@ public class WorkspaceTerminationImpactService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public WorkspaceTerminationImpactResponse workspace(AuthenticatedUser actor, UUID workspaceId,
             boolean support, int page, int size, int resourcePage) {
+        actor = lifecycleActors.current(actor);
         Workspace workspace = requireWorkspace(actor, workspaceId, support);
         return observe(actor, workspace, null, support, page, size, resourcePage);
     }
@@ -72,6 +75,7 @@ public class WorkspaceTerminationImpactService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public WorkspaceTerminationImpactResponse invitation(AuthenticatedUser actor, UUID workspaceId,
             UUID invitationId, boolean support, int page, int size, int resourcePage) {
+        actor = lifecycleActors.current(actor);
         Workspace workspace = requireWorkspace(actor, workspaceId, support);
         WorkspaceInvitation invitation = invitations.findByPublicId(invitationId)
                 .filter(found -> found.getWorkspaceId().equals(workspace.getId()))
@@ -79,6 +83,11 @@ public class WorkspaceTerminationImpactService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.WORKSPACE_INVITATION_NOT_FOUND,
                         "초대를 찾을 수 없습니다", "대기 중인 초대가 아닙니다. 이미 수락되었거나 취소되었을 수 있습니다."));
         return observe(actor, workspace, invitation, support, page, size, resourcePage);
+    }
+
+    public WorkspaceTerminationImpactResponse lockedSnapshot(AuthenticatedUser actor, Workspace workspace,
+            @Nullable WorkspaceInvitation invitation, boolean support) {
+        return observe(actor, workspace, invitation, support, 0, 1, 0);
     }
 
     private Workspace requireWorkspace(AuthenticatedUser actor, UUID publicId, boolean support) {
