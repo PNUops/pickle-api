@@ -440,8 +440,7 @@ class AdminUserSupportTest {
         long resource = vm(workspace, org);
         grant(resource, target, "EDITOR");
         jdbc.update("update vms set status='DELETED', deleted_at=now() where id=?", resource);
-        mvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspace))
-                .header("Authorization", "Bearer " + token(owner))).andExpect(status().isNoContent());
+        mvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mvc, json, token(owner), "/api/v1/workspaces/" + pub("workspaces", workspace))).andExpect(status().isNoContent());
         read(sysAdmin, "").andExpect(status().isOk()).andExpect(jsonPath("$.memberships").isEmpty())
                 .andExpect(jsonPath("$.resources[0].id").value(pub("vms", resource).toString()))
                 .andExpect(jsonPath("$.resources[0].status").value("DELETED"))

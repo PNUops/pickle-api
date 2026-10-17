@@ -126,7 +126,7 @@ public class RequestAssembler {
                 recipientService.responses(requests, request -> viewer != null
                         && (viewer.id().equals(request.getRequesterId())
                                 || ownedWorkspaces.contains(request.getWorkspaceId())
-                                || kr.ac.pusan.pickle.admin.StudentSupportPolicy.canRead(viewer)));
+                                || kr.ac.pusan.pickle.admin.StudentSupportPolicy.canRead(viewer)), viewer);
         Map<Long, RequestReview> reviews = reviewRepository
                 .findByRequestIdIn(requests.stream().map(Request::getId).toList())
                 .stream()

@@ -45,6 +45,9 @@ public class WorkspaceService {
     private final kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock;
     private final kr.ac.pusan.pickle.access.ActorAccessImpacts accessImpacts;
 
+    private final WorkspaceTerminationImpactService terminationImpacts;
+    private final LifecycleActors lifecycleActors;
+    private final jakarta.persistence.EntityManager entityManager;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
@@ -61,7 +64,9 @@ public class WorkspaceService {
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
             RequestRepository requestRepository, AuditService auditService, AuditIds auditIds,
             NotificationService notificationService, List<ResourceTypeAdapter> resourceAdapters,
-            kr.ac.pusan.pickle.request.RequestRecipientService recipientService) {
+            kr.ac.pusan.pickle.request.RequestRecipientService recipientService, WorkspaceTerminationImpactService terminationImpacts,
+            LifecycleActors lifecycleActors, jakarta.persistence.EntityManager entityManager) {
+        this.terminationImpacts = terminationImpacts; this.lifecycleActors = lifecycleActors; this.entityManager = entityManager;
         this.administrationLock = administrationLock; this.accessImpacts = accessImpacts;
         this.recipientService = recipientService;
         this.workspaceRepository = workspaceRepository;
@@ -312,12 +317,19 @@ public class WorkspaceService {
      */
     @Transactional
     public void delete(AuthenticatedUser actor, UUID publicWorkspaceId, String ip) {
-        delete(actor, publicWorkspaceId, ip, false);
+        delete(actor, publicWorkspaceId, ip, false, null);
     }
 
     @Transactional
     public void delete(AuthenticatedUser actor, UUID publicWorkspaceId, String ip, boolean support) {
+        delete(actor, publicWorkspaceId, ip, support, null);
+    }
+
+    @Transactional
+    public void delete(AuthenticatedUser actor, UUID publicWorkspaceId, String ip, boolean support,
+            kr.ac.pusan.pickle.workspace.dto.@Nullable TerminationConfirmation confirmation) {
         administrationLock.acquire();
+        actor = lifecycleActors.current(actor);
         requireActiveActor(actor);
         if (support) { kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireWorkspaceAccessWrite(actor); }
         Workspace workspace = workspaceRepository.findByPublicIdAndDeletedAtIsNull(publicWorkspaceId)
@@ -334,24 +346,16 @@ public class WorkspaceService {
                     "워크스페이스를 삭제할 수 없습니다",
                     "개인 워크스페이스는 삭제할 수 없습니다. 계정 탈퇴 시에만 함께 정리됩니다.");
         }
-        // Cancel the workspace's in-flight (SUBMITTED) requests in this tx so an
-        // approval racing the delete can't provision into a dead workspace. Each
-        // request is locked and re-checked (same guard the cancel/approve paths
-        // use) — a request the approver already decided is left alone, and its
-        // approval that lost the row lock hits the existing SUBMITTED check
-        // (409 REQUEST_ALREADY_DECIDED) once this delete commits.
-        for (Request pending : requestRepository
-                .findByWorkspaceIdAndStatus(workspaceId, RequestStatus.SUBMITTED)) {
-            Request locked = requestRepository.findWithLockByPublicId(pending.getPublicId())
-                    .orElse(null);
-            if (locked == null || locked.getStatus() != RequestStatus.SUBMITTED) {
-                continue;
-            }
-            locked.setStatus(RequestStatus.CANCELED);
-            recipientService.closeUndecided(locked);
-            auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                    AuditService.REQUEST_CANCEL, "request", locked.getPublicId(),
-                    Map.of("workspaceId", workspace.getPublicId(), "reason", "workspace_deleted"), ip);
+        // Keep the existing request -> its recipients -> workspace -> remaining
+        // recipients order, without mutating before the confirmed preimage is read.
+        List<Request> pendingRequests = new java.util.ArrayList<>();
+        for (Request pending : requestRepository.findByWorkspaceIdAndStatus(workspaceId, RequestStatus.SUBMITTED)) {
+            Request locked = requestRepository.findWithLockByPublicId(pending.getPublicId()).orElse(null);
+            if (locked == null) continue;
+            entityManager.refresh(locked);
+            if (locked.getStatus() != RequestStatus.SUBMITTED) continue;
+            recipientService.lockUndecided(locked);
+            pendingRequests.add(locked);
         }
 
         // Counted after the request rows are locked, not before: an approval
@@ -370,6 +374,10 @@ public class WorkspaceService {
         // resource committed or runs first and the materializer then finds the
         // workspace deleted and its recipients closed.
         workspaceRepository.findByIdForUpdate(workspaceId).orElseThrow(WorkspaceService::workspaceNotFound);
+        entityManager.refresh(workspace);
+        recipientService.lockForWorkspaceTermination(workspaceId);
+        var impact = terminationImpacts.lockedSnapshot(actor, workspace, null, support);
+        TerminationConfirmations.requireConfirmed(impact.fingerprint(), confirmation);
         if (resourceAdapters.stream()
                 .anyMatch(adapter -> adapter.countLiveInWorkspace(workspaceId) > 0)) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_HAS_ACTIVE_VMS,
@@ -377,6 +385,12 @@ public class WorkspaceService {
                     "워크스페이스에 삭제되지 않은 리소스가 있습니다. 리소스 삭제(파기 완료) 후 다시 시도해 주세요.");
         }
 
+        for (Request pending : pendingRequests) {
+            pending.setStatus(RequestStatus.CANCELED);
+            recipientService.closeUndecided(pending);
+            auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_CANCEL,
+                    "request", pending.getPublicId(), Map.of("workspaceId", workspace.getPublicId(), "reason", "workspace_deleted"), ip);
+        }
         // Recipients are resolved before the soft-delete flips visibility; the
         // membership rows themselves are kept (only the workspace row is stamped).
         List<Long> recipients = notificationService.workspaceMemberIds(workspaceId);

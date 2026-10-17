@@ -83,12 +83,12 @@ class WorkspaceDeleteTest {
         addMember(workspaceId, plainMember.getEmail(), "MEMBER");
 
         // non-member → 404 (existence masked)
-        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId)).contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{\"confirmation\":{\"fingerprint\":\"unauthorized-boundary\",\"confirmed\":true}}")
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         // member below OWNER → 403
-        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId)).contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{\"confirmation\":{\"fingerprint\":\"unauthorized-boundary\",\"confirmed\":true}}")
                         .header("Authorization", "Bearer " + plainMemberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
@@ -100,23 +100,20 @@ class WorkspaceDeleteTest {
         // a live VM in behind the count. A refused delete must therefore leave
         // those requests exactly as it found them.
         long pendingRequestId = insertSubmittedRequest(workspaceId);
-        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
-                        .header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + pub("workspaces", workspaceId)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_HAS_ACTIVE_VMS"));
         assertThat(jdbcTemplate.queryForObject("select status::text from requests where id = ?",
                 String.class, pendingRequestId)).isEqualTo("SUBMITTED");
         // even a DELETING VM still blocks
         jdbcTemplate.update("update vms set status = 'DELETING' where id = ?", vmId);
-        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
-                        .header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + pub("workspaces", workspaceId)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_HAS_ACTIVE_VMS"));
         // once destroyed (DELETED), deletion is allowed
         jdbcTemplate.update("update vms set status = 'DELETED' where id = ?", vmId);
 
-        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
-                        .header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + pub("workspaces", workspaceId)))
                 .andExpect(status().isNoContent());
 
         // gone from list and detail (404), audit + member notification recorded
@@ -144,8 +141,7 @@ class WorkspaceDeleteTest {
                 select g.id from workspaces g join workspace_members gm on gm.workspace_id = g.id
                  where gm.user_id = ? and g.kind = 'PERSONAL'
                 """, Long.class, owner.getId());
-        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", personalId))
-                        .header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + pub("workspaces", personalId)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_PERSONAL_UNDELETABLE"));
     }
@@ -157,8 +153,7 @@ class WorkspaceDeleteTest {
         String sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
 
-        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
-                        .header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + pub("workspaces", workspaceId)))
                 .andExpect(status().isNoContent());
 
         // the in-flight request is CANCELED in the same unit and audited

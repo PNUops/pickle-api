@@ -17,6 +17,8 @@ public record RequestRecipientResponse(
         RequestRecipientStatus status,
         @Schema(description = "만든 리소스. 종류는 신청의 type을 따릅니다. 만들기 전에는 null입니다.")
         @Nullable UUID resourceId,
-        @Schema(description = "만들지 않았거나 실패한 이유.")
-        @Nullable String reason) {
+        @Schema(description = "기존 실패 또는 자동 종료 이유. 개별 생성 대기 취소 사유는 cancellation.reason으로 구분하며 이전 실패 이력은 보존합니다.")
+        @Nullable String reason,
+        RequestRecipientCancellationCapability cancellationCapability,
+        @Nullable RequestRecipientCancellationReceipt cancellation) {
 }

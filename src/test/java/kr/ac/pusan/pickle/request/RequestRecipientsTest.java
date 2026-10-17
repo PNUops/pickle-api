@@ -6,7 +6,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -677,7 +676,7 @@ class RequestRecipientsTest {
         long requestId = approvedKeyRequestFor(workspace, List.of(
                 Map.of("userId", member.getPublicId()), Map.of("invitationId", invitation)));
 
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspace).header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + workspace))
                 .andExpect(status().is2xxSuccessful());
         assertThat(jdbcTemplate.queryForList(
                 "select status from request_recipients where request_id = ? order by id", String.class, requestId))
@@ -739,8 +738,7 @@ class RequestRecipientsTest {
         UUID invitation = invite(workspace, email("canceled-invitee"));
         long requestId = approvedKeyRequestFor(workspace, List.of(Map.of("invitationId", invitation)));
 
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspace + "/invitations/" + invitation)
-                        .header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + workspace + "/invitations/" + invitation))
                 .andExpect(status().is2xxSuccessful());
         assertThat(recipientStatusByInvitation(requestId, invitation)).isEqualTo("CANCELED");
         assertThat(jdbcTemplate.queryForObject(

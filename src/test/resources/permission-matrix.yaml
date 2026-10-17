@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.105.0, 305 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.106.0, 309 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -511,3 +511,10 @@ operations:
   - { id: getAdminWorkspaceTerminationImpact, method: GET, path: "/admin/workspaces/{workspaceId}/termination-impact", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: getWorkspaceInvitationTerminationImpact, method: GET, path: "/workspaces/{workspaceId}/invitations/{invitationId}/termination-impact", roles: { USER: allow_workspace_scoped:OWNER, ORG_VIEWER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_VIEWER: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
   - { id: getAdminWorkspaceInvitationTerminationImpact, method: GET, path: "/admin/workspaces/{workspaceId}/invitations/{invitationId}/termination-impact", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+
+  # Recipient cancellation keeps ordinary current ownership separate from global support writes.
+  # Existing sys-tier MFA enforcement applies on both surfaces and is rechecked after the write lock.
+  - { id: getRequestRecipientCancellationImpact, method: GET, path: "/requests/{requestId}/recipients/{recipientId}/cancellation-impact", roles: { USER: allow_workspace_scoped:OWNER, ORG_VIEWER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_VIEWER: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
+  - { id: cancelRequestRecipient, method: POST, path: "/requests/{requestId}/recipients/{recipientId}/cancel", roles: { USER: allow_workspace_scoped:OWNER, ORG_VIEWER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_VIEWER: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
+  - { id: getAdminRequestRecipientCancellationImpact, method: GET, path: "/admin/requests/{requestId}/recipients/{recipientId}/cancellation-impact", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: cancelAdminRequestRecipient, method: POST, path: "/admin/requests/{requestId}/recipients/{recipientId}/cancel", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
