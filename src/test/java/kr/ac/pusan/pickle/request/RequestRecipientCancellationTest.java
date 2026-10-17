@@ -333,12 +333,13 @@ class RequestRecipientCancellationTest {
         String fingerprint = preview(request, recipient, owner, false).get("fingerprint").asString();
         CountDownLatch retryRead = new CountDownLatch(1); CountDownLatch releaseRetry = new CountDownLatch(1);
         doAnswer(call -> {
+            var found = entities.createQuery("select r from RequestRecipient r where r.publicId=:publicId and r.requestId=:requestId", RequestRecipient.class)
+                    .setParameter("publicId", call.getArgument(0)).setParameter("requestId", call.getArgument(1)).getResultStream().findFirst();
             if ("synthetic-recipient-retry".equals(Thread.currentThread().getName())) {
                 retryRead.countDown(); assertThat(releaseRetry.await(10, TimeUnit.SECONDS)).isTrue();
             }
-            return entities.createQuery("select r from RequestRecipient r where r.id=:id", RequestRecipient.class)
-                    .setParameter("id", recipient).setLockMode(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE).getResultStream().findFirst();
-        }).when(recipientRepository).findWithLockById(recipient);
+            return found;
+        }).when(recipientRepository).findByPublicIdAndRequestId(pub("request_recipients", recipient), request);
         var pool = Executors.newSingleThreadExecutor(task -> new Thread(task, "synthetic-recipient-retry"));
         try {
             var retry = pool.submit(() -> assertThatThrownBy(() -> tx.executeWithoutResult(status ->
