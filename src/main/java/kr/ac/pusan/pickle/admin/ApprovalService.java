@@ -26,6 +26,9 @@ import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.user.UserRole;
+import kr.ac.pusan.pickle.orgs.OrgAdministrationLock;
+import kr.ac.pusan.pickle.workspace.LifecycleActors;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestAssembler;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -72,6 +75,8 @@ public class ApprovalService {
     private final AuditIds auditIds;
     private final NotificationService notificationService;
     private final kr.ac.pusan.pickle.request.RequestRecipientService recipientService;
+    private final OrgAdministrationLock administrationLock;
+    private final LifecycleActors lifecycleActors;
 
     public ApprovalService(RequestRepository requestRepository, RequestReviewRepository reviewRepository,
             kr.ac.pusan.pickle.request.RequestApproval requestApproval,
@@ -81,8 +86,11 @@ public class ApprovalService {
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
             OrgRepository orgRepository,
             AuditService auditService, AuditIds auditIds, NotificationService notificationService,
-            kr.ac.pusan.pickle.request.RequestRecipientService recipientService) {
+            kr.ac.pusan.pickle.request.RequestRecipientService recipientService,
+            OrgAdministrationLock administrationLock, LifecycleActors lifecycleActors) {
         this.recipientService = recipientService;
+        this.administrationLock = administrationLock;
+        this.lifecycleActors = lifecycleActors;
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
         this.requestApproval = requestApproval;
@@ -308,6 +316,14 @@ public class ApprovalService {
     @Transactional
     public RequestDetailResponse retryRecipient(AuthenticatedUser actor, UUID requestId,
             UUID recipientId, String ip) {
+        // Authority changes serialize before any request/workspace/recipient wait.
+        administrationLock.acquire();
+        actor = lifecycleActors.current(actor);
+        if (actor.role() != UserRole.ORG_MANAGER && actor.role() != UserRole.ORG_ADMIN
+                && actor.role() != UserRole.SYS_ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "대상자 생성을 다시 시도할 권한이 없습니다.");
+        }
         Request request = findWritableWithLock(actor, requestId);
         kr.ac.pusan.pickle.request.RequestRecipient recipient = recipientService.retry(request, recipientId);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_RECIPIENT_RETRY,

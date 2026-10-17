@@ -46,6 +46,8 @@ class MfaEnforcementTest {
     private org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired
     private org.springframework.transaction.support.TransactionTemplate tx;
+    @Autowired
+    private kr.ac.pusan.pickle.admin.AdminService administration;
 
     @Test
     void unenrolledAdminIsScopeRestrictedButCanReachEnrollmentSurfaces() throws Exception {
@@ -227,6 +229,56 @@ class MfaEnforcementTest {
             org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("select status from request_recipients where public_id=?", String.class, recipientId)).isEqualTo("QUEUED");
             org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("select count(*) from audit_logs where action='request.recipient_cancel' and target_id=?", Long.class, recipientId.toString())).isZero();
         }
+    }
+
+    @Test
+    void aPromotionWhileHttpRetryWaitsForTheAdministrationLockRequiresCurrentMfaEnrollment() throws Exception {
+        String suffix = java.util.UUID.randomUUID().toString();
+        User actor = createUser("mfa.waiting.retry." + suffix + "@pusan.ac.kr", UserRole.ORG_MANAGER);
+        User administrator = createUser("mfa.retry.operator." + suffix + "@pusan.ac.kr", UserRole.SYS_ADMIN);
+        long orgId = kr.ac.pusan.pickle.support.SeedFixtures.seedOrgId(jdbc);
+        kr.ac.pusan.pickle.support.SeedFixtures.grantOrgRole(jdbc, actor.getId(), orgId, UserRole.ORG_MANAGER);
+        long workspaceId = jdbc.queryForObject("insert into workspaces(kind,name) values('PROJECT','MFA 재시도 합성') returning id", Long.class);
+        jdbc.update("insert into workspace_members(workspace_id,user_id,role) values(?,?,'OWNER')", workspaceId, actor.getId());
+        long requestId = kr.ac.pusan.pickle.support.RequestFixtures.insertVmRequest(jdbc, workspaceId, orgId, actor.getId(), "MFA 재시도 합성", null);
+        kr.ac.pusan.pickle.support.RequestFixtures.approveVmRequest(jdbc, requestId, actor.getId(), null, 1, 1024, 10);
+        jdbc.update("update requests set status='APPROVED' where id=?", requestId);
+        java.util.UUID recipientId = java.util.UUID.randomUUID();
+        jdbc.update("insert into request_recipients(public_id,request_id,user_id,status,reason,attempts) values(?,?,?,'FAILED','preserved failure',2)", recipientId, requestId, actor.getId());
+        String path = "/api/v1/admin/requests/" + kr.ac.pusan.pickle.support.SeedFixtures.publicId(jdbc, "requests", requestId) + "/recipients/" + recipientId + "/retry";
+        String token = jwtService.createAccessToken(actor);
+        long materializerJobs = jdbc.queryForObject("select count(*) from jobrunr_jobs where jobsignature like '%RequestRecipientMaterializer.run(%'", Long.class);
+        var operator = new kr.ac.pusan.pickle.security.AuthenticatedUser(administrator.getId(), administrator.getPublicId(),
+                administrator.getEmail(), UserRole.SYS_ADMIN, java.util.Map.of());
+        var pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<?>> response = new java.util.concurrent.atomic.AtomicReference<>();
+            tx.executeWithoutResult(transaction -> {
+                jdbc.queryForObject("select pg_advisory_xact_lock(1129074511,1)::text", String.class);
+                response.set(pool.submit(() -> {
+                    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path)
+                            .header("Authorization", "Bearer " + token))
+                            .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
+                    return null;
+                }));
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+                while (jdbc.queryForObject("select count(*) from pg_locks where locktype='advisory' and classid=1129074511 and objid=1 and not granted", Long.class) == 0) {
+                    if (System.nanoTime() > deadline) throw new AssertionError("HTTP retry did not reach the administration lock");
+                    try { Thread.sleep(20); }
+                    catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }
+                }
+                long revision = jdbc.queryForObject("select admin_revision from orgs where id=?", Long.class, orgId);
+                administration.revokeOrgRole(operator, actor.getPublicId(), kr.ac.pusan.pickle.support.SeedFixtures.publicId(jdbc, "orgs", orgId), revision, "127.0.0.1");
+                administration.updateUser(operator, actor.getPublicId(),
+                        new kr.ac.pusan.pickle.admin.dto.UpdateUserAdminRequest(kr.ac.pusan.pickle.admin.dto.AdminGlobalRole.SYS_ADMIN), "127.0.0.1");
+            });
+            response.get().get(15, java.util.concurrent.TimeUnit.SECONDS);
+        } finally { pool.shutdownNow(); }
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForMap("select status,reason,attempts from request_recipients where public_id=?", recipientId))
+                .containsEntry("status", "FAILED").containsEntry("reason", "preserved failure").containsEntry("attempts", 2);
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("select count(*) from audit_logs where action='request.recipient_retry' and target_id=?", Long.class,
+                kr.ac.pusan.pickle.support.SeedFixtures.publicId(jdbc, "requests", requestId).toString())).isZero();
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("select count(*) from jobrunr_jobs where jobsignature like '%RequestRecipientMaterializer.run(%'", Long.class)).isEqualTo(materializerJobs);
     }
 
     private void enroll(long userId) {
