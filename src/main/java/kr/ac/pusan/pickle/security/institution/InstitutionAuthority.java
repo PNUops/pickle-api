@@ -67,9 +67,11 @@ public final class InstitutionAuthority {
 
     private static boolean matches(InstitutionAssignment assignment, InstitutionWork work, InstitutionWorkTarget target) {
         return switch (work.boundary()) {
-            case RESOURCE -> target.institutionId() != null && target.group() == work.group()
+            case RESOURCE -> target.group() == work.group()
                     && assignment.includesWorkspace(work.group(), target.workspaceId())
-                    && assignment.institutionId().equals(target.institutionId());
+                    && (assignment.institutionId().equals(target.institutionId())
+                        || assignment.mode() == InstitutionAssignment.Mode.FULL
+                            && InstitutionWorkCatalogue.isGlobalResourceReadInFull(work));
             case RESOURCE_SUPPORT -> target.group() == work.group()
                     && assignment.includesWorkspace(work.group(), target.workspaceId());
             case WORKSPACE_SUPPORT -> target.institutionId() == null && target.group() == InstitutionWorkGroup.WORKSPACE
