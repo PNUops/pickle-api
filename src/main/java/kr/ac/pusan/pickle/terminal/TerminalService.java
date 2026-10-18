@@ -73,6 +73,7 @@ public class TerminalService {
     private final TerminalSessionRegistry sessionRegistry;
     private final BridgeControlClient bridgeControlClient;
     private final TerminalProperties properties;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions institutionPermissions;
 
     public TerminalService(SettingsService settingsService, VmRepository vmRepository,
             VmAccessService vmAccessService, WorkspaceRepository workspaceRepository,
@@ -80,7 +81,7 @@ public class TerminalService {
             IpAddressResolver ipAddressResolver, RateLimitService rateLimitService,
             AuditService auditService, TicketRegistry ticketRegistry,
             TerminalSessionRegistry sessionRegistry, BridgeControlClient bridgeControlClient,
-            TerminalProperties properties) {
+            TerminalProperties properties, kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions institutionPermissions) {
         this.settingsService = settingsService;
         this.vmRepository = vmRepository;
         this.vmAccessService = vmAccessService;
@@ -93,7 +94,7 @@ public class TerminalService {
         this.ticketRegistry = ticketRegistry;
         this.sessionRegistry = sessionRegistry;
         this.bridgeControlClient = bridgeControlClient;
-        this.properties = properties;
+        this.properties = properties; this.institutionPermissions = institutionPermissions;
     }
 
     // ── public mint (POST /vms/{vmId}/terminal-sessions) ──────────────────────
@@ -289,9 +290,9 @@ public class TerminalService {
      */
     @Transactional(readOnly = true)
     public List<TerminalSessionView> list(AuthenticatedUser actor) {
+        institutionPermissions.requireReadSource(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_TERMINAL_SESSION_READ);
         sessionRegistry.prune();
         List<MirrorSession> sessions = sessionRegistry.started().stream()
-                .filter(s -> !actor.role().isOrgTier() || actor.reads(s.orgId()))
                 .toList();
         if (sessions.isEmpty()) {
             return List.of();
@@ -313,6 +314,9 @@ public class TerminalService {
             // The mirror holds the internal ids the gateway contract speaks; the
             // admin view reports the same rows by their public identifiers.
             Vm vm = vms.get(s.vmId());
+            if (!actor.role().isSysTier() && (vm == null || !institutionPermissions.resource(actor,
+                    kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_TERMINAL_SESSION_READ,
+                    vm.getOrgId(), vm.getWorkspaceId(), true))) { continue; }
             User user = users.get(s.userId());
             Org org = orgs.get(s.orgId());
             views.add(new TerminalSessionView(

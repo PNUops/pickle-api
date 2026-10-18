@@ -59,6 +59,7 @@ public class RequestAssembler {
     private final ObjectMapper objectMapper;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     private final RequestRecipientService recipientService;
+    private final InstitutionRequestAccess institutionRequests;
 
     public RequestAssembler(kr.ac.pusan.pickle.gpu.GpuStore gpuStore, RequestReviewRepository reviewRepository,
             VmRequestDetailRepository vmDetailRepository,
@@ -69,7 +70,8 @@ public class RequestAssembler {
             NodeRepository nodeRepository, RequestPeriodPresetRepository periodPresetRepository,
             ObjectMapper objectMapper,
             org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
-            RequestRecipientService recipientService) {
+            RequestRecipientService recipientService, InstitutionRequestAccess institutionRequests) {
+        this.institutionRequests = institutionRequests;
         this.recipientService = recipientService;
         this.gpuStore = gpuStore;
         this.objectMapper = objectMapper;
@@ -126,7 +128,7 @@ public class RequestAssembler {
                 recipientService.responses(requests, request -> viewer != null
                         && (viewer.id().equals(request.getRequesterId())
                                 || ownedWorkspaces.contains(request.getWorkspaceId())
-                                || kr.ac.pusan.pickle.admin.StudentSupportPolicy.canRead(viewer)), viewer);
+                                || institutionRequests.read(viewer, request)), viewer);
         Map<Long, RequestReview> reviews = reviewRepository
                 .findByRequestIdIn(requests.stream().map(Request::getId).toList())
                 .stream()
@@ -217,7 +219,8 @@ public class RequestAssembler {
                     request.getResourceType() == ResourceType.GPU ? gpuStore.requestSpec(request.getId()) : null,
                     domainSpecs.get(request.getId()),
                     request.getCreatedAt(), request.getUpdatedAt(),
-                    recipients.getOrDefault(request.getId(), List.of())));
+                    recipients.getOrDefault(request.getId(), List.of()),
+                    viewer == null ? null : institutionRequests.allowedWorkIds(viewer,request)));
         }
         return details;
     }

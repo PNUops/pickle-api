@@ -21,7 +21,7 @@ import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyUsageResponse;
 import kr.ac.pusan.pickle.admin.dto.SuspendAdminLlmKeyRequest;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
-import kr.ac.pusan.pickle.llm.dto.LlmKeyModelsResponse;
+import kr.ac.pusan.pickle.admin.dto.InstitutionAdminLlmModelsResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -50,7 +50,7 @@ public class AdminLlmKeyController {
 
     @GetMapping
     @Operation(summary = "관리자 LLM API 키 목록",
-            description = "학생 지원 권한으로 키 metadata를 전역 조회하며 기관과 워크스페이스, 발급 신청, 상태, 검색어는 필터입니다. 키 평문과 해시, 평문 앞부분은 반환하지 않습니다.")
+            description = "각 업무가 허가한 키의 metadata·관측·금융·명령 참조를 조회하며 기관과 워크스페이스, 발급 신청, 상태, 검색어는 필터입니다. 키 평문과 해시, 평문 앞부분은 반환하지 않습니다.")
     public PageResponse<AdminLlmKeySummaryResponse> listAdminLlmKeys(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
@@ -69,7 +69,7 @@ public class AdminLlmKeyController {
 
     @GetMapping("/{keyId}")
     @Operation(summary = "관리자 LLM API 키 상세",
-            description = "학생 지원 권한으로 키 운영 상태와 한도 metadata를 전역 조회합니다. 인증 비밀이나 기록된 본문은 반환하지 않습니다.")
+            description = "실제 키에 대한 업무별로 운영 상태와 현재 허용값을 투영하며, 금융 필드는 별도로 판정합니다. 인증 비밀이나 기록된 본문은 반환하지 않습니다.")
     public AdminLlmKeyDetailResponse getAdminLlmKey(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId) {
@@ -78,7 +78,7 @@ public class AdminLlmKeyController {
 
     @GetMapping("/{keyId}/usage")
     @Operation(summary = "관리자 LLM API 키 사용량",
-            description = "학생 지원 권한으로 전역 조회하는 이 키의 일별 사용량과, 키 소유자 화면에는 없는 분해 셋입니다. "
+            description = "실제 키의 관측 읽기와 금융 읽기를 각각 판정하는 사용량 응답입니다. 미허용 투영은 null이며 0이나 빈 목록과 구분합니다. "
                     + "일별 사용량은 소유자가 보는 것과 같은 값이고 같은 계산을 씁니다. "
                     + "분해 셋은 일별 금액, 경로별 사용, 공급자가 요청과 다른 모델로 응답한 사례입니다. "
                     + "하루는 한국 시간 기준이고 호출이 없던 날도 0으로 채워집니다. "
@@ -93,19 +93,19 @@ public class AdminLlmKeyController {
 
     @GetMapping("/{keyId}/models")
     @Operation(summary = "관리자 LLM API 키로 호출할 수 있는 모델",
-            description = "학생 지원 권한으로 전역 조회하는 이 키로 부를 수 있는 모델입니다. 키 소유자가 보는 것과 같은 값이고 같은 계산을 씁니다. "
+            description = "실제 키를 위한 모델 후보입니다. 유료 정책 참조는 금융 읽기나 해당 키의 예산 명령 권한이 있을 때만 반환합니다. "
                     + "허용 목록을 정할 때 그 목록이 실제로 무엇을 남기는지 확인하는 자리입니다. "
                     + "최종 판정은 호출 시점에 이뤄지므로 여기 있는 모델이 항상 응답한다는 보장은 아닙니다.")
-    public LlmKeyModelsResponse listAdminLlmKeyModels(
+    public InstitutionAdminLlmModelsResponse listAdminLlmKeyModels(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId) {
         return service.models(principal, keyId);
     }
 
     @PutMapping("/{keyId}/limits")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 한도 교체",
-            description = "아홉 한도 값을 한 번에 교체합니다. 시스템 운영자는 금액과 리셋 창, 모델 목록, 기능 권한을 바꿀 수 없습니다.")
+            description = "보낸 한도만 현재 업무 권한으로 변경하며 생략한 값은 유지합니다. 시스템 운영자는 금액과 리셋 창, 유료 모델 및 유료 기능 정책을 바꿀 수 없습니다.")
     @ApiResponse(responseCode = "200", description = "변경된 LLM API 키 상세",
             content = @Content(mediaType = "application/json",
                     schema = @Schema(implementation = AdminLlmKeyDetailResponse.class)))
@@ -118,7 +118,7 @@ public class AdminLlmKeyController {
     }
 
     @PatchMapping("/{keyId}/expiry")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 만료일 변경",
             description = "키가 만료되는 날을 바꿉니다. 종료일은 KST 기준 그날까지 포함이고 승인 때와 같은 계산입니다. "
                     + "이미 만료된 키에 앞날의 종료일을 주면 다시 활성화됩니다. 폐기된 키는 바꿀 수 없고, "
@@ -135,7 +135,7 @@ public class AdminLlmKeyController {
     }
 
     @PostMapping("/{keyId}/suspend")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 정지",
             description = "활성 키를 정지합니다. 사유는 감사 기록에 남고 평문 요청 본문은 기록하지 않습니다.")
     public AdminLlmKeyDetailResponse suspendAdminLlmKey(
@@ -147,7 +147,7 @@ public class AdminLlmKeyController {
     }
 
     @PostMapping("/{keyId}/resume")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 재개",
             description = "정지된 키를 다시 활성화합니다.")
     public AdminLlmKeyDetailResponse resumeAdminLlmKey(

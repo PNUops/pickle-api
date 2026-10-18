@@ -7,7 +7,7 @@ import java.util.stream.Collectors;
 
 /** FULL's global trust is a curated list; adding a global enum never grants it automatically. */
 public final class InstitutionWorkCatalogue {
-    public static final String REVISION = "3";
+    public static final String REVISION = "4";
 
     private static final Set<InstitutionWork> FULL_GLOBAL_RESOURCE_READ = Set.of(InstitutionWork.LLM_KEY_COST_READ);
 

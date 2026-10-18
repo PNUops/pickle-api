@@ -12,7 +12,6 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceAccessResolver;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.ResourceType;
-import kr.ac.pusan.pickle.admin.StudentSupportPolicy;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
@@ -46,6 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class WorkspaceTerminationImpactService {
     private final LifecycleActors lifecycleActors;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
     private final WorkspaceRepository workspaces;
     private final WorkspaceMemberRepository members;
     private final WorkspaceInvitationRepository invitations;
@@ -57,8 +57,9 @@ public class WorkspaceTerminationImpactService {
 
     public WorkspaceTerminationImpactService(WorkspaceRepository workspaces, WorkspaceMemberRepository members,
             WorkspaceInvitationRepository invitations, UserRepository users, JdbcTemplate jdbc,
-            ResourceAccessResolver access, VmRepository vms, VmSettingsService vmSettings, LifecycleActors lifecycleActors) {
-        this.lifecycleActors = lifecycleActors;
+            ResourceAccessResolver access, VmRepository vms, VmSettingsService vmSettings, LifecycleActors lifecycleActors,
+            kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions) {
+        this.permissions = permissions; this.lifecycleActors = lifecycleActors;
         this.workspaces = workspaces; this.members = members; this.invitations = invitations;
         this.users = users; this.jdbc = jdbc;
         this.access = access; this.vms = vms; this.vmSettings = vmSettings;
@@ -68,7 +69,7 @@ public class WorkspaceTerminationImpactService {
     public WorkspaceTerminationImpactResponse workspace(AuthenticatedUser actor, UUID workspaceId,
             boolean support, int page, int size, int resourcePage) {
         actor = lifecycleActors.current(actor);
-        Workspace workspace = requireWorkspace(actor, workspaceId, support);
+        Workspace workspace = requireWorkspace(actor, workspaceId, support, kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_TERMINATE);
         return observe(actor, workspace, null, support, page, size, resourcePage);
     }
 
@@ -76,7 +77,7 @@ public class WorkspaceTerminationImpactService {
     public WorkspaceTerminationImpactResponse invitation(AuthenticatedUser actor, UUID workspaceId,
             UUID invitationId, boolean support, int page, int size, int resourcePage) {
         actor = lifecycleActors.current(actor);
-        Workspace workspace = requireWorkspace(actor, workspaceId, support);
+        Workspace workspace = requireWorkspace(actor, workspaceId, support, kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_INVITATIONS_MANAGE);
         WorkspaceInvitation invitation = invitations.findByPublicId(invitationId)
                 .filter(found -> found.getWorkspaceId().equals(workspace.getId()))
                 .filter(found -> found.getStatus() == WorkspaceInvitationStatus.PENDING)
@@ -90,13 +91,15 @@ public class WorkspaceTerminationImpactService {
         return observe(actor, workspace, invitation, support, 0, 1, 0);
     }
 
-    private Workspace requireWorkspace(AuthenticatedUser actor, UUID publicId, boolean support) {
+    private Workspace requireWorkspace(AuthenticatedUser actor, UUID publicId, boolean support,
+            kr.ac.pusan.pickle.security.institution.InstitutionWork work) {
         if (users.findById(actor.id()).map(user -> user.getStatus()).orElse(null) != UserStatus.ACTIVE) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
                     "인증이 필요합니다", "현재 활성 계정으로 다시 로그인해 주세요.");
         }
-        if (support) StudentSupportPolicy.requireWorkspaceAccessWrite(actor);
+
         Workspace workspace = workspaces.findByPublicIdAndDeletedAtIsNull(publicId).orElseThrow(WorkspaceTerminationImpactService::notFound);
+        if (support && !permissions.workspace(actor, work, workspace.getId(), UserRole.SYS_ADMIN)) { throw notFound(); }
         if (!support) {
             WorkspaceMember membership = members.findByWorkspaceIdAndUserId(workspace.getId(), actor.id()).orElseThrow(WorkspaceTerminationImpactService::notFound);
             if (membership.getRole() != WorkspaceMemberRole.OWNER) {
@@ -137,7 +140,7 @@ public class WorkspaceTerminationImpactService {
                 (rs, index) -> new BlockingResource(ResourceType.valueOf(rs.getString("type")), rs.getLong("id"), rs.getObject("public_id", UUID.class),
                         rs.getString("name"), rs.getObject("org_id", UUID.class), rs.getString("org_name"), rs.getString("state")),
                 workspace.getId(), workspace.getId(), workspace.getId(), workspace.getId(), size, (long) resourcePage * size) : List.of();
-        List<WorkspaceTerminationResourceResponse> blockingRows = resourceProjection(workspace, support, resourceRows, resourceRoles);
+        List<WorkspaceTerminationResourceResponse> blockingRows = resourceProjection(actor, workspace, support, resourceRows, resourceRoles);
         PageResponse<WorkspaceTerminationResourceResponse> blockingResources = new PageResponse<>(blockingRows, resourcePage, size,
                 blockingTotal, (int) ((blockingTotal + size - 1) / size));
         String blocked = workspace.getKind() == WorkspaceKind.PERSONAL ? "PERSONAL"
@@ -154,7 +157,9 @@ public class WorkspaceTerminationImpactService {
                         rs.getString("request_name"), RequestStatus.valueOf(rs.getString("request_status")), ResourceType.valueOf(rs.getString("type")),
                         rs.getObject("org_id", UUID.class), rs.getString("org_name"), true, rs.getObject("recipient_id", UUID.class),
                         rs.getObject("invitation_id", UUID.class), rs.getObject("user_id", UUID.class), rs.getString("name"), rs.getString("invitee"),
-                        support && rs.getString("user_role") != null && StudentSupportPolicy.canReadUser(actor, UserRole.valueOf(rs.getString("user_role"))),
+                        support && permissions.global(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.STUDENT_SUPPORT_READ,
+                                UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN)
+                                && rs.getString("user_role") != null && (actor.role().isSysTier() || !UserRole.valueOf(rs.getString("user_role")).isSysTier()),
                         rs.getString("recipient_status") == null ? null : RequestRecipientStatus.valueOf(rs.getString("recipient_status")),
                         rs.getString("reason"), rs.getObject("resource_id", UUID.class), rs.getBoolean("will_close")), pageArgs.toArray());
         String fingerprint = fingerprint(actor, workspace, invitation, support, cte, targetArgs, blockers, resourceRoles);
@@ -168,6 +173,7 @@ public class WorkspaceTerminationImpactService {
             Map<ResourceType, Map<Long, ResourceRole>> resourceRoles) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            update(digest, actor.institutionContext().authority().map(a -> a.fingerprint()).orElse("INVALID:" + actor.institutionContext().failure()));
             update(digest, actor.publicId() + ":" + actor.role() + ":" + support + ":" + workspace.getPublicId() + ":" + workspace.getKind()
                     + ":" + members.findByWorkspaceIdAndUserId(workspace.getId(), actor.id()).map(WorkspaceMember::getRole).orElse(null));
             actor.orgRoles().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> update(digest, entry.toString()));
@@ -185,7 +191,7 @@ public class WorkspaceTerminationImpactService {
                             ResourceType type = ResourceType.valueOf(rs.getString("type"));
                             ResourceRole role = resourceRoles.getOrDefault(type, Map.of()).get(rs.getLong("id"));
                             update(digest, String.valueOf(role));
-                            update(digest, String.valueOf(resourceReadable(support, type, rs.getObject("org_id", UUID.class), role)));
+                            update(digest, String.valueOf(resourceReadable(actor, workspace.getId(), support, type, rs.getLong("id"), rs.getObject("org_id", UUID.class), role)));
                         }, workspace.getId(), workspace.getId(), workspace.getId(), workspace.getId());
             }
             return HexFormat.of().formatHex(digest.digest());
@@ -204,16 +210,16 @@ public class WorkspaceTerminationImpactService {
         return roles;
     }
 
-    private List<WorkspaceTerminationResourceResponse> resourceProjection(Workspace workspace, boolean support,
+    private List<WorkspaceTerminationResourceResponse> resourceProjection(AuthenticatedUser actor, Workspace workspace, boolean support,
             List<BlockingResource> resources, Map<ResourceType, Map<Long, ResourceRole>> roles) {
         List<Long> restrictedVmIds = resources.stream().filter(row -> row.type() == ResourceType.VM
-                && !resourceReadable(support, row.type(), row.orgId(), roles.getOrDefault(row.type(), Map.of()).get(row.id())))
+                && !resourceReadable(actor, workspace.getId(), support, row.type(), row.id(), row.orgId(), roles.getOrDefault(row.type(), Map.of()).get(row.id())))
                 .map(BlockingResource::id).toList();
         Map<Long, Vm> restrictedVms = vms.findAllById(restrictedVmIds).stream()
                 .collect(java.util.stream.Collectors.toMap(Vm::getId, java.util.function.Function.identity()));
         Map<Long, String> displayNames = vmSettings.displayNames(restrictedVmIds);
         return resources.stream().map(row -> {
-            boolean readable = resourceReadable(support, row.type(), row.orgId(), roles.getOrDefault(row.type(), Map.of()).get(row.id()));
+            boolean readable = resourceReadable(actor, workspace.getId(), support, row.type(), row.id(), row.orgId(), roles.getOrDefault(row.type(), Map.of()).get(row.id()));
             String name = row.name();
             if (!readable && row.type() == ResourceType.VM) {
                 Vm vm = restrictedVms.get(row.id());
@@ -221,12 +227,38 @@ public class WorkspaceTerminationImpactService {
                 name = VmSummaryResponse.restricted(vm, workspace.getPublicId(), workspace.getName(), displayNames.get(vm.getId()), List.of(), true).name();
             }
             return new WorkspaceTerminationResourceResponse(row.type(), row.publicId(), name,
-                    !support && !readable ? null : row.orgId(), !support && !readable ? null : row.orgName(), row.state(), readable);
+                    !readable ? null : row.orgId(), !readable ? null : row.orgName(), row.state(), readable);
         }).toList();
     }
 
-    private static boolean resourceReadable(boolean support, ResourceType type, @Nullable UUID orgId, @Nullable ResourceRole role) {
-        return support ? type != ResourceType.DOMAIN || orgId != null : role != null;
+    private boolean resourceReadable(AuthenticatedUser actor, long workspaceId, boolean support, ResourceType type,
+            long resourceId, @Nullable UUID orgId, @Nullable ResourceRole role) {
+        if (!support) { return role != null; }
+        if (actor.role().isSysTier()) { return type != ResourceType.DOMAIN || orgId != null; }
+        Long internalOrg = orgId == null ? null : jdbc.query("select id from orgs where public_id=?",
+                (rs, row) -> rs.getLong(1), orgId).stream().findFirst().orElse(null);
+        var direct = switch (type) {
+            case VM -> kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_READ;
+            case LLM_API_KEY -> kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_METADATA_READ;
+            case GPU -> kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_METADATA_READ;
+            case DOMAIN -> kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_METADATA_READ;
+        };
+        var metadata = switch (type) {
+            case VM -> kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_SUPPORT_READ;
+            case LLM_API_KEY -> kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_METADATA_SUPPORT_READ;
+            case GPU -> kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_METADATA_SUPPORT_READ;
+            case DOMAIN -> kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_METADATA_SUPPORT_READ;
+        };
+        if (type == ResourceType.DOMAIN) {
+            if (orgId == null) { return false; }
+            String kind = jdbc.queryForObject("select kind::text from domains where id=?", String.class, resourceId);
+            if (!"EXTERNAL".equals(kind)) {
+                direct = kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_READ;
+                metadata = kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_SUPPORT_READ;
+            }
+        }
+        return permissions.resource(actor, direct, internalOrg, workspaceId, true)
+                || permissions.resource(actor, metadata, internalOrg, workspaceId, true);
     }
 
     private record BlockingResource(ResourceType type, long id, UUID publicId, String name,

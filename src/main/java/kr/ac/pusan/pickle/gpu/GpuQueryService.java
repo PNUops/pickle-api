@@ -28,11 +28,16 @@ public class GpuQueryService {
     private final OrgRepository orgs;
     private final VmRepository vms;
     private final NodeRepository nodes;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
+    private final kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries institutionQueries;
 
     public GpuQueryService(GpuStore store, ResourceAccessResolver access, WorkspaceMemberRepository members,
-            WorkspaceRepository workspaces, OrgRepository orgs, VmRepository vms, NodeRepository nodes) {
+            WorkspaceRepository workspaces, OrgRepository orgs, VmRepository vms, NodeRepository nodes,
+            kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions,
+            kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries institutionQueries) {
         this.store = store; this.access = access; this.members = members; this.workspaces = workspaces;
         this.orgs = orgs; this.vms = vms; this.nodes = nodes;
+        this.permissions = permissions; this.institutionQueries = institutionQueries;
     }
 
     public List<GpuView> inventory(boolean admin) {
@@ -64,9 +69,11 @@ public class GpuQueryService {
     }
 
     public PageResponse<GpuAllocationView> adminList(AuthenticatedUser actor, UUID orgId, UUID workspaceId, GpuAllocationStatus status, int page, int size) {
+        permissions.requireReadSource(actor, kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries.GPU_REFERENCE_WORKS
+                .toArray(kr.ac.pusan.pickle.security.institution.InstitutionWork[]::new));
         Long selected = orgId == null ? null : orgs.findByPublicId(orgId).map(o -> o.getId()).orElse(-1L);
         Long selectedWorkspace = workspaceId == null ? null : workspaces.findByPublicId(workspaceId).map(w -> w.getId()).orElse(-1L);
-        var rows = store.all().stream().filter(a -> kr.ac.pusan.pickle.admin.StudentSupportPolicy.canRead(actor))
+        var rows = store.authorized(institutionQueries.gpuAllocations(actor)).stream()
                 .filter(a -> selectedWorkspace == null || a.workspaceId() == selectedWorkspace)
                 .filter(a -> status == null || a.status() == status)
                 .filter(a -> selected == null || a.orgId() == selected)
@@ -104,26 +111,71 @@ public class GpuQueryService {
     }
 
     public void requireAdminRead(AuthenticatedUser actor, GpuAllocation a) {
-        kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireRead(actor);
+        if (allowedWorkIds(actor, a).isEmpty()) { throw GpuErrors.notFound(); }
+    }
+
+    public java.util.Set<String> allowedWorkIds(AuthenticatedUser actor, GpuAllocation allocation) {
+        return kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries.GPU_REFERENCE_WORKS.stream()
+                .filter(work -> permissions.resource(actor, work, allocation.orgId(), allocation.workspaceId(),
+                        !work.write() || work == kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_ACL_SUPPORT_MANAGE,
+                        work == kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_ACL_SUPPORT_MANAGE
+                                ? new kr.ac.pusan.pickle.user.UserRole[]{kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN}
+                                : work.write() ? new kr.ac.pusan.pickle.user.UserRole[]{kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER, kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN}
+                                : new kr.ac.pusan.pickle.user.UserRole[]{kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER, kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN}))
+                .map(kr.ac.pusan.pickle.security.institution.InstitutionWork::id).collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    public boolean canReadMetadata(AuthenticatedUser actor, GpuAllocation allocation) {
+        return readWork(actor, allocation, kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_METADATA_READ)
+                || readWork(actor, allocation, kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_METADATA_SUPPORT_READ);
+    }
+
+    public boolean canObserve(AuthenticatedUser actor, GpuAllocation allocation) {
+        return readWork(actor, allocation, kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_OBSERVE)
+                || readWork(actor, allocation, kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_OBSERVE_SUPPORT_READ);
+    }
+
+    private boolean readWork(AuthenticatedUser actor, GpuAllocation allocation,
+            kr.ac.pusan.pickle.security.institution.InstitutionWork work) {
+        return permissions.resource(actor, work, allocation.orgId(), allocation.workspaceId(), true,
+                kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER,
+                kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN);
+    }
+
+    public GpuAllocationView commandReference(AuthenticatedUser actor, GpuAllocation a) {
+        if (canReadMetadata(actor, a) || canObserve(actor, a)) { return view(actor, a, true); }
+        var workspace = workspaces.findById(a.workspaceId()).orElseThrow();
+        var org = orgs.findById(a.orgId()).orElseThrow();
+        var work = allowedWorkIds(actor, a);
+        return new GpuAllocationView(a.publicId(), a.name(), a.status(), null,
+                workspace.getPublicId(), workspace.getName(), org.getPublicId(), org.getName(), false, null, false, null, null, null, null,
+                work.contains("gpu.period") ? a.grantedLeaseHours() : null,
+                null, work.contains("gpu.period") ? a.leaseEndsAt() : null,
+                null, null, null, null, null,
+                work.contains("gpu.recall") ? a.releaseReason() : null,
+                null, null, a.updatedAt(), false, work);
     }
 
     public GpuAllocationView view(AuthenticatedUser actor, GpuAllocation a, boolean admin) {
+        if (admin && !canReadMetadata(actor, a) && !canObserve(actor, a)) { return commandReference(actor, a); }
         var workspace = workspaces.findById(a.workspaceId()).orElseThrow();
         var standing = standing(actor, a);
         boolean limited = !admin && standing.role() == null;
+        boolean metadata = !admin || canReadMetadata(actor, a);
+        boolean observe = !admin || canObserve(actor, a);
         var ownerNames = access.listAccess(ResourceType.GPU, List.of(a.id()), actor.id()).ownerNames().getOrDefault(a.id(), List.of());
         var org = orgs.findById(a.orgId()).orElseThrow();
         var vm = a.vmId() == null ? null : vms.findById(a.vmId()).orElse(null);
-        var samples = !limited && a.connectionStatus() == GpuConnectionStatus.ATTACHED && a.attachedAt() != null
+        var samples = !limited && observe && a.connectionStatus() == GpuConnectionStatus.ATTACHED && a.attachedAt() != null
                 ? store.jdbc().query("select sampled_at, util_percent from gpu_utilization_samples where allocation_id = ? and sampled_at >= ? and confidence > 0 order by sampled_at desc limit 1",
                     (rs, row) -> Map.entry(GpuStore.instant(rs, "sampled_at"), rs.getDouble("util_percent")), a.id(), java.sql.Timestamp.from(a.attachedAt()))
                 : java.util.List.<java.util.Map.Entry<java.time.Instant, Double>>of();
-        return new GpuAllocationView(a.publicId(), a.name(), a.status(), a.connectionStatus(), workspace.getPublicId(), workspace.getName(),
-                limited ? null : org.getPublicId(), limited ? null : org.getName(), limited, ownerNames, standing.manages(),
-                limited ? null : standing.role(), limited || a.gpuId() == null ? null : gpuView(store.gpu(a.gpuId()).orElseThrow()),
-                limited || vm == null ? null : vm.getPublicId(), limited || vm == null ? null : vm.getName(),
-                limited ? null : a.grantedLeaseHours(), limited ? null : a.allocatedAt(), limited ? null : a.leaseEndsAt(),
-                limited ? null : a.unattachedSince(), limited || a.status() != GpuAllocationStatus.QUEUED ? null : store.queuePosition(a),
-                limited ? null : a.priority(), samples.isEmpty() ? null : samples.getFirst().getValue(), samples.isEmpty() ? null : samples.getFirst().getKey(), limited ? null : a.releaseReason(), limited ? null : a.error(), a.createdAt(), a.updatedAt());
+        return new GpuAllocationView(a.publicId(), a.name(), a.status(), metadata || observe ? a.connectionStatus() : null, workspace.getPublicId(), workspace.getName(),
+                limited ? null : org.getPublicId(), limited ? null : org.getName(), limited, metadata ? ownerNames : null, metadata && standing.manages(),
+                limited ? null : standing.role(), limited || !metadata || a.gpuId() == null ? null : gpuView(store.gpu(a.gpuId()).orElseThrow()),
+                limited || !metadata || vm == null ? null : vm.getPublicId(), limited || !metadata || vm == null ? null : vm.getName(),
+                limited || !metadata ? null : a.grantedLeaseHours(), limited || !metadata ? null : a.allocatedAt(), limited || !metadata ? null : a.leaseEndsAt(),
+                limited || !metadata ? null : a.unattachedSince(), limited || !metadata || a.status() != GpuAllocationStatus.QUEUED ? null : store.queuePosition(a),
+                limited || !metadata ? null : a.priority(), samples.isEmpty() ? null : samples.getFirst().getValue(), samples.isEmpty() ? null : samples.getFirst().getKey(), limited || !metadata ? null : a.releaseReason(), limited || !metadata ? null : a.error(), a.createdAt(), a.updatedAt(), !limited && metadata, admin ? allowedWorkIds(actor, a) : java.util.Set.of());
     }
 }

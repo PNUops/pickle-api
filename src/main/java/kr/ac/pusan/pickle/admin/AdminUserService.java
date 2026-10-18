@@ -54,6 +54,10 @@ public class AdminUserService {
     @org.springframework.beans.factory.annotation.Autowired
     private AdminUserProfileImpactService profileImpacts;
     private final InvitationClaimService invitationClaimService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private StudentSupportPolicy studentPolicy;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.workspace.LifecycleActors lifecycleActors;
 
     public AdminUserService(UserRepository userRepository,
             UserStatusChangeRepository userStatusChangeRepository, AuditService auditService,
@@ -79,6 +83,9 @@ public class AdminUserService {
      */
     @Transactional
     public MessageResponse resetMfa(AuthenticatedUser actor, UUID userId, String ip) {
+        orgAdministrationLock.acquire();
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
+        requireSystemAdministrator(actor);
         User target = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         mfaService.adminReset(actor.id(), actor.role().name(), target, ip);
         return new MessageResponse(
@@ -94,8 +101,9 @@ public class AdminUserService {
     public UserAdminDetailResponse updateProfile(AuthenticatedUser actor, UUID userId,
             AdminUpdateProfileRequest request, String ip) {
         orgAdministrationLock.acquire();
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
         User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
-        StudentSupportPolicy.requireProfileCorrection(actor, user.getRole());
+        studentPolicy.requireStudentProfileCorrection(actor, user.getRole());
         AdminUserProfileChanges.Candidate candidate = profileChanges.candidate(user, request);
         UserPosition position = candidate.position();
         String storedStudentNo = candidate.studentNo();
@@ -162,6 +170,8 @@ public class AdminUserService {
     @Transactional
     public UserAdminDetailResponse disable(AuthenticatedUser actor, UUID userId, String reason, String ip) {
         orgAdministrationLock.acquire();
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
+        requireSystemAdministrator(actor);
         User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         if (actor.id().equals(user.getId())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_SELF_DISABLE_FORBIDDEN,
@@ -209,6 +219,8 @@ public class AdminUserService {
     @Transactional
     public UserAdminDetailResponse enable(AuthenticatedUser actor, UUID userId, String ip) {
         orgAdministrationLock.acquire();
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
+        requireSystemAdministrator(actor);
         User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         if (user.getStatus() != UserStatus.DISABLED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_NOT_DISABLED,
@@ -247,5 +259,12 @@ public class AdminUserService {
     private static ApiException userNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                 "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다.");
+    }
+
+    private static void requireSystemAdministrator(AuthenticatedUser actor) {
+        if (actor.role() != kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "시스템 관리자만 수행할 수 있습니다.");
+        }
     }
 }

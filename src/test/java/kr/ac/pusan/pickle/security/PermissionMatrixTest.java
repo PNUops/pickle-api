@@ -40,7 +40,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  *       YAML (no undocumented endpoint, no stale row);</li>
  *   <li>for every role-gated op the effective {@code @PreAuthorize} role set
  *       (method annotation overriding the class one, per Spring method security)
- *       equals exactly the roles whose cell is {@code allow}/{@code allow_org_scoped};</li>
+ *       equals the coarse roles admitted by {@code allow}/{@code allow_institution_work};</li>
  *   <li>self / catalog / workspace-scoped / {@code public} rows carry no
  *       {@code @PreAuthorize} — authorization is service-layer or none;</li>
  *   <li>every non-public op rejects an unauthenticated caller with 401, and
@@ -52,7 +52,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  * annotations; they are exercised by MockMvc tests — {@code VmAccessScopingTest}
  * walks every resource-scoped op against all four rungs plus the no-grant and
  * non-member cases, {@code ManagerRoleScopingTest} covers the manager tiers, and
- * the per-surface admin tests cover org scoping.
+ * the per-surface tests exercise complete sources, field projections and target scope.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -154,7 +154,7 @@ class PermissionMatrixTest {
         // it had said v0.57.0 for four contract bumps, which is how a label
         // stops describing what it labels.
         assertThat(matrix).as("permission-matrix.yaml op count (contract v%s)",
-                OpenApiConfig.CONTRACT_VERSION).hasSize(309);
+                OpenApiConfig.CONTRACT_VERSION).hasSize(313);
 
         Set<String> missingFromMatrix = new TreeSet<>(runtime);
         missingFromMatrix.removeAll(matrix.keySet());
@@ -189,7 +189,7 @@ class PermissionMatrixTest {
             } else {
                 Set<String> expected = new TreeSet<>();
                 op.roles.forEach((role, token) -> {
-                    if (token.equals("allow") || token.equals("allow_org_scoped")) {
+                    if (token.equals("allow") || token.equals("allow_org_scoped") || token.equals("allow_institution_work")) {
                         expected.add(role);
                     }
                 });

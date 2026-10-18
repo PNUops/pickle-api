@@ -1,12 +1,15 @@
 package kr.ac.pusan.pickle.audit;
 
 import kr.ac.pusan.pickle.support.RequestFixtures;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.UUID;
+import java.util.List;
+import java.util.Map;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
@@ -27,13 +30,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Audit read APIs per contract v0.5.0: {@code /me/activity} is strictly
- * self-scoped (login rows included, filters cannot widen it), and
- * {@code /admin/audit} pins ORG_ADMIN to actors of their own org via the
- * canonical <b>derived membership</b> rule enforced in SQL — regular users belong
- * to an org through workspaces holding requests / non-DELETED VMs in it.
- * System rows (null actor) and cross-org actors stay invisible; a cross-org
- * {@code orgId} masks as 404; SYS_ADMIN sees everything with filters.
+ * Personal history is actor-scoped. Institution history follows the captured,
+ * verified target institution in SQL, independently of the actor's current
+ * memberships. Unclassified history remains SYS-only and filters cannot widen scope.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -55,6 +54,8 @@ class AuditReadApiTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private AuditService auditService;
 
     private Org org;
     private Org otherOrg;
@@ -64,6 +65,9 @@ class AuditReadApiTest {
     private String selfToken;
     private String orgAdminToken;
     private String sysAdminToken;
+    private long firstOwnTarget;
+    private long secondOwnTarget;
+    private long foreignTarget;
     /** Unique per test run — isolates assertions from shared-DB audit noise. */
     private String runTag;
 
@@ -75,8 +79,7 @@ class AuditReadApiTest {
         self = ensureRegularUser("aud.self@pusan.ac.kr", "감사본인");
         peer = ensureRegularUser("aud.peer@pusan.ac.kr", "감사동료");
         otherOrgUser = ensureRegularUser("aud.other@pusan.ac.kr", "감사타인");
-        // derived org membership: self+peer share a workspace with a seed-org
-        // request; the third user's workspace is linked to the other org only
+        // Current actor memberships deliberately differ from some audit targets.
         long ownWorkspace = createWorkspace("audown", self.getId(), peer.getId());
         linkWorkspaceToOrg(ownWorkspace, org.getId(), self.getId());
         long otherWorkspace = createWorkspace("audoth", otherOrgUser.getId());
@@ -96,6 +99,12 @@ class AuditReadApiTest {
                 "10.0.0.3");
         // system row: no actor at all — SYS_ADMIN-only in the admin view
         insertAudit(null, null, "test." + runTag + ".system", "vm", 5544L, null);
+        firstOwnTarget = createVm(ownWorkspace, org.getId(), self.getId());
+        secondOwnTarget = createVm(ownWorkspace, org.getId(), self.getId());
+        foreignTarget = createVm(otherWorkspace, otherOrg.getId(), otherOrgUser.getId());
+        recordTargetAudit(self, firstOwnTarget);
+        recordTargetAudit(otherOrgUser, secondOwnTarget);
+        recordTargetAudit(peer, foreignTarget);
     }
 
     @Test
@@ -165,19 +174,23 @@ class AuditReadApiTest {
     }
 
     @Test
-    void adminAuditScopesOrgAdminByDerivedMembershipInSql() throws Exception {
-        String actionFilter = "?action=test." + runTag + ".vmdel&size=100";
-        // ORG_ADMIN: derived own-org actors only (users via their workspace's
-        // seed-org request) — the other org's actor is invisible
+    void adminAuditScopesInstitutionByCapturedTargetInSql() throws Exception {
+        String actionFilter = "?action=test." + runTag + ".targeted&size=100";
+        // A foreign actor's own-institution target is visible; an own actor's foreign target is not.
         mockMvc.perform(get("/api/v1/admin/audit" + actionFilter)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(2))
                 .andExpect(jsonPath("$.content[?(@.actorEmail=='aud.self@pusan.ac.kr')]").exists())
-                .andExpect(jsonPath("$.content[?(@.actorEmail=='aud.peer@pusan.ac.kr')]").exists())
-                .andExpect(jsonPath("$.content[?(@.actorEmail=='aud.other@pusan.ac.kr')]")
-                        .doesNotExist());
-        // system rows (null actor) belong to no org — ORG_ADMIN never sees them
+                .andExpect(jsonPath("$.content[?(@.actorEmail=='aud.other@pusan.ac.kr')]").exists())
+                .andExpect(jsonPath("$.content[?(@.actorEmail=='aud.peer@pusan.ac.kr')]").doesNotExist())
+                .andExpect(jsonPath("$.content[0].targetOrgId").value(org.getPublicId().toString()))
+                .andExpect(jsonPath("$.content[1].targetOrgId").value(org.getPublicId().toString()));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from audit_logs where action=? and target_org_id=?",
+                Long.class, "test." + runTag + ".targeted", org.getId())).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from audit_logs where action=? and target_org_id=?",
+                Long.class, "test." + runTag + ".targeted", otherOrg.getId())).isEqualTo(1);
+        // Genuinely unclassified system history stays SYS-only.
         mockMvc.perform(get("/api/v1/admin/audit?action=test." + runTag + ".system")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
@@ -196,7 +209,8 @@ class AuditReadApiTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))
-                .andExpect(jsonPath("$.content[0].actorEmail").value("aud.other@pusan.ac.kr"));
+                .andExpect(jsonPath("$.content[0].actorEmail").value("aud.peer@pusan.ac.kr"))
+                .andExpect(jsonPath("$.content[0].targetOrgId").value(otherOrg.getPublicId().toString()));
         // filters: actorEmail + targetType + targetId
         mockMvc.perform(get("/api/v1/admin/audit?actorEmail=aud.self@pusan.ac.kr&action=test."
                         + runTag + ".vmdel")
@@ -217,6 +231,42 @@ class AuditReadApiTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void currentMembershipAndResourceChangesCannotReclassifyAuditHistory() throws Exception {
+        jdbcTemplate.update("delete from workspace_members where user_id in (?,?,?)",
+                self.getId(), peer.getId(), otherOrgUser.getId());
+        long moved = createWorkspace("audmoved", self.getId(), peer.getId());
+        linkWorkspaceToOrg(moved, otherOrg.getId(), self.getId());
+        long opposite = createWorkspace("audopposite", otherOrgUser.getId());
+        linkWorkspaceToOrg(opposite, org.getId(), otherOrgUser.getId());
+        jdbcTemplate.update("update vms set org_id=? where id=?", otherOrg.getId(), firstOwnTarget);
+        jdbcTemplate.update("update vms set org_id=? where id=?", org.getId(), foreignTarget);
+
+        mockMvc.perform(get("/api/v1/admin/audit?action=test." + runTag + ".targeted")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.content[?(@.targetId=='%s')]".formatted(vmPublicId(firstOwnTarget))).exists())
+                .andExpect(jsonPath("$.content[?(@.targetId=='%s')]".formatted(vmPublicId(secondOwnTarget))).exists())
+                .andExpect(jsonPath("$.content[?(@.targetId=='%s')]".formatted(vmPublicId(foreignTarget))).doesNotExist());
+
+        String legacyAction = "test." + runTag + ".vmdel";
+        assertThat(jdbcTemplate.queryForObject("select count(*) from audit_logs a where a.action=? and "
+                + AuditTargetInstitutions.verifiedIdSql() + " is null", Long.class, legacyAction)).isEqualTo(3);
+        mockMvc.perform(get("/api/v1/admin/audit?action=" + legacyAction)
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+        for (UserRole role : List.of(UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN)) {
+            User systemReader = new User("audit-system-" + UUID.randomUUID() + "@example.test", "{noop}unused", "합성 시스템 열람자");
+            systemReader.setRole(role);
+            systemReader.setStatus(UserStatus.ACTIVE);
+            String token = jwtService.createAccessToken(userRepository.saveAndFlush(systemReader));
+            mockMvc.perform(get("/api/v1/admin/audit?action=" + legacyAction)
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(3))
+                    .andExpect(jsonPath("$.content[0].targetOrgId").isEmpty());
+        }
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────
 
     private void insertAudit(Long actorId, String actorRole, String action, String targetType,
@@ -225,6 +275,24 @@ class AuditReadApiTest {
                 insert into audit_logs (actor_id, actor_role, action, target_type, target_id, detail, ip)
                 values (?, ?, ?, ?, ?, '{"vmName":"aud-vm"}'::jsonb, ?)
                 """, actorId, actorRole, action, targetType, targetId, ip);
+    }
+
+    private void recordTargetAudit(User actor, long target) {
+        auditService.record(actor.getId(), actor.getRole().name(), "test." + runTag + ".targeted", "vm",
+                vmPublicId(target), Map.of("vmName", "aud-verified"), "10.0.0.1");
+    }
+
+    private UUID vmPublicId(long target) { return SeedFixtures.publicId(jdbcTemplate, "vms", target); }
+
+    private long createVm(long workspaceId, long institutionId, long requesterId) {
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, institutionId, requesterId,
+                "검증된 감사 대상", imageId, 1, 1024, 20);
+        String name = "audit-target-" + UUID.randomUUID();
+        return jdbcTemplate.queryForObject("""
+                insert into vms(node_id,workspace_id,org_id,request_id,name,hostname,image_id,vcpu,memory_mb,disk_gb,status)
+                values((select min(id) from nodes),?,?,?,?,?,?,1,1024,20,'RUNNING') returning id
+                """, Long.class, workspaceId, institutionId, requestId, name, name, imageId);
     }
 
     private long createWorkspace(String prefix, long... memberIds) {

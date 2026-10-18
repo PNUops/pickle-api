@@ -105,6 +105,33 @@ abstract class BulkChangeHandler<T> {
     /** Explicit public values; internal fingerprint inputs never define the read surface. */
     abstract Map<String, Object> observationValues(T target, AdminBulkChangeSpec change);
 
+    /** Public observations are projected for the current actor, independently of fingerprint inputs. */
+    Map<String, Object> observationValues(AuthenticatedUser actor, T target, AdminBulkChangeSpec change) {
+        return observationValues(target, change);
+    }
+
+
+    /** Diffs are a read projection, independent of the complete internal write plan. */
+    List<AdminBulkChangeFieldDiff> projectFields(AuthenticatedUser actor, T target,
+            AdminBulkChangeSpec change, List<AdminBulkChangeFieldDiff> fields) {
+        return fields;
+    }
+
+    /** A stored command body can contain fields the current actor no longer reads. */
+    boolean canReadChange(AuthenticatedUser actor, T target, AdminBulkChangeSpec change) {
+        return true;
+    }
+
+    /** Whether this actor needs proof that an old hash excluded restricted fields. */
+    boolean requiresLimitedPreviewFingerprint(AuthenticatedUser actor, T target, AdminBulkChangeSpec change) {
+        return false;
+    }
+
+    /** Server-only evidence about the field projection used when the hash was created. */
+    boolean fingerprintContainsRestrictedFields(AuthenticatedUser actor, T target, AdminBulkChangeSpec change) {
+        return false;
+    }
+
     static Map<String, Object> publicValues(Map<String, Object> values, Set<String> fields) {
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         values.forEach((field, value) -> { if (fields.contains(field)) { result.put(field, value); } });

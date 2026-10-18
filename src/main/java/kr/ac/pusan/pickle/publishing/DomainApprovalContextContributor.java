@@ -29,10 +29,12 @@ public class DomainApprovalContextContributor implements ApprovalContextContribu
 
     private final JdbcTemplate jdbc;
     private final DomainRepository domainRepository;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
 
-    public DomainApprovalContextContributor(JdbcTemplate jdbc, DomainRepository domainRepository) {
+    public DomainApprovalContextContributor(JdbcTemplate jdbc, DomainRepository domainRepository,
+            kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions) {
         this.jdbc = jdbc;
-        this.domainRepository = domainRepository;
+        this.domainRepository = domainRepository; this.permissions = permissions;
     }
 
     @Override
@@ -42,6 +44,15 @@ public class DomainApprovalContextContributor implements ApprovalContextContribu
 
     @Override
     public Contribution contribute(Request request, List<Long> applicantWorkspaceIds, AuthenticatedUser actor) {
+        if (request.getResourceType() != ResourceType.DOMAIN) { return new Contribution(null, null, null, null); }
+        boolean reference = java.util.stream.Stream.of(
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_REQUEST_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_REQUEST_SUPPORT_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_REQUEST_DECIDE)
+                .anyMatch(work -> permissions.resource(actor, work, request.getOrgId(), request.getWorkspaceId(), false,
+                        kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER,
+                        kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN));
+        if (!reference) { return new Contribution(null, null, null, null); }
         String fqdn = jdbc.queryForObject(
                 "select label || '.' || root_domain from domain_request_details where request_id = ?",
                 String.class, request.getId());

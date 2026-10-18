@@ -56,6 +56,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ResourceAccessGrantService {
     private final kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock;
     private final ActorAccessImpacts impacts;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions institutionPermissions;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private final Map<ResourceType, ResourceTypeAdapter> adapters;
@@ -71,7 +72,8 @@ public class ResourceAccessGrantService {
             ResourceAccessResolver resolver, ResourceAccessGrantRepository grantRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
             WorkspaceRepository workspaceRepository, UserRepository userRepository,
-            AuditService auditService, AuditIds auditIds) {
+            AuditService auditService, AuditIds auditIds, kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions institutionPermissions) {
+        this.institutionPermissions = institutionPermissions;
         this.administrationLock = administrationLock; this.impacts = impacts; this.jdbc = jdbc;
         this.adapters = adapters.stream()
                 .collect(Collectors.toMap(ResourceTypeAdapter::type, Function.identity()));
@@ -95,10 +97,18 @@ public class ResourceAccessGrantService {
         Managed managed = requireManager(actor, type, resourceId, support, true);
         Workspace workspace = workspaceRepository.findById(managed.resource().workspaceId())
                 .orElse(null);
-        return ResourceAccessListResponse.of(type, managed.resource(),
+        boolean manage = !support || supportAllowed(actor, type, managed.resource(), false);
+        ResourceAccessListResponse base = ResourceAccessListResponse.of(type, managed.resource(),
                 workspace == null ? null : workspace.getPublicId(),
                 workspace == null ? "" : workspace.getName(),
-                views(type, managed.resource().id()), !support || kr.ac.pusan.pickle.admin.StudentSupportPolicy.canWriteWorkspaceAccess(actor));
+                views(type, managed.resource().id()), manage);
+        List<ResourceAccessListResponse.EligibleMember> eligible = !manage ? null : jdbc.query("""
+                select u.public_id,u.name,u.status,m.role from workspace_members m join users u on u.id=m.user_id
+                 where m.workspace_id=? and u.status='ACTIVE' order by u.name,u.id
+                """, (rs, row) -> new ResourceAccessListResponse.EligibleMember(rs.getObject("public_id", UUID.class),
+                        rs.getString("name"), kr.ac.pusan.pickle.workspace.WorkspaceMemberRole.valueOf(rs.getString("role")),
+                        UserStatus.valueOf(rs.getString("status"))), managed.resource().workspaceId());
+        return new ResourceAccessListResponse(base.resource(), base.grants(), manage, eligible);
     }
 
     @Transactional
@@ -111,6 +121,7 @@ public class ResourceAccessGrantService {
     public ResourceAccessGrantView add(AuthenticatedUser actor, ResourceType type, UUID resourceId,
             AddResourceAccessGrantRequest request, String ip, boolean support) {
         administrationLock.acquire();
+        if (support) { actor = institutionPermissions.currentAfterLock(actor); }
         Managed managed = requireManager(actor, type, resourceId, support, false);
         long id = managed.resource().id();
         ResourceAccessGrant grant = request.granteeType() == AccessGranteeType.WORKSPACE
@@ -140,6 +151,7 @@ public class ResourceAccessGrantService {
     public ResourceAccessGrantView update(AuthenticatedUser actor, ResourceType type, UUID resourceId,
             UUID grantId, UpdateResourceAccessGrantRequest request, String ip, boolean support) {
         administrationLock.acquire();
+        if (support) { actor = institutionPermissions.currentAfterLock(actor); }
         Managed managed = requireManager(actor, type, resourceId, support, false);
         ResourceAccessGrant grant = requireGrant(managed, grantId);
         if (support && grant.getUserId() != null) {
@@ -166,6 +178,7 @@ public class ResourceAccessGrantService {
     @Transactional
     public void remove(AuthenticatedUser actor, ResourceType type, UUID resourceId, UUID grantId, String ip, boolean support) {
         administrationLock.acquire();
+        if (support) { actor = institutionPermissions.currentAfterLock(actor); }
         Managed managed = requireManager(actor, type, resourceId, support, false);
         ResourceAccessGrant grant = requireGrant(managed, grantId);
         var impact = impact(actor, managed, "REMOVE", grantId, grant.getGranteeType(), grant.getUserId(), null);
@@ -175,13 +188,10 @@ public class ResourceAccessGrantService {
 
     /** Managing the list is a resource owner's right, or a workspace owner's standing one. */
     private Managed requireManager(AuthenticatedUser actor, ResourceType type, UUID resourceId, boolean support, boolean read) {
-        if (support) {
-            if (read) { kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireRead(actor); }
-            else { kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireWorkspaceAccessWrite(actor); }
-        }
         ResourceTypeAdapter adapter = adapterFor(type);
         ResourceIdentity resource = adapter.identifyByPublicId(resourceId)
                 .orElseThrow(() -> adapter.accessMessages().notFound());
+        if (support && !supportAllowed(actor, type, resource, read) && !(read && supportAllowed(actor, type, resource, false))) { throw adapter.accessMessages().notFound(); }
         ResourceStanding standing = resolver.standing(type, resource.id(), resource.workspaceId(),
                 actor.id());
         if (!support && !standing.manages()) {
@@ -239,6 +249,7 @@ public class ResourceAccessGrantService {
             String action, ResourceRole role, UUID batchId, String ip,
             AccessConfirmation confirmation) {
         administrationLock.acquire();
+        actor = institutionPermissions.currentAfterLock(actor);
         Managed managed = requireManager(actor, type, resourceId, true, false);
         ResourceAccessGrant existing = grantRepository.findByResourceTypeAndResourceIdAndUserId(type, managed.resource().id(), userId).orElse(null);
         if (!"REVOKE".equals(action)) { requireEligibleMember(managed, auditIds.user(userId)); }
@@ -263,6 +274,32 @@ public class ResourceAccessGrantService {
                     existing, previous, ip, impact, confirmation, true, batchId);
         }
         return true;
+    }
+
+    public boolean canManageSupport(AuthenticatedUser actor, ResourceType type, ResourceIdentity actualResource) {
+        return supportAllowed(actor, type, actualResource, false);
+    }
+
+    public boolean canReadSupport(AuthenticatedUser actor, ResourceType type, ResourceIdentity actualResource) {
+        return supportAllowed(actor, type, actualResource, true);
+    }
+
+    private boolean supportAllowed(AuthenticatedUser actor, ResourceType type, ResourceIdentity resource, boolean read) {
+        kr.ac.pusan.pickle.security.institution.InstitutionWork work = switch (type) {
+            case VM -> read ? kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_ACL_SUPPORT_READ
+                    : kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_ACL_SUPPORT_MANAGE;
+            case LLM_API_KEY -> read ? kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_ACL_SUPPORT_READ
+                    : kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_ACL_SUPPORT_MANAGE;
+            case DOMAIN -> read ? kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_ACL_SUPPORT_READ
+                    : kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_ACL_SUPPORT_MANAGE;
+            case GPU -> read ? kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_ACL_SUPPORT_READ
+                    : kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_ACL_SUPPORT_MANAGE;
+        };
+        return read ? institutionPermissions.resource(actor, work, null, resource.workspaceId(), true,
+                kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER,
+                kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)
+                : institutionPermissions.resource(actor, work, null, resource.workspaceId(), true,
+                        kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN);
     }
 
     private ResourceTypeAdapter adapterFor(ResourceType type) {

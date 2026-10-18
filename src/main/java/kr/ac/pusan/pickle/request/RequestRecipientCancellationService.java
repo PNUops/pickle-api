@@ -13,7 +13,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.ResourceType;
-import kr.ac.pusan.pickle.admin.StudentSupportPolicy;
+import kr.ac.pusan.pickle.security.institution.InstitutionAuthorization;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
+import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -39,6 +41,7 @@ import tools.jackson.databind.ObjectMapper;
 /** A bounded pre-registration cancellation; registered resources have separate lifecycle paths. */
 @Service
 public class RequestRecipientCancellationService {
+    private final InstitutionAuthorization institutionAuthorization;
     private final OrgAdministrationLock administrationLock;
     private final LifecycleActors actors;
     private final RequestRepository requests;
@@ -51,7 +54,8 @@ public class RequestRecipientCancellationService {
 
     public RequestRecipientCancellationService(OrgAdministrationLock administrationLock, LifecycleActors actors,
             RequestRepository requests, RequestRecipientRepository recipients, WorkspaceRepository workspaces,
-            JdbcTemplate jdbc, AuditService audit, ObjectMapper json, jakarta.persistence.EntityManager entities) {
+            JdbcTemplate jdbc, AuditService audit, ObjectMapper json, jakarta.persistence.EntityManager entities, InstitutionAuthorization institutionAuthorization) {
+        this.institutionAuthorization = institutionAuthorization;
         this.administrationLock = administrationLock; this.actors = actors; this.requests = requests;
         this.recipients = recipients; this.workspaces = workspaces; this.jdbc = jdbc;
         this.audit = audit; this.json = json; this.entities = entities;
@@ -73,7 +77,7 @@ public class RequestRecipientCancellationService {
     public RequestRecipientCancellationReceipt cancel(AuthenticatedUser principal, UUID requestId, UUID recipientId,
             CancelRequestRecipientRequest input, boolean support, String ip) {
         administrationLock.acquire();
-        AuthenticatedUser actor = actors.current(principal);
+        AuthenticatedUser actor = actors.currentAfterAdministrationLock(principal);
         Request request = requests.findByPublicId(requestId).orElseThrow(RequestRecipientCancellationService::notFound);
         // APPROVED decisions are immutable. Do not take a request lock after the workspace.
         Workspace workspace = workspaces.findByIdForUpdate(request.getWorkspaceId()).orElseThrow(RequestRecipientCancellationService::notFound);
@@ -121,7 +125,7 @@ public class RequestRecipientCancellationService {
         List<RequestRecipient> rows = recipients.findByRequestIdOrderByIdAsc(request.getId());
         Registration facts = registrations(List.of(request), rows).getOrDefault(request.getId(), Registration.EMPTY);
         String blocked = blocked(request, workspace.getDeletedAt() != null, recipient, facts);
-        String binding = actor.publicId() + ":" + actor.role() + ":" + actor.orgRoles().entrySet().stream()
+        String binding = institutionAuthorization.authority(actor).map(value -> value.fingerprint()).orElse("invalid") + ":" + actor.publicId() + ":" + actor.role() + ":" + actor.orgRoles().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey()).toList() + ":" + support + ":" + owner(actor.id(), workspace.getId())
                 + ":" + workspace.getPublicId() + ":" + workspace.getKind() + ":" + workspace.getDeletedAt()
                 + ":" + request.getPublicId() + ":" + request.getStatus() + ":" + request.getResourceType() + ":" + request.getOrgId()
@@ -153,7 +157,7 @@ public class RequestRecipientCancellationService {
             String blocked = blocked(request, !live.getOrDefault(request.getWorkspaceId(), false), row,
                     registrations.getOrDefault(request.getId(), Registration.EMPTY));
             boolean owner = actor != null && owned.contains(request.getWorkspaceId());
-            boolean support = actor != null && StudentSupportPolicy.canWriteWorkspaceAccess(actor);
+            boolean support = actor != null && supportAuthority(actor, request.getWorkspaceId());
             out.put(row.getPublicId(), new RequestRecipientCancellationCapability(blocked == null && owner,
                     blocked == null && support, blocked != null ? blocked : !owner && !support ? "현재 OWNER 또는 지원 쓰기 권한이 필요합니다." : null));
         }
@@ -220,9 +224,17 @@ public class RequestRecipientCancellationService {
     }
 
     private void requireAuthority(AuthenticatedUser actor, Workspace workspace, boolean support) {
-        if (support) StudentSupportPolicy.requireWorkspaceAccessWrite(actor);
-        else if (!owner(actor.id(), workspace.getId())) throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
+        if (support) {
+            if (!supportAuthority(actor, workspace.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "이 워크스페이스의 대상자 취소 권한이 없습니다.");
+            }
+        } else if (!owner(actor.id(), workspace.getId())) throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                 "생성 대기를 취소할 권한이 없습니다", "워크스페이스의 현재 실제 OWNER만 생성 대기를 취소할 수 있습니다.");
+    }
+    private boolean supportAuthority(AuthenticatedUser actor, long workspaceId) {
+        if (actor.role() == UserRole.SYS_ADMIN) { return true; }
+        return institutionAuthorization.workspaceTarget(workspaceId)
+                .map(target -> institutionAuthorization.decision(actor, InstitutionWork.WORKSPACE_RECIPIENT_CANCEL, target).allowed()).orElse(false);
     }
     private boolean owner(long actorId, long workspaceId) {
         return Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from workspace_members where workspace_id=? and user_id=? and role='OWNER')", Boolean.class, workspaceId, actorId));

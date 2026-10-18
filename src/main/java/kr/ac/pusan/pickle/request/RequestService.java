@@ -76,6 +76,8 @@ public class RequestService {
     private final kr.ac.pusan.pickle.admin.ApprovalService approvalService;
     private final kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService;
     private final EntityManager entityManager;
+    private final InstitutionRequestAccess institutionAccess;
+    private final kr.ac.pusan.pickle.workspace.LifecycleActors lifecycleActors;
 
     public RequestService(kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock, RequestRepository requestRepository, RequestAssembler assembler, RequestApproval requestApproval,
             List<RequestTypeHandler> handlers, WorkspaceRepository workspaceRepository,
@@ -85,7 +87,8 @@ public class RequestService {
             RequestRecipientService recipientService,
             kr.ac.pusan.pickle.admin.ApprovalService approvalService,
             kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService,
-            EntityManager entityManager) {
+            EntityManager entityManager, InstitutionRequestAccess institutionAccess, kr.ac.pusan.pickle.workspace.LifecycleActors lifecycleActors) {
+        this.institutionAccess = institutionAccess; this.lifecycleActors = lifecycleActors;
         this.administrationLock = administrationLock;
         this.entityManager = entityManager;
         this.adminWorkspaceQueryService = adminWorkspaceQueryService;
@@ -119,6 +122,7 @@ public class RequestService {
     @Transactional
     public RequestDetailResponse create(AuthenticatedUser actor, CreateRequestRequest form, String ip) {
         administrationLock.acquire();
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
         RequestTypeHandler handler = handlerFor(form.type());
         // A soft-deleted workspace cannot receive new requests.
         Workspace workspace = workspaceRepository.findByPublicIdAndDeletedAtIsNull(form.workspaceId())
@@ -136,13 +140,6 @@ public class RequestService {
         if (membership == null && form.approval() == null) {
             throw notWorkspaceMember();
         }
-        if (membership == null) {
-            // Any live workspace, PERSONAL included (operator decision,
-            // 2026-09-28): the same reach the admin workspace and invitation
-            // reads have. What the approver still needs is the right to decide
-            // for the request's organisation, checked below.
-            adminWorkspaceQueryService.requireOperated(actor, workspace.getPublicId());
-        }
         // Checked before the form's contents so a refusal does not first teach
         // the caller which of their recipients are members. Only the kinds that
         // take the organisation from the form can be answered this early; the
@@ -150,7 +147,7 @@ public class RequestService {
         if (!handler.derivesOrgId()) {
             Long formOrgId = form.orgId() == null ? null
                     : orgRepository.findByPublicId(form.orgId()).map(Org::getId).orElse(null);
-            requireMaySubmitAs(form, actor, membership, formOrgId);
+            requireMaySubmitAs(form, actor, membership, formOrgId, workspace.getId());
         }
 
         List<FieldValidationError> errors = new ArrayList<>();
@@ -203,7 +200,7 @@ public class RequestService {
         // domain that turns out not to exist would answer with that failure
         // instead of the field error the applicant needs to see.
         Org org = resolveOrg(handler, form);
-        requireMaySubmitAs(form, actor, membership, org.getId());
+        requireMaySubmitAs(form, actor, membership, org.getId(), workspace.getId());
         // Refused here rather than by the charge at the end, so an actor
         // already over the budget is not answered 429 after every placement
         // and the approval have run.
@@ -287,16 +284,18 @@ public class RequestService {
      * Who may send what. Recipients are for a workspace owner or an approver
      * of the organisation; a same-step approval is for an approver only.
      */
-    private static void requireMaySubmitAs(CreateRequestRequest form, AuthenticatedUser actor,
-            @Nullable WorkspaceMember membership, @Nullable Long orgId) {
-        if (form.approval() != null && !RequestApprovers.mayApprove(actor, orgId)) {
+    private void requireMaySubmitAs(CreateRequestRequest form, AuthenticatedUser actor,
+            @Nullable WorkspaceMember membership, @Nullable Long orgId, long workspaceId) {
+        if (form.approval() != null && !(form.hasRecipients() && institutionAccess.roster(actor, form.type(), orgId, workspaceId))
+                && !institutionAccess.decide(actor, form.type(), orgId, workspaceId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "이 기관의 신청을 승인할 수 있는 관리자만 제출과 동시에 승인할 수 있습니다.");
+                    "접근 권한이 없습니다", "해당 신청 승인 업무나 새 명단 발급 업무가 있어야 제출과 동시에 승인할 수 있습니다.");
         }
-        if (form.hasRecipients() && !RecipientNamers.mayName(actor, membership, orgId)) {
+        if (form.hasRecipients() && !(membership != null && membership.getRole() == WorkspaceMemberRole.OWNER)
+                && !institutionAccess.roster(actor, form.type(), orgId, workspaceId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.REQUEST_RECIPIENTS_FORBIDDEN,
                     "대상자를 지정할 권한이 없습니다",
-                    "다른 사람을 대상자로 지정하는 신청은 워크스페이스 소유자나 이 기관의 신청을 승인할 수 있는 관리자만 낼 수 있습니다.");
+                    "다른 사람을 대상자로 지정하려면 워크스페이스 소유자이거나 해당 명단 발급 업무가 있어야 합니다.");
         }
     }
 

@@ -65,17 +65,21 @@ public class AdminVmQueryService {
     private final VmQueryService vmQueryService;
     private final AdminVmAccess adminVmAccess;
     private final Clock clock;
+    private final kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries institutionQueries;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
 
     public AdminVmQueryService(VmRepository vmRepository, WorkspaceRepository workspaceRepository,
             OrgRepository orgRepository, VmSettingsService vmSettingsService,
-            VmQueryService vmQueryService, AdminVmAccess adminVmAccess, Clock clock) {
+            VmQueryService vmQueryService, AdminVmAccess adminVmAccess, Clock clock,
+            kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries institutionQueries,
+            kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions) {
         this.vmRepository = vmRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
         this.vmSettingsService = vmSettingsService;
         this.vmQueryService = vmQueryService;
         this.adminVmAccess = adminVmAccess;
-        this.clock = clock;
+        this.clock = clock; this.institutionQueries = institutionQueries; this.permissions = permissions;
     }
 
     /**
@@ -86,31 +90,25 @@ public class AdminVmQueryService {
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, UUID vmId) {
         Vm vm = adminVmAccess.requireReadableVm(actor, vmId);
-        return vmQueryService.supportDetailOf(vm, !actor.role().isOrgTier() || actor.reads(vm.getOrgId()));
+        java.util.Set<String> work = adminVmAccess.allowedWorkIds(actor, vm);
+        if (adminVmAccess.canReadMetadata(actor, vm)) {
+            return vmQueryService.supportDetailOf(vm, actor).withInstitutionWorks(work);
+        }
+        Workspace workspace = workspaceRepository.findById(vm.getWorkspaceId()).orElseThrow(AdminVmAccess::vmNotFound);
+        Org org = vm.getOrgId() == null ? null : orgRepository.findById(vm.getOrgId()).orElse(null);
+        return VmDetailResponse.commandReference(vm, new kr.ac.pusan.pickle.vm.dto.VmReferences(workspace.getPublicId(),
+                org == null ? null : org.getPublicId(), null, null, null), workspace.getName(), org == null ? null : org.getName(), work);
     }
 
-    /**
-     * Contract {@code GET /admin/vms/{vmId}/events} (v0.17.0): global support history.
-     *
-     * <p>Who intervened is named for the readers who could already learn it
-     * from the audit log, and for nobody else. This endpoint admits one role
-     * that the audit log deliberately does not — {@code ORG_VIEWER}, which an
-     * organisation grants to <b>another organisation's</b> staff — and filling
-     * an administrator's name in for that reader would widen what the role sees
-     * as a side effect of a display change (contract §3.15, v0.50.0).
-     *
-     * <p>The test is asked <b>per organisation</b>, exactly as the audit log
-     * scopes itself, because a role is not a property of an account: since V90
-     * one account can view one organisation and operate another. Reading the
-     * effective role instead would answer for the strongest role held anywhere,
-     * so an account that merely views this VM's organisation would be named the
-     * administrators of it on the strength of a role it holds somewhere else.
-     */
+    /** VM event metadata is separate from runtime observation and actual-institution audit identity. */
     @Transactional(readOnly = true)
     public PageResponse<VmEventResponse> events(AuthenticatedUser actor, UUID vmId, int page,
             int size) {
         Vm vm = adminVmAccess.requireReadableVm(actor, vmId);
-        boolean auditVisible = actor.role().isSysTier() || actor.operates(vm.getOrgId());
+        if (!adminVmAccess.canReadMetadata(actor, vm)) { throw AdminVmAccess.vmNotFound(); }
+        boolean auditVisible = vm.getOrgId() != null && permissions.institution(actor,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.INSTITUTION_AUDIT_READ, vm.getOrgId(),
+                kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER, kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN);
         return vmQueryService.eventsOf(vm.getId(), page, size, auditVisible);
     }
 
@@ -118,6 +116,7 @@ public class AdminVmQueryService {
     public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, UUID orgId, UUID workspaceId,
             VmStatus status, Integer expiringInDays, Boolean expired, String q, String sort,
             int page, int size) {
+        permissions.requireReadSource(actor, kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries.VM_REFERENCE_WORKS.toArray(kr.ac.pusan.pickle.security.institution.InstitutionWork[]::new));
         OrgScope scope = scopeOrgId(actor, orgId);
         Pageable pageable = PageRequest.of(page, size,
                 resolveSort(sort).and(Sort.by(Sort.Direction.DESC, "id")));
@@ -129,12 +128,14 @@ public class AdminVmQueryService {
                 || (workspaceId != null && scopedWorkspaceId == null)) {
             return PageResponse.of(List.of(), Page.empty(pageable));
         }
-        Specification<Vm> spec = (root, query, cb) -> cb.conjunction();
+        List<Long> permittedIds = institutionQueries.vmReferences(actor);
+        Specification<Vm> spec = (root, query, cb) -> root.get("id").in(permittedIds);
         if (q != null && !q.isBlank()) {
             String pattern = "%" + escapeLike(q.trim().toLowerCase()) + "%";
+            List<Long> metadataIds = institutionQueries.vmMetadata(actor);
             spec = spec.and((root, query, cb) -> cb.or(
                     cb.like(cb.lower(root.get("name")), pattern, '\\'),
-                    cb.like(cb.lower(root.get("hostname")), pattern, '\\')));
+                    cb.and(root.get("id").in(metadataIds), cb.like(cb.lower(root.get("hostname")), pattern, '\\'))));
         }
         if (!scope.isUnrestricted()) {
             spec = spec.and((root, query, cb) -> root.get("orgId").in(scope.orgIds()));
@@ -144,6 +145,10 @@ public class AdminVmQueryService {
         }
         if (status != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (expiringInDays != null || Boolean.TRUE.equals(expired) || "endDate".equals(sort) || "-endDate".equals(sort)) {
+            List<Long> periodIds = institutionQueries.vmPeriodReferences(actor);
+            spec = spec.and((root, query, cb) -> root.get("id").in(periodIds));
         }
         LocalDate today = ClockConfig.todayKst(clock);
         if (expiringInDays != null) {
@@ -177,6 +182,12 @@ public class AdminVmQueryService {
                 .map(vm -> {
                     Workspace workspace = workspaces.get(vm.getWorkspaceId());
                     Org org = orgs.get(vm.getOrgId());
+                    java.util.Set<String> work = adminVmAccess.allowedWorkIds(actor, vm);
+                    if (!adminVmAccess.canReadMetadata(actor, vm)) {
+                        return VmSummaryResponse.commandReference(vm, workspace == null ? null : workspace.getPublicId(),
+                                workspace == null ? "" : workspace.getName(), org == null ? null : org.getPublicId(),
+                                org == null ? null : org.getName(), work);
+                    }
                     return VmSummaryResponse.from(vm,
                             workspace == null ? null : workspace.getPublicId(),
                             workspace == null ? "" : workspace.getName(),
@@ -184,7 +195,7 @@ public class AdminVmQueryService {
                             org == null ? null : org.getName(), displayNames.get(vm.getId()),
                             requestIds.get(vm.getRequestId()),
                             vm.getDeleteRequestedBy() == null ? null
-                                    : deletionRequesterIds.get(vm.getDeleteRequestedBy()));
+                                    : deletionRequesterIds.get(vm.getDeleteRequestedBy())).withInstitutionWorks(work);
                 })
                 .toList(), result);
     }
@@ -210,6 +221,6 @@ public class AdminVmQueryService {
     private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        return StudentSupportPolicy.filterScope(actor, orgId, requested);
+        return orgId != null && requested == null ? OrgScope.nothing() : OrgScope.of(requested);
     }
 }

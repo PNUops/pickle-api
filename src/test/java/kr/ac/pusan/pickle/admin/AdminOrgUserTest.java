@@ -239,7 +239,11 @@ class AdminOrgUserTest {
                         + "/org-roles/" + org.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("role", "ORG_MANAGER", "expectedRevision", jdbcTemplate.queryForObject("select admin_revision from orgs where id = ?", Long.class, org.getId())))))
+                        .content(objectMapper.writeValueAsString(Map.of("permission", Map.of("mode", "SELECTED",
+                                "work", java.util.List.of("vm.power"),
+                                "scopes", Map.of("VM", Map.of("mode", "ALL", "workspaceIds", java.util.List.of())),
+                                "expectedRevision", 0), "expectedRevision", jdbcTemplate.queryForObject(
+                                        "select admin_revision from orgs where id = ?", Long.class, org.getId())))))
                 .andExpect(status().isOk());
         patchJson("/api/v1/admin/users/" + orgTarget.getPublicId(), sysAdminToken,
                 Map.of("role", "USER"))
@@ -250,6 +254,9 @@ class AdminOrgUserTest {
 
         mockMvc.perform(delete("/api/v1/admin/users/" + orgTarget.getPublicId()
                         + "/org-roles/" + org.getPublicId()).param("expectedRevision", String.valueOf(jdbcTemplate.queryForObject("select admin_revision from orgs where id = ?", Long.class, org.getId())))
+                        .param("expectedPermissionRevision", String.valueOf(jdbcTemplate.queryForObject(
+                                "select permission_revision from user_org_roles where user_id=? and org_id=?", Long.class,
+                                orgTarget.getId(), org.getId())))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("USER"));

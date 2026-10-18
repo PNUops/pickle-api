@@ -20,7 +20,7 @@ public record LlmUsagePassthroughGrantResponse(
                 + "없으므로 행이 없습니다.")
         String capability,
         @Schema(description = "지금 이 기능을 부여받은 키 수")
-        long grantedKeys,
+        @org.jspecify.annotations.Nullable Long grantedKeys,
         @Schema(description = """
                 이 기간에 이 기능이 여는 경로를 실제로 호출한 키 수. **grantedKeys의 \
                 부분집합이 아닙니다** — 부여는 지금 상태이고 호출은 지나간 사실이라, 쓰고 \

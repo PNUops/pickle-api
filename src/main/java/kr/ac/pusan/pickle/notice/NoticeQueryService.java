@@ -13,6 +13,9 @@ import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.notice.dto.AdminNoticeView;
 import kr.ac.pusan.pickle.notice.dto.NoticeView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.institution.InstitutionAuthorization;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
+import kr.ac.pusan.pickle.security.institution.InstitutionWorkTarget;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import org.jspecify.annotations.Nullable;
@@ -45,12 +48,14 @@ public class NoticeQueryService {
     private final NoticeRepository noticeRepository;
     private final NoticeImageStore noticeImageStore;
     private final UserRepository userRepository;
+    private final InstitutionAuthorization authorization;
 
     public NoticeQueryService(NoticeRepository noticeRepository,
-            NoticeImageStore noticeImageStore, UserRepository userRepository) {
+            NoticeImageStore noticeImageStore, UserRepository userRepository, InstitutionAuthorization authorization) {
         this.noticeRepository = noticeRepository;
         this.noticeImageStore = noticeImageStore;
         this.userRepository = userRepository;
+        this.authorization = authorization;
     }
 
     /** Contract {@code listNotices}: the active window, pinned first, newest first. */
@@ -128,7 +133,8 @@ public class NoticeQueryService {
      * may use a feature, which is what V95 removed.</p>
      */
     @Transactional(readOnly = true)
-    public PageResponse<AdminNoticeView> listForAdmin(int page, int size) {
+    public PageResponse<AdminNoticeView> listForAdmin(AuthenticatedUser actor, int page, int size) {
+        requireAdminRead(actor);
         Instant now = Instant.now();
         Page<Notice> result = noticeRepository.findAllForAdmin(PageRequest.of(page, size));
         Map<Long, List<NoticeImageMeta>> images = imagesOf(result.getContent());
@@ -141,7 +147,8 @@ public class NoticeQueryService {
 
     /** The management detail has the list's gate and includes every publication window. */
     @Transactional(readOnly = true)
-    public AdminNoticeView getForAdmin(UUID noticeId) {
+    public AdminNoticeView getForAdmin(AuthenticatedUser actor, UUID noticeId) {
+        requireAdminRead(actor);
         Notice notice = noticeRepository.findByPublicId(noticeId)
                 .orElseThrow(() -> notFound("해당 공지가 존재하지 않습니다."));
         List<Notice> selected = List.of(notice);
@@ -181,8 +188,17 @@ public class NoticeQueryService {
      * <p>It asks nothing about the notice because there is nothing to ask:
      * every account that reaches the management list reaches every row of it.</p>
      */
-    private static boolean manageableBy(@Nullable AuthenticatedUser reader) {
-        return reader != null && (reader.role().isSysTier() || reader.role().isOrgTier());
+    private boolean manageableBy(@Nullable AuthenticatedUser reader) {
+        return reader != null && (reader.role().isSysTier()
+                || authorization.decision(reader, InstitutionWork.NOTICE_READ, InstitutionWorkTarget.global()).allowed()
+                || authorization.decision(reader, InstitutionWork.NOTICE_MANAGE, InstitutionWorkTarget.global()).allowed());
+    }
+
+    private void requireAdminRead(AuthenticatedUser actor) {
+        if (!manageableBy(actor)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "공지를 관리 조회할 권한이 없습니다.");
+        }
     }
 
     private Map<Long, List<NoticeImageMeta>> imagesOf(List<Notice> notices) {

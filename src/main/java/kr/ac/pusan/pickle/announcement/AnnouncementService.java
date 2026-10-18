@@ -23,6 +23,11 @@ import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.institution.InstitutionAuthorization;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
+import kr.ac.pusan.pickle.security.institution.InstitutionWorkTarget;
+import kr.ac.pusan.pickle.orgs.OrgAdministrationLock;
+import kr.ac.pusan.pickle.workspace.LifecycleActors;
 import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,19 +36,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Announcement send (contract {@code createAnnouncement}). Scope rules:
- * ALL is SYS_ADMIN-only (403); an ORG_ADMIN's ORG scope is confined to the
- * organisations it <b>administers</b>, which it must name once there is more
- * than one (mismatch or omission 422); WORKSPACE scope is gated — for an
- * ORG_ADMIN — on the workspace having resources (requests / non-DELETED VMs) in
- * one of those (else 404, existence masked); a gated workspace's recipients are
- * all its ACTIVE members.
+ * Announcement send uses explicit institution or qualified-workspace work. ALL retains
+ * its SYS_ADMIN-only boundary. Workspace qualification is resolved for the same grant
+ * source from existing requests or non-DELETED VMs, without inventing workspace ownership.
  *
- * <p>ORG-scope recipients follow the canonical <b>derived org membership</b>
- * ({@link OrgMembershipSql}) — ACTIVE members of org-linked workspaces — plus
- * the organisation's own administrators and operators. <b>A read-only role is
- * not a recipient</b>: a viewer is another organisation's staff looking in, not
- * a person this organisation announces to.
+ * <p>ORG recipients retain their active derived-membership cohort plus institution
+ * administrator/operator membership rows. Recipient membership is separate from the
+ * author's current send permission and does not grant announcement-history access.
  *
  * <p>Fan-out inserts one resolved recipient snapshot into {@code notifications}
  * inside this transaction — the in-app rows exist when the 201 returns; email leaves
@@ -62,24 +61,33 @@ public class AnnouncementService {
     private final JdbcTemplate jdbcTemplate;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
+    private final InstitutionAuthorization authorization;
+    private final OrgAdministrationLock administrationLock;
+    private final LifecycleActors actors;
     @org.springframework.beans.factory.annotation.Autowired
     private kr.ac.pusan.pickle.mail.MailDeliveryJournal journal;
 
     public AnnouncementService(AnnouncementRepository announcementRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
             JdbcTemplate jdbcTemplate, RateLimitService rateLimitService,
-            AuditService auditService) {
+            AuditService auditService, InstitutionAuthorization authorization,
+            OrgAdministrationLock administrationLock, LifecycleActors actors) {
         this.announcementRepository = announcementRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
+        this.authorization = authorization;
+        this.administrationLock = administrationLock;
+        this.actors = actors;
     }
 
     @Transactional
     public AnnouncementView create(AuthenticatedUser actor, AnnouncementCreateRequest request,
             String ip) {
+        administrationLock.acquire();
+        actor = actors.currentAfterAdministrationLock(actor);
         Audience audience = resolveAudience(actor, request);
         // The existing budget covers accepted sends, never previews or rejected scope checks.
         rateLimitService.hitHourly(RATE_SCOPE, String.valueOf(actor.id()), MAX_PER_HOUR);
@@ -99,9 +107,10 @@ public class AnnouncementService {
     /** A read-only estimate; sending resolves the current audience again before enqueue. */
     @Transactional(readOnly = true)
     public AnnouncementPreviewResponse preview(AuthenticatedUser actor, AnnouncementCreateRequest request) {
-        Audience audience = resolveAudience(actor, request);
+        AuthenticatedUser current = actors.current(actor);
+        Audience audience = resolveAudience(current, request);
         List<AnnouncementPreviewResponse.AnnouncementRecipientSample> sample = audience.recipients().stream()
-                .filter(recipient -> !actor.role().isOrgTier() || !recipient.role().isSysTier())
+                .filter(recipient -> current.role().isSysTier() || !recipient.role().isSysTier())
                 .limit(20).map(recipient -> new AnnouncementPreviewResponse.AnnouncementRecipientSample(
                         recipient.publicId(), recipient.name(), recipient.email())).toList();
         Target target = audience.target();
@@ -109,7 +118,7 @@ public class AnnouncementService {
         if (audience.recipients().isEmpty()) {
             warnings.add("발송 대상자가 0명입니다. 알림과 메일이 생성되지 않습니다.");
         }
-        if (actor.role().isOrgTier() && audience.recipients().stream().anyMatch(recipient -> recipient.role().isSysTier())) {
+        if (!current.role().isSysTier() && audience.recipients().stream().anyMatch(recipient -> recipient.role().isSysTier())) {
             warnings.add("일부 발송 대상자는 계정 열람 권한 때문에 예시에 표시되지 않습니다.");
         }
         return new AnnouncementPreviewResponse(target.scope(), target.orgPublicId(), target.workspacePublicId(),
@@ -123,6 +132,7 @@ public class AnnouncementService {
     }
 
     private Target resolveTarget(AuthenticatedUser actor, AnnouncementCreateRequest request) {
+        if (actor.role().isSysTier() && actor.role() != UserRole.SYS_ADMIN) { throw forbidden(); }
         AnnouncementScope scope = request.scope();
         List<FieldValidationError> errors = new ArrayList<>();
         Long orgId = null;
@@ -151,13 +161,15 @@ public class AnnouncementService {
                 if (request.workspaceId() != null) {
                     errors.add(new FieldValidationError("workspaceId", "기관 공지에는 워크스페이스를 지정할 수 없습니다."));
                 }
-                if (actor.role() == UserRole.ORG_ADMIN) {
+                if (actor.role() != UserRole.SYS_ADMIN) {
                     // The one place the actor's own organisation becomes a
                     // stored row, so it is the one place that has to ask which
                     // one when the account administers several. Naming it is
                     // required from the second organisation onwards; an account
                     // that administers exactly one still need not.
-                    Set<Long> administered = actor.administeredOrgIds();
+                    Set<Long> administered = authorization.sources(actor, InstitutionWork.INSTITUTION_ANNOUNCEMENT_SEND).stream()
+                            .map(source -> orgRepository.findByPublicId(source.source().institutionId()).map(Org::getId).orElse(null))
+                            .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
                     if (administered.isEmpty()) {
                         throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                                 "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
@@ -166,11 +178,7 @@ public class AnnouncementService {
                         // An id no organisation has and one this account does not
                         // administer answer the same thing, so naming ids cannot
                         // be used to learn which organisations exist. The null
-                        // test also has to come first: administeredOrgIds()
-                        // returns an unmodifiable set, and those throw on
-                        // contains(null) where a HashSet returns false — the
-                        // collector is three lines away and invisible here, and
-                        // this call answered 500 until 2026-08-26 because of it.
+                        // test comes first; an unknown ID must remain a defined validation refusal.
                         if (requestedOrgId == null || !administered.contains(requestedOrgId)) {
                             errors.add(new FieldValidationError("orgId",
                                     "자기 기관에만 기관 공지를 발송할 수 있습니다."));
@@ -207,11 +215,10 @@ public class AnnouncementService {
             throw notFound("해당 기관이 존재하지 않습니다.");
         }
         if (scope == AnnouncementScope.WORKSPACE) {
-            // Unknown workspace and (for ORG_ADMIN) a workspace without resources in
+            // Unknown workspace and a workspace without qualification in
             // their org answer the same 404 — workspace existence stays private.
             if (workspaceId == null || !workspaceRepository.existsByIdAndDeletedAtIsNull(workspaceId)
-                    || (actor.role() == UserRole.ORG_ADMIN
-                            && !workspaceLinkedToOrg(workspaceId, actor.administeredOrgIds()))) {
+                    || (actor.role() != UserRole.SYS_ADMIN && !canSendToWorkspace(actor, workspaceId))) {
                 throw notFound("해당 워크스페이스가 존재하지 않습니다.");
             }
         }
@@ -279,6 +286,23 @@ public class AnnouncementService {
     private record Audience(Target target, List<Recipient> recipients) { }
 
     /** The WORKSPACE-scope gate: the workspace has resources in a managed org. */
+    private boolean canSendToWorkspace(AuthenticatedUser actor, long workspaceId) {
+        var workspace = authorization.workspaceTarget(workspaceId);
+        if (workspace.isEmpty()) { return false; }
+        Set<UUID> qualified = authorization.sources(actor, InstitutionWork.WORKSPACE_ANNOUNCEMENT_SEND).stream()
+                .map(source -> source.source().institutionId())
+                .filter(institution -> orgRepository.findByPublicId(institution)
+                        .map(org -> workspaceLinkedToOrg(workspaceId, List.of(org.getId()))).orElse(false))
+                .collect(java.util.stream.Collectors.toSet());
+        return authorization.decision(actor, InstitutionWork.WORKSPACE_ANNOUNCEMENT_SEND,
+                InstitutionWorkTarget.qualifiedWorkspace(workspace.orElseThrow().workspaceId(), qualified)).allowed();
+    }
+
+    private static ApiException forbidden() {
+        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                "접근 권한이 없습니다", "이 범위에 알림을 발송할 권한이 없습니다.");
+    }
+
     private boolean workspaceLinkedToOrg(long workspaceId, Collection<Long> orgIds) {
         OrgScope scope = OrgScope.of(orgIds);
         List<Object> params = new ArrayList<>();

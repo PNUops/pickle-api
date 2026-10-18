@@ -26,7 +26,6 @@ import kr.ac.pusan.pickle.admin.dto.LlmUpstreamKind;
 import kr.ac.pusan.pickle.admin.dto.LlmUpstreamMetricResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUpstreamReportState;
 import kr.ac.pusan.pickle.admin.dto.LlmUpstreamStatusResponse;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgScope;
@@ -72,9 +71,11 @@ public class AdminLlmObservabilityService {
     private final JdbcTemplate jdbcTemplate;
     private final OrgRepository orgRepository;
     private final ObjectMapper objectMapper;
+    private final InstitutionLlmQueryAccess institutionQueries;
 
     public AdminLlmObservabilityService(JdbcTemplate jdbcTemplate, OrgRepository orgRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper, InstitutionLlmQueryAccess institutionQueries) {
+        this.institutionQueries = institutionQueries;
         this.jdbcTemplate = jdbcTemplate;
         this.orgRepository = orgRepository;
         this.objectMapper = objectMapper;
@@ -82,12 +83,20 @@ public class AdminLlmObservabilityService {
 
     @Transactional(readOnly = true)
     public LlmStatusResponse status(AuthenticatedUser actor, @Nullable UUID orgId) {
+        if (!institutionQueries.observationReader(actor)) {
+            throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "기관 LLM 관측 업무가 필요합니다.");
+        }
         OrgScope scope = scope(actor, orgId);
         Instant now = Instant.now();
         GatewayRow gateway = gateway();
         LlmGatewayReportState gatewayReportState = gatewayReportState(gateway, now);
         boolean sysDiagnostics = !actor.role().isOrgTier();
-        Set<String> allowedRefs = allowedRefs(scope);
+        if (!InstitutionLlmAccess.systemRead(actor) && institutionQueries.serviceReferences(actor).isEmpty()) {
+            throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "현재 기관과 LLM 워크스페이스 관계를 확인할 수 없습니다.");
+        }
+        Set<String> allowedRefs = allowedRefs(actor, scope);
 
         List<LlmUpstreamStatusResponse> upstreams = new ArrayList<>();
         jdbcTemplate.query("""
@@ -143,12 +152,17 @@ public class AdminLlmObservabilityService {
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public LlmMetricsResponse metrics(AuthenticatedUser actor, @Nullable UUID orgId, int days) {
+        if (!institutionQueries.observationReader(actor)) {
+            throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "기관 LLM 관측 업무가 필요합니다.");
+        }
         OrgScope scope = scope(actor, orgId);
         Instant to = Instant.now();
         Instant from = to.minus(days, ChronoUnit.DAYS);
         boolean sysDiagnostics = !actor.role().isOrgTier();
-        Set<String> visibleRefs = sysDiagnostics ? null : allowedRefs(scope);
-        String scopeClause = scope.isUnrestricted() ? "" : " and " + scope.guard("k.org_id");
+        Set<String> visibleRefs = sysDiagnostics ? null : allowedRefs(actor, scope);
+        String scopeClause = " and (" + institutionQueries.observationKeyRows(actor) + ")"
+                + (scope.isUnrestricted() ? "" : " and " + scope.guard("k.org_id"));
 
         List<Object> summaryArgs = timeAndScopeArgs(from, to, scope);
         MetricSummary summary = jdbcTemplate.queryForObject("""
@@ -225,16 +239,24 @@ public class AdminLlmObservabilityService {
     private OrgScope scope(AuthenticatedUser actor, @Nullable UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        return AdminOrgScope.read(actor, orgId, requested);
+        return institutionQueries.queryScope(actor, orgId, requested);
     }
 
     /** Null means unrestricted; an empty set is a real scope matching nothing. */
-    private @Nullable Set<String> allowedRefs(OrgScope scope) {
-        if (scope.isUnrestricted()) {
-            return null;
-        }
-        if (scope.orgIds().isEmpty()) {
+    private @Nullable Set<String> allowedRefs(AuthenticatedUser actor, OrgScope scope) {
+        if (scope.isUnrestricted() && InstitutionLlmAccess.systemRead(actor)) { return null; }
+        var references = institutionQueries.serviceReferences(actor);
+        if (!InstitutionLlmAccess.systemRead(actor) && references.isEmpty()) { return Set.of(); }
+        if (!scope.isUnrestricted() && scope.orgIds().isEmpty()) {
             return Set.of();
+        }
+        if (!InstitutionLlmAccess.systemRead(actor)) {
+            Set<Long> admitted = new HashSet<>();
+            for (var reference : references) {
+                jdbcTemplate.query("select id from orgs where public_id=?", rs -> { admitted.add(rs.getLong(1)); }, reference.requiredInstitutionId());
+            }
+            scope = scope.isUnrestricted() ? OrgScope.of(admitted) : OrgScope.of(scope.orgIds().stream().filter(admitted::contains).collect(java.util.stream.Collectors.toSet()));
+            if (scope.orgIds().isEmpty()) { return Set.of(); }
         }
         Set<String> refs = new HashSet<>();
         String array = scope.arrayParam();
@@ -258,7 +280,7 @@ public class AdminLlmObservabilityService {
                   join llm_upstreams u on lower(u.ref) = lower(e.upstream_ref)
                  where u.org_id is null and not u.dedicated
                    and e.requested_at >= now() - interval '31 days'
-                   and """ + scope.guard("k.org_id"), rs -> {
+                   and """ + scope.guard("k.org_id") + " and (" + institutionQueries.serviceReferenceKeyRows(actor) + ")", rs -> {
                        refs.add(rs.getString("ref"));
                    },
                 array, array, array, array);

@@ -93,7 +93,7 @@ public class AdminController {
      * effective role, which is the same everywhere the account holds one.
      */
     @PutMapping("/users/{userId}/org-roles/{orgId}")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public UserSummaryResponse grantOrgRole(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID userId, @PathVariable UUID orgId,
             @Valid @RequestBody GrantOrgRoleRequest request,
@@ -108,7 +108,7 @@ public class AdminController {
      * is the same as the grant's.
      */
     @PutMapping("/users/{userId}/org-roles/{orgId}/request-mail")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public ManagedOrgResponse updateOrgRequestMail(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID userId, @PathVariable UUID orgId,
@@ -120,11 +120,12 @@ public class AdminController {
 
     /** Takes an account's role in one organisation away, leaving the others. */
     @DeleteMapping("/users/{userId}/org-roles/{orgId}")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public UserSummaryResponse revokeOrgRole(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID userId, @PathVariable UUID orgId,
             @RequestParam @Min(0) long expectedRevision,
+            @RequestParam @Min(1) long expectedPermissionRevision,
             HttpServletRequest httpRequest) {
-        return adminService.revokeOrgRole(principal, userId, orgId, expectedRevision, clientIp(httpRequest));
+        return adminService.revokeOrgRole(principal, userId, orgId, expectedRevision, expectedPermissionRevision, clientIp(httpRequest));
     }
 }

@@ -4,72 +4,78 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.resource.VmResourceAdapter;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
+import kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions;
+import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.stereotype.Component;
 
-/**
- * VM lookup separates global support metadata reads from institution operations
- * and administration. Unknown targets keep the common not-found response.
- */
+/** VM administrator targets retain separate metadata, command, policy and publication authority. */
 @Component
 public class AdminVmAccess {
-
     private final VmRepository vmRepository;
+    private final ResourceInstitutionPermissions permissions;
 
-    public AdminVmAccess(VmRepository vmRepository) {
-        this.vmRepository = vmRepository;
+    public AdminVmAccess(VmRepository vmRepository, ResourceInstitutionPermissions permissions) {
+        this.vmRepository = vmRepository; this.permissions = permissions;
     }
 
-    /**
-     * Read surfaces: global admin VM detail and its event history; {@link #requireWritableVm} is the narrower question of where it
-     * may act.
-     */
+    public AuthenticatedUser currentForWrite(AuthenticatedUser actor) { return permissions.currentForWrite(actor); }
+
     public Vm requireReadableVm(AuthenticatedUser actor, UUID vmId) {
         Vm vm = findOrNotFound(vmId);
-        kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireRead(actor);
+        if (allowedWorkIds(actor, vm).isEmpty()) { throw vmNotFound(); }
         return vm;
     }
 
-    /** Raw network policies retain the institution read boundary. */
+    public java.util.Set<String> allowedWorkIds(AuthenticatedUser actor, Vm vm) {
+        return kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries.VM_REFERENCE_WORKS.stream()
+                .filter(work -> {
+                    if (work == InstitutionWork.VM_DELETION_SCHEDULE || work == InstitutionWork.VM_ACL_SUPPORT_MANAGE) {
+                        return permissions.resource(actor, work, vm.getOrgId(), vm.getWorkspaceId(),
+                                work == InstitutionWork.VM_ACL_SUPPORT_MANAGE, UserRole.SYS_ADMIN);
+                    }
+                    return work.write() ? canWrite(actor, vm, work) : canRead(actor, vm, work);
+                }).map(InstitutionWork::id).collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    public boolean canReadMetadata(AuthenticatedUser actor, Vm vm) {
+        return canRead(actor, vm, InstitutionWork.VM_METADATA_READ)
+                || canRead(actor, vm, InstitutionWork.VM_METADATA_SUPPORT_READ);
+    }
+
+    public boolean canRead(AuthenticatedUser actor, Vm vm, InstitutionWork work) {
+        return permissions.resource(actor, work, vm.getOrgId(), vm.getWorkspaceId(), true,
+                UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN);
+    }
+
+    public boolean canWrite(AuthenticatedUser actor, Vm vm, InstitutionWork work) {
+        return permissions.resource(actor, work, vm.getOrgId(), vm.getWorkspaceId(), false,
+                UserRole.SYS_MANAGER, UserRole.SYS_ADMIN);
+    }
+
+    public boolean canDelete(AuthenticatedUser actor, Vm vm) {
+        return permissions.resource(actor, InstitutionWork.VM_DELETION_SCHEDULE, vm.getOrgId(), vm.getWorkspaceId(), false,
+                UserRole.SYS_ADMIN);
+    }
+
     public Vm requireReadablePolicyVm(AuthenticatedUser actor, UUID vmId) {
         Vm vm = findOrNotFound(vmId);
-        kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireRead(actor);
-        if (actor.role().isOrgTier() && !actor.reads(vm.getOrgId())) { throw vmNotFound(); }
+        if (!canRead(actor, vm, InstitutionWork.VM_NETWORK_POLICY_READ) && !canWrite(actor, vm, InstitutionWork.VM_NETWORK_POLICY_WRITE)) { throw vmNotFound(); }
         return vm;
     }
 
-    /**
-     * Write surfaces the org tier shares: period update and the four power
-     * interventions (start, shutdown, reboot, force stop). The institution
-     * tier must hold ORG_MANAGER or ORG_ADMIN in the actual VM institution.
-     */
-    public Vm requireWritableVm(AuthenticatedUser actor, UUID vmId) {
+    public Vm requireWritableVm(AuthenticatedUser actor, UUID vmId, InstitutionWork work) {
         Vm vm = findOrNotFound(vmId);
-        if (actor.role().isOrgTier() && !actor.operates(vm.getOrgId())) {
-            throw vmNotFound();
-        }
+        if (!canWrite(actor, vm, work)) { throw vmNotFound(); }
         return vm;
     }
 
-    /**
-     * Write surfaces reserved to ORG_ADMIN: the scheduled-deletion pair. The
-     * controller gate cannot make this distinction — it sees the effective
-     * role, which an account that administers some other organisation already
-     * has — so the organisation-level role is checked here.
-     */
     public Vm requireAdministeredVm(AuthenticatedUser actor, UUID vmId) {
         Vm vm = findOrNotFound(vmId);
-        if (actor.role().isOrgTier() && !actor.administers(vm.getOrgId())) {
-            throw vmNotFound();
-        }
+        if (!canDelete(actor, vm)) { throw vmNotFound(); }
         return vm;
     }
 
-    private Vm findOrNotFound(UUID vmId) {
-        return vmRepository.findByPublicId(vmId).orElseThrow(AdminVmAccess::vmNotFound);
-    }
-
-    /** The one wording for an unreachable VM, shared with the access machinery. */
-    private static ApiException vmNotFound() {
-        return VmResourceAdapter.MESSAGES.notFound();
-    }
+    private Vm findOrNotFound(UUID vmId) { return vmRepository.findByPublicId(vmId).orElseThrow(AdminVmAccess::vmNotFound); }
+    public static ApiException vmNotFound() { return VmResourceAdapter.MESSAGES.notFound(); }
 }

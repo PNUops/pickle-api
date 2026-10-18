@@ -65,22 +65,22 @@ public interface CertificateRepository extends JpaRepository<Certificate, Long> 
             select c from Certificate c
               left join Domain d on d.id = c.domainId
               left join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
-            where (:orgIds is null or c.domainId is null or v.orgId in :orgIds)
+            where c.id in :authorizedIds and (:orgIds is null or c.domainId is null or v.orgId in :orgIds)
               and (:status is null or cast(c.status as string) = :status)
             order by c.notAfter asc nulls last, c.id desc
             """)
-    Page<Certificate> findAdmin(@Param("orgIds") Collection<Long> orgIds, @Param("status") String status,
+    Page<Certificate> findAdmin(@Param("authorizedIds") Collection<Long> authorizedIds, @Param("orgIds") Collection<Long> orgIds, @Param("status") String status,
             Pageable pageable);
 
     @Query("""
             select c from Certificate c
               left join Domain d on d.id = c.domainId
               left join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
-            where (:orgIds is null or c.domainId is null or v.orgId in :orgIds)
+            where c.id in :authorizedIds and (:orgIds is null or c.domainId is null or v.orgId in :orgIds)
               and (:status is null or cast(c.status as string) = :status)
               and c.notAfter <= :notAfter
             order by c.notAfter asc nulls last, c.id desc
             """)
-    Page<Certificate> findAdminExpiring(@Param("orgIds") Collection<Long> orgIds, @Param("status") String status,
+    Page<Certificate> findAdminExpiring(@Param("authorizedIds") Collection<Long> authorizedIds, @Param("orgIds") Collection<Long> orgIds, @Param("status") String status,
             @Param("notAfter") Instant notAfter, Pageable pageable);
 }

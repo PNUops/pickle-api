@@ -51,6 +51,7 @@ import tools.jackson.databind.ObjectMapper;
 class RequestRecipientCancellationTest {
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
+    @Autowired kr.ac.pusan.pickle.security.institution.InstitutionActorProvider actorProvider;
     @Autowired UserRepository users;
     @Autowired JwtService tokens;
     @Autowired ObjectMapper json;
@@ -137,7 +138,7 @@ class RequestRecipientCancellationTest {
         JsonNode readback = detail(request, owner, false).at("/recipients/0/cancellation");
         assertThat(readback).isEqualTo(result);
         for (String field : List.of("actor_id", "ip", "confirmationFingerprint")) assertThat(readback.has(field)).isFalse();
-        assertThat(jdbc.queryForObject("select target_org_id from audit_logs where action='request.recipient_cancel' and target_id=?", Long.class, pub("request_recipients", selected).toString())).isNull();
+        assertThat(jdbc.queryForObject("select target_org_id from audit_logs where action='request.recipient_cancel' and target_id=?", Long.class, pub("request_recipients", selected).toString())).isEqualTo(org);
     }
 
     @Test
@@ -463,7 +464,7 @@ class RequestRecipientCancellationTest {
         if (role.isOrgTier()) SeedFixtures.grantOrgRole(jdbc, user.getId(), SeedFixtures.seedOrgId(jdbc), role);
         return user;
     }
-    private AuthenticatedUser actor(User user) { return new AuthenticatedUser(user.getId(), user.getPublicId(), user.getEmail(), user.getRole(), Map.of()); }
+    private AuthenticatedUser actor(User user) { return actorProvider.authenticate(user.getPublicId(), user.getTokenVersion()).orElseThrow(); }
     private UUID pub(String table, long id) { return SeedFixtures.publicId(jdbc, table, id); }
     private String bearer(User user) { return "Bearer " + tokens.createAccessToken(user); }
     private String state(long recipient) { return jdbc.queryForObject("select status from request_recipients where id=?", String.class, recipient); }

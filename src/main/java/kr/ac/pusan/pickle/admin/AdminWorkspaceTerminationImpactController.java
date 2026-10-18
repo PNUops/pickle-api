@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/admin/workspaces")
-@PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+@PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
 public class AdminWorkspaceTerminationImpactController {
     private final WorkspaceTerminationImpactService impacts;
 

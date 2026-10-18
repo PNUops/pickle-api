@@ -32,7 +32,7 @@ public record LlmUsageConsumerResponse(
                 요청이 하나도 없으면 null이며 0으로 표시하지 않습니다.""")
         @Nullable BigDecimal attributedCostUsd,
         @Schema(description = "이 소비처의 요청 중 공급자가 금액을 알려 준 요청 수")
-        long pricedRequests,
+        @Nullable Long pricedRequests,
         @Schema(description = """
                 이 소비처의 요청 중 유료 모델로 나간 요청 수. **한 행이 여러 모델을 \
                 묶는 표에서** 금액이 빠진 건수를 세려면 전체 요청이 아니라 이 값에서 \
@@ -40,7 +40,7 @@ public record LlmUsageConsumerResponse(
                 요청에서 빼면 자체 서빙까지 「금액을 모르는 요청」으로 세게 됩니다. \
                 모델별 표는 다릅니다 — 거기서는 한 모델을 두 행으로 나누고 그 둘이 \
                 모델의 요청을 남김없이 갈라야 하므로 가격 기준으로 자릅니다.""")
-        long creditAxisRequests,
+        @Nullable Long creditAxisRequests,
         @Schema(description = """
                 이 소비처의 키 가운데 가장 오래된 공급자 대사 시각. 「여기 있는 금액은 적어도 \
                 이 시점까지의 것」이라는 뜻이라 가장 최근 시각을 쓰지 않습니다. 금액이 없으면 \

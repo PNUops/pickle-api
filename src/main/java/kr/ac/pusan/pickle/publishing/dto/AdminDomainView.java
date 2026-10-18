@@ -38,17 +38,19 @@ public record AdminDomainView(
         @Schema(description = "사용 기한. 외부 도메인만 갖습니다 — 다른 종류는 가상머신이나 "
                 + "소유자의 DNS가 수명을 정하므로 null입니다.")
         @Nullable Instant renewDueAt,
-        Instant createdAt,
+        @Nullable Instant createdAt,
         @Schema(description = "이 이름을 쓰는 가상머신의 이름. 외부 도메인은 null입니다.")
         @Nullable String vmName,
-        UUID workspaceId,
-        String workspaceName,
-        UUID orgId,
-        String orgName,
+        @Nullable UUID workspaceId,
+        @Nullable String workspaceName,
+        @Nullable UUID orgId,
+        @Nullable String orgName,
         @Nullable RouteStatus routeStatus,
         @Nullable CertificateStatus certificateStatus,
-        DomainDnsStatus dnsStatus,
+        @Nullable DomainDnsStatus dnsStatus,
         @Nullable String dnsLastError,
         @Nullable Instant dnsAppliedAt,
-        @Nullable Instant updatedAt) {
+        @Nullable Instant updatedAt,
+        boolean metadataVisible,
+        java.util.Set<String> allowedWorkIds) {
 }

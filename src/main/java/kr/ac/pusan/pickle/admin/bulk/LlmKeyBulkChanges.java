@@ -30,19 +30,19 @@ import kr.ac.pusan.pickle.llm.LlmKeyLimitRules;
 import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
+import kr.ac.pusan.pickle.admin.InstitutionLlmAccess;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
 
 /**
  * The three LLM key kinds of a bulk change: limits, status and expiry.
  *
- * <p>Reach is the administrator's single path's: the org tier changes keys of
- * the institutions it operates and is answered NOT_FOUND elsewhere. Revoking
- * is narrower, as on the holder's path: a system administrator, or an
- * organisation administrator of the key's institution; anyone else who can
- * see the key is told FORBIDDEN.
+ * <p>Each command checks its selected work, actual institution and LLM workspace.
+ * Diffs, stored command bodies and current observations separately project fields
+ * for the current actor, while the internal normalized write plan remains complete.
  *
  * <p>Every write here reaches the gateway document, so the family reports
  * that it spends a generation, and the lock it takes is the row lock, taken
@@ -58,9 +58,11 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
     private final EntityManager entityManager;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final InstitutionLlmAccess access;
 
     LlmKeyBulkChanges(LlmApiKeyRepository keyRepository, AdminLlmKeyService keyService,
-            EntityManager entityManager, ObjectMapper objectMapper, Clock clock) {
+            EntityManager entityManager, ObjectMapper objectMapper, Clock clock, InstitutionLlmAccess access) {
+        this.access = access;
         this.keyRepository = keyRepository;
         this.keyService = keyService;
         this.entityManager = entityManager;
@@ -157,16 +159,19 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
     @Override
     @Nullable AdminBulkChangeReason accessRefusal(AuthenticatedUser actor, LlmApiKey key,
             AdminBulkChangeSpec change) {
-        if (actor.role().isOrgTier() && !actor.operates(key.getOrgId())) {
-            return AdminBulkChangeReason.NOT_FOUND;
-        }
-        if (change.kind() == AdminBulkChangeKind.LLM_KEY_STATUS
-                && change.llmKeyStatus().action() == AdminBulkLlmKeyStatusAction.REVOKE) {
-            boolean mayRevoke = actor.role() == UserRole.SYS_ADMIN
-                    || (actor.role() == UserRole.ORG_ADMIN && actor.administers(key.getOrgId()));
-            return mayRevoke ? null : AdminBulkChangeReason.FORBIDDEN;
-        }
-        return null;
+        boolean permitted = switch (change.kind()) {
+            case LLM_KEY_LIMITS -> access.mutation(actor, InstitutionWork.LLM_TOKEN_OPERATE, key)
+                    || access.mutation(actor, InstitutionWork.LLM_KEY_BUDGET, key);
+            case LLM_KEY_STATUS -> access.mutation(actor, change.llmKeyStatus().action() == AdminBulkLlmKeyStatusAction.REVOKE
+                    ? InstitutionWork.LLM_REVOKE : InstitutionWork.LLM_STATE_OPERATE, key);
+            case LLM_KEY_EXPIRY -> access.mutation(actor, InstitutionWork.LLM_PERIOD, key);
+            default -> false;
+        };
+        if (permitted) { return null; }
+        boolean revoke = change.kind() == AdminBulkChangeKind.LLM_KEY_STATUS && change.llmKeyStatus().action() == AdminBulkLlmKeyStatusAction.REVOKE;
+        boolean anotherCommand = revoke && java.util.stream.Stream.of(InstitutionWork.LLM_TOKEN_OPERATE, InstitutionWork.LLM_KEY_BUDGET,
+                InstitutionWork.LLM_STATE_OPERATE, InstitutionWork.LLM_PERIOD).anyMatch(work -> access.mutation(actor, work, key));
+        return anotherCommand ? AdminBulkChangeReason.FORBIDDEN : AdminBulkChangeReason.NOT_FOUND;
     }
 
     @Override
@@ -182,6 +187,107 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
                     .forEach((field, value) -> values.put(field, BulkFingerprints.plain(value)));
         }
         return values;
+    }
+
+    @Override
+    Map<String, Object> fingerprintValues(AuthenticatedUser actor, LlmApiKey key, AdminBulkChangeSpec change) {
+        return projectedCurrentValues(actor, key, change);
+    }
+
+    @Override
+    Map<String, Object> observationValues(AuthenticatedUser actor, LlmApiKey key, AdminBulkChangeSpec change) {
+        return projectedCurrentValues(actor, key, change);
+    }
+
+    private Map<String, Object> projectedCurrentValues(AuthenticatedUser actor, LlmApiKey key, AdminBulkChangeSpec change) {
+        Map<String, Object> values = new LinkedHashMap<>(fingerprintValues(key, change));
+        if (change.kind() != AdminBulkChangeKind.LLM_KEY_LIMITS) { return values; }
+        boolean token = tokenConfigurationVisible(actor, key);
+        boolean financial = financialConfigurationVisible(actor, key);
+        if (!token) { List.of("rpm", "tpm", "concurrency", "dailyTokens").forEach(values::remove); }
+        if (!financial) {
+            List.of("creditLimit", "creditLimitReset", "creditAllowedModels", "creditDeniedModels", "passthroughEndpoints").forEach(values::remove);
+            if (token) { values.put("chatEnabled", keyService.currentLimits(key).passthroughEndpoints().contains(PassthroughEndpoints.CHAT)); }
+        }
+        return values;
+    }
+
+    private boolean tokenConfigurationVisible(AuthenticatedUser actor, LlmApiKey key) {
+        return access.mutation(actor, InstitutionWork.LLM_TOKEN_OPERATE, key) || access.metadata(actor, key) || access.observation(actor, key);
+    }
+    private boolean financialConfigurationVisible(AuthenticatedUser actor, LlmApiKey key) {
+        return access.mutation(actor, InstitutionWork.LLM_KEY_BUDGET, key) || access.cost(actor, key);
+    }
+
+    @Override
+    List<AdminBulkChangeFieldDiff> projectFields(AuthenticatedUser actor, LlmApiKey key,
+            AdminBulkChangeSpec change, List<AdminBulkChangeFieldDiff> fields) {
+        if (change.kind() != AdminBulkChangeKind.LLM_KEY_LIMITS) { return fields; }
+        boolean token = tokenConfigurationVisible(actor, key);
+        boolean financial = financialConfigurationVisible(actor, key);
+        List<AdminBulkChangeFieldDiff> projected = new ArrayList<>();
+        for (AdminBulkChangeFieldDiff field : fields) {
+            switch (field.field()) {
+                case "rpm", "tpm", "concurrency", "dailyTokens" -> {
+                    if (token) { projected.add(field); }
+                }
+                case "creditLimit", "creditLimitReset", "creditAllowedModels", "creditDeniedModels" -> {
+                    if (financial) { projected.add(field); }
+                }
+                case "passthroughEndpoints" -> {
+                    if (financial) { projected.add(field); }
+                    else if (token) {
+                        JsonNode oldChat = chatValue(field.oldValue());
+                        JsonNode newChat = chatValue(field.newValue());
+                        if (!oldChat.equals(newChat)) {
+                            projected.add(new AdminBulkChangeFieldDiff("chatEnabled", oldChat, newChat));
+                        }
+                    }
+                }
+                case "chatEnabled" -> {
+                    if (token || financial) { projected.add(field); }
+                }
+                default -> { }
+            }
+        }
+        return List.copyOf(projected);
+    }
+
+    private JsonNode chatValue(@Nullable JsonNode endpoints) {
+        if (endpoints == null || !endpoints.isArray()) { return objectMapper.valueToTree(null); }
+        for (JsonNode endpoint : endpoints) {
+            if (endpoint.isString() && PassthroughEndpoints.CHAT.equals(endpoint.asString())) {
+                return objectMapper.valueToTree(true);
+            }
+        }
+        return objectMapper.valueToTree(false);
+    }
+
+    @Override
+    boolean canReadChange(AuthenticatedUser actor, LlmApiKey key, AdminBulkChangeSpec change) {
+        if (change.kind() != AdminBulkChangeKind.LLM_KEY_LIMITS) { return true; }
+        AdminBulkLlmKeyLimitsChange limits = change.llmKeyLimits();
+        boolean tokenInput = limits.isRpmSet() || limits.isTpmSet() || limits.isConcurrencySet() || limits.isDailyTokensSet();
+        return (!tokenInput || tokenConfigurationVisible(actor, key))
+                && (!financialInput(limits) || financialConfigurationVisible(actor, key));
+    }
+
+    @Override
+    boolean requiresLimitedPreviewFingerprint(AuthenticatedUser actor, LlmApiKey key, AdminBulkChangeSpec change) {
+        return change.kind() == AdminBulkChangeKind.LLM_KEY_LIMITS && !financialConfigurationVisible(actor, key);
+    }
+
+    @Override
+    boolean fingerprintContainsRestrictedFields(AuthenticatedUser actor, LlmApiKey key, AdminBulkChangeSpec change) {
+        return change.kind() == AdminBulkChangeKind.LLM_KEY_LIMITS && financialConfigurationVisible(actor, key);
+    }
+
+    private static boolean financialInput(AdminBulkLlmKeyLimitsChange limits) {
+        if (limits.isCreditLimitSet() || limits.isCreditLimitResetSet()
+                || limits.getCreditAllowedModels() != null || limits.getCreditDeniedModels() != null) { return true; }
+        AdminBulkListChange endpoints = limits.getPassthroughEndpoints();
+        return endpoints != null && (endpoints.op() == kr.ac.pusan.pickle.admin.dto.AdminBulkListOp.REPLACE
+                || endpoints.values().stream().anyMatch(value -> !PassthroughEndpoints.CHAT.equals(value.strip().toLowerCase(java.util.Locale.ROOT))));
     }
 
     @Override
@@ -205,6 +311,10 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
         if (!AdminLlmKeyService.isMutable(key.effectiveStatus(now))) {
             return Judgement.refused(AdminBulkChangeReason.INVALID_STATE);
         }
+        boolean financialInput = financialInput(limits);
+        if (financialInput && !financialConfigurationVisible(actor, key)) { return Judgement.refused(AdminBulkChangeReason.FORBIDDEN); }
+        boolean tokenInput = limits.isRpmSet() || limits.isTpmSet() || limits.isConcurrencySet() || limits.isDailyTokensSet();
+        if (tokenInput && !tokenConfigurationVisible(actor, key)) { return Judgement.refused(AdminBulkChangeReason.FORBIDDEN); }
         LlmKeyLimitRules.Normalized current = keyService.currentLimits(key);
         // Merge onto what the key has, then judge the merged result by the
         // rules the single path applies to a whole form. The rules see the
@@ -243,7 +353,11 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
             return Judgement.unchanged();
         }
         boolean moneyChanged = AdminLlmKeyService.moneyChanged(current, next);
-        if (actor.role() == UserRole.SYS_MANAGER && moneyChanged) {
+        boolean tokenChanged = !Objects.equals(current.rpm(), next.rpm()) || !Objects.equals(current.tpm(), next.tpm())
+                || !Objects.equals(current.concurrency(), next.concurrency()) || !Objects.equals(current.dailyTokens(), next.dailyTokens())
+                || current.passthroughEndpoints().contains(PassthroughEndpoints.CHAT) != next.passthroughEndpoints().contains(PassthroughEndpoints.CHAT);
+        if (moneyChanged && !access.mutation(actor, InstitutionWork.LLM_KEY_BUDGET, key)
+                || tokenChanged && !access.mutation(actor, InstitutionWork.LLM_TOKEN_OPERATE, key)) {
             return Judgement.refused(AdminBulkChangeReason.FORBIDDEN);
         }
         AdminLlmKeyService.AccountResolution account =

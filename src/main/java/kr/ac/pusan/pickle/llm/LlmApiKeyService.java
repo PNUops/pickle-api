@@ -17,7 +17,7 @@ import kr.ac.pusan.pickle.llm.dto.IssuedLlmKeyResponse;
 import kr.ac.pusan.pickle.llm.dto.UpdateLlmKeyRequest;
 import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,10 +40,12 @@ public class LlmApiKeyService {
     private final ResourceAccessResolver resourceAccessResolver;
     private final AuditService auditService;
     private final LlmOpenRouterProvisioner provisioner;
+    private final kr.ac.pusan.pickle.admin.InstitutionLlmAccess institutionAccess;
 
     public LlmApiKeyService(LlmApiKeyRepository keyRepository, LlmGatewayGenerations generations,
             ResourceAccessResolver resourceAccessResolver, AuditService auditService,
-            LlmOpenRouterProvisioner provisioner) {
+            LlmOpenRouterProvisioner provisioner, kr.ac.pusan.pickle.admin.InstitutionLlmAccess institutionAccess) {
+        this.institutionAccess = institutionAccess;
         this.keyRepository = keyRepository;
         this.generations = generations;
         this.resourceAccessResolver = resourceAccessResolver;
@@ -99,6 +101,7 @@ public class LlmApiKeyService {
      */
     @Transactional
     public void revoke(AuthenticatedUser actor, UUID keyId) {
+        actor = institutionAccess.currentForWrite(actor);
         LlmApiKey key = revocable(actor, keyId);
         if (key.getStatus() == LlmApiKeyStatus.REVOKED) {
             return; // idempotent: a retried click must not move revoked_at
@@ -136,11 +139,7 @@ public class LlmApiKeyService {
         ResourceStanding standing = resourceAccessResolver.standing(ResourceType.LLM_API_KEY,
                 key.getId(), key.getWorkspaceId(), actor.id());
         if (standing.manages()) { return key; }
-        if (actor.role() == UserRole.SYS_ADMIN) { return key; }
-        if (actor.role() == UserRole.ORG_ADMIN) {
-            if (!actor.administers(key.getOrgId())) { throw LlmKeyResourceAdapter.MESSAGES.notFound(); }
-            return key;
-        }
+        if (institutionAccess.mutation(actor, InstitutionWork.LLM_REVOKE, key)) { return key; }
         standing.requireVisible(LlmKeyResourceAdapter.MESSAGES);
         throw LlmKeyResourceAdapter.MESSAGES.noGrant();
     }

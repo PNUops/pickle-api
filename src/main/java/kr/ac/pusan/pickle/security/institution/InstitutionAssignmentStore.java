@@ -12,10 +12,9 @@ import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * Unregistered storage foundation for existing institution memberships only.
- * It performs no authorization, role conversion, membership creation, role change,
- * roster revision, or audit. A future authorized service must supply those together
- * and close every legacy writer before exposing SELECTED editing.
+ * Strict explicit assignment storage. It never authorizes, derives a payload from a role,
+ * or repairs a missing/corrupt source. Membership, derived role, roster epoch and audit
+ * changes belong to the authorized atomic writer; save changes only an existing matching-role row.
  */
 public final class InstitutionAssignmentStore {
     private static final String ROWS = """

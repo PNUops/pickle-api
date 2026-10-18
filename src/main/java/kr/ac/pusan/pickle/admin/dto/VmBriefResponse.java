@@ -11,14 +11,14 @@ public record VmBriefResponse(
         UUID id,
         String name,
         VmStatus status,
-        int vcpu,
-        int memoryMb,
-        int diskGb,
+        @Nullable Integer vcpu,
+        @Nullable Integer memoryMb,
+        @Nullable Integer diskGb,
         @Nullable LocalDate endDate,
-        UUID orgId,
+        @Nullable UUID orgId,
         boolean canReadDetail) {
 
-    public static VmBriefResponse from(Vm vm, UUID orgId, boolean canReadDetail) {
+    public static VmBriefResponse from(Vm vm, @Nullable UUID orgId, boolean canReadDetail) {
         return new VmBriefResponse(vm.getPublicId(), vm.getName(), vm.getStatus(),
                 vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getEndDate(), orgId, canReadDetail);
     }

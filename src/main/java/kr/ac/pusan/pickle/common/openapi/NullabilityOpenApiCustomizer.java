@@ -121,7 +121,8 @@ final class NullabilityOpenApiCustomizer {
                 for (java.lang.reflect.Field field : candidates.get(0).getDeclaredFields()) {
                     Schema<?> prop = (Schema<?>) schema.getProperties().get(field.getName());
                     if (prop != null
-                            && field.getAnnotatedType().isAnnotationPresent(Nullable.class)) {
+                            && field.getAnnotatedType().isAnnotationPresent(Nullable.class)
+                            && !field.isAnnotationPresent(NonNullWhenPresent.class)) {
                         markNullable(prop, schema, field.getName());
                     }
                 }
@@ -156,9 +157,7 @@ final class NullabilityOpenApiCustomizer {
             for (java.lang.reflect.Field field : record.getDeclaredFields()) {
                 Schema<?> prop = (Schema<?>) schema.getProperties().get(field.getName());
                 if (prop != null && field.getAnnotatedType().isAnnotationPresent(Nullable.class)
-                        && !"creditLimit".equals(field.getName())) {
-                    // creditLimit's nullable getter represents omission only;
-                    // an explicit null is refused by the existing request rule.
+                        && !field.isAnnotationPresent(NonNullWhenPresent.class)) {
                     markNullable(prop, schema, field.getName());
                 }
             }

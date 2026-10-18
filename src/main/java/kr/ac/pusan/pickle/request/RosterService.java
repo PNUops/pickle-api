@@ -56,10 +56,12 @@ public class RosterService {
     private final OrgRepository orgRepository;
     private final RequestRecipientService recipientService;
     private final RateLimitService rateLimitService;
+    private final InstitutionRequestAccess access;
 
     public RosterService(WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository, OrgRepository orgRepository,
-            RequestRecipientService recipientService, RateLimitService rateLimitService) {
+            RequestRecipientService recipientService, RateLimitService rateLimitService, InstitutionRequestAccess access) {
+        this.access = access;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.orgRepository = orgRepository;
@@ -78,8 +80,12 @@ public class RosterService {
                 .findByWorkspaceIdAndUserId(workspace.getId(), actor.id()).orElse(null);
         Long orgId = request.orgId() == null ? null
                 : orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null);
-        if (!RecipientNamers.mayName(actor, membership, orgId)) {
-            throw forbidden("이 워크스페이스의 신청 대상자는 워크스페이스 소유자나 이 기관의 신청을 승인할 수 있는 관리자만 "
+        if (request.type() != null && InstitutionRequestAccess.rosterWork(request.type()).isEmpty()) {
+            throw ApiException.validationFailed(List.of(new kr.ac.pusan.pickle.common.error.FieldValidationError("type", "VM과 LLM API 키 신청만 명단을 확인할 수 있습니다.")));
+        }
+        if (!(membership != null && membership.getRole() == kr.ac.pusan.pickle.workspace.WorkspaceMemberRole.OWNER)
+                && !access.roster(actor, request.type(), orgId, workspace.getId())) {
+            throw forbidden("이 워크스페이스의 신청 대상자는 워크스페이스 소유자나 해당 명단 발급 업무가 있는 담당자만 "
                     + "확인할 수 있습니다.");
         }
         // Asked after the role so the kind of a workspace the caller may not

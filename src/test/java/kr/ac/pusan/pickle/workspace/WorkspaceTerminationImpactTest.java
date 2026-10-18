@@ -66,9 +66,9 @@ class WorkspaceTerminationImpactTest {
             User actor = user(role);
             boolean writer = List.of(UserRole.ORG_MANAGER, UserRole.ORG_ADMIN, UserRole.SYS_ADMIN).contains(role);
             mvc.perform(get(adminPath()).header("Authorization", bearer(actor)))
-                    .andExpect(writer ? status().isOk() : status().isForbidden());
+                    .andExpect(writer ? status().isOk() : role == UserRole.ORG_VIEWER ? status().isNotFound() : status().isForbidden());
             mvc.perform(get(adminInvitationPath(invitation)).header("Authorization", bearer(actor)))
-                    .andExpect(writer ? status().isOk() : status().isForbidden());
+                    .andExpect(writer ? status().isOk() : role == UserRole.ORG_VIEWER ? status().isNotFound() : status().isForbidden());
             jdbc.update("insert into workspace_members(workspace_id,user_id,role) values(?,?,'OWNER')", workspace, actor.getId());
             mvc.perform(get(path()).header("Authorization", bearer(actor))).andExpect(status().isOk());
             mvc.perform(get(invitationPath(invitation)).header("Authorization", bearer(actor))).andExpect(status().isOk());

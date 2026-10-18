@@ -141,8 +141,7 @@ class AdminTerminalTest {
         terminate(sysAdminToken, sessionId).andExpect(status().isNoContent());
 
         bridge.verify(1, postRequestedFor(urlEqualTo("/control/terminate")));
-        // The mirror's VM id belongs to no row here, so the session is what
-        // identifies this audit entry — which is what the detail carries.
+        // The actual VM target and this exact mirror session identify the intervention.
         Long auditActor = jdbcTemplate.queryForObject(
                 "select actor_id from audit_logs where action = 'terminal.force_terminate' "
                         + "and detail ->> 'sessionId' = ?", Long.class, sessionId);
@@ -173,7 +172,16 @@ class AdminTerminalTest {
     /** Registers a started mirror session for the given org and returns its id. */
     private String startedSession(long orgId) {
         String sessionId = UUID.randomUUID().toString();
-        long vmId = 800_000L + Math.abs(sessionId.hashCode() % 100_000);
+        long workspace = jdbcTemplate.queryForObject("insert into workspaces(kind,name) values('PROJECT',?) returning id",
+                Long.class, "Synthetic session " + sessionId);
+        long image = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long node = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
+        long request = kr.ac.pusan.pickle.support.RequestFixtures.insertVmRequest(jdbcTemplate,
+                workspace, orgId, sysAdmin.getId(), "Synthetic terminal session", image);
+        long vmId = jdbcTemplate.queryForObject("""
+                insert into vms(node_id,workspace_id,org_id,request_id,name,hostname,image_id,vcpu,memory_mb,disk_gb,status)
+                values(?,?,?,?,?,?,?,1,1024,10,'RUNNING') returning id
+                """, Long.class, node, workspace, orgId, request, sessionId, "terminal-" + sessionId, image);
         sessionRegistry.registerPending(sessionId, sysAdmin.getId(), UserRole.USER, vmId, orgId, 0);
         sessionRegistry.markStarted(sessionId, "203.0.113.9");
         return sessionId;

@@ -51,5 +51,7 @@ public record RequestDetailResponse(
         Instant createdAt,
         Instant updatedAt,
         @Schema(description = "여러 사람에게 리소스를 만드는 신청의 대상자. 신청자 본인이 받는 일반 신청은 빈 배열입니다.")
-        List<RequestRecipientResponse> recipients) {
+        List<RequestRecipientResponse> recipients,
+        @Schema(description = "현재 신청에서 허용된 기관 업무. 개인 OWNER·ACL 권한과 구분하며, 유료 승인 예산은 같은 출처의 결정 업무와 함께 허용될 때만 포함합니다.")
+        @Nullable List<String> allowedWorkIds) {
 }

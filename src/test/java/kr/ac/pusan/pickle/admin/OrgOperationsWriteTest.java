@@ -143,10 +143,10 @@ class OrgOperationsWriteTest {
     void losingTheLastAdminNeedsSystemReasonAndTargetConfirmation() throws Exception {
         var members = List.of(assignment(admin, UserRole.ORG_MANAGER, false),
                 assignment(manager, UserRole.ORG_MANAGER, false), assignment(viewer, UserRole.ORG_VIEWER, false));
-        var normal = new SaveOrgOperationsRequest(0L, members, RequestMailMode.DESIGNATED, null, false, null);
+        var normal = request(0L, members, RequestMailMode.DESIGNATED, null, false, null);
         save(normal, sys).andExpect(status().isConflict());
         assertThat(revision()).isZero();
-        var override = new SaveOrgOperationsRequest(0L, members, RequestMailMode.DESIGNATED,
+        var override = request(0L, members, RequestMailMode.DESIGNATED,
                 "격리 데이터의 담당 공백 확인", true, org.getPublicId());
         save(override, sys).andExpect(status().isOk()).andExpect(jsonPath("$.activeAdminCount").value(0));
         assertThat(users.findById(admin.getId()).orElseThrow().getRole()).isEqualTo(UserRole.ORG_MANAGER);
@@ -193,8 +193,16 @@ class OrgOperationsWriteTest {
     @Test
     void frozenRecipientKeepsAddressAfterRoleLossAndAccountSuspension() throws Exception {
         String address = admin.getEmail();
+        long source = jdbc.queryForObject("select permission_revision from user_org_roles where user_id=? and org_id=?",
+                Long.class, admin.getId(), org.getId());
         publishRequest();
-        var next = new SaveOrgOperationsRequest(0L,
+        String frozen = jdbc.queryForObject("select recipients::text from request_notification_selections where org_id=?",
+                String.class, org.getId());
+        assertThat(jdbc.queryForObject("select (member->'permission'->>'revision')::bigint"
+                        + " from request_notification_selections, jsonb_array_elements(recipients->'staff') member"
+                        + " where org_id=? and member->>'userId'=? and member->'permission'->>'mode'='FULL'",
+                Long.class, org.getId(), admin.getPublicId().toString())).isEqualTo(source);
+        var next = request(0L,
                 List.of(assignment(manager, UserRole.ORG_ADMIN, true), assignment(viewer, UserRole.ORG_VIEWER, false)),
                 RequestMailMode.DESIGNATED, null, false, null);
         save(next, sys).andExpect(status().isOk());
@@ -205,6 +213,8 @@ class OrgOperationsWriteTest {
         assertThat(mail.lastMessageTo(manager.getEmail())).isNull();
         assertThat(jdbc.queryForObject("select mail_mode from request_notification_selections where org_id = ?",
                 String.class, org.getId())).isEqualTo("LEGACY");
+        assertThat(jdbc.queryForObject("select recipients::text from request_notification_selections where org_id=?",
+                String.class, org.getId())).isEqualTo(frozen);
     }
 
     @Test
@@ -235,11 +245,11 @@ class OrgOperationsWriteTest {
         User otherAdmin = user(UserRole.ORG_ADMIN);
         SeedFixtures.grantOrgRole(jdbc, admin.getId(), other.getId(), UserRole.ORG_VIEWER);
         SeedFixtures.grantOrgRole(jdbc, otherAdmin.getId(), other.getId(), UserRole.ORG_ADMIN);
-        var first = new SaveOrgOperationsRequest(0L,
+        var first = request(0L,
                 List.of(assignment(manager, UserRole.ORG_ADMIN, true), assignment(viewer, UserRole.ORG_VIEWER, false)),
                 RequestMailMode.DESIGNATED, null, false, null);
-        var second = new SaveOrgOperationsRequest(0L,
-                List.of(assignment(admin, UserRole.ORG_MANAGER, true), assignment(otherAdmin, UserRole.ORG_ADMIN, false)),
+        var second = request(other, 0L,
+                List.of(assignment(other, admin, UserRole.ORG_MANAGER, true), assignment(other, otherAdmin, UserRole.ORG_ADMIN, false)),
                 RequestMailMode.DESIGNATED, null, false, null);
         try (var threads = Executors.newFixedThreadPool(2)) {
             var a = threads.submit(() -> operations.save(principal(sys), org.getPublicId(), first, "127.0.0.1"));
@@ -287,7 +297,7 @@ class OrgOperationsWriteTest {
         var held = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         AuthenticatedUser oldPrincipal = principal(sys);
-        var body = new SaveOrgOperationsRequest(0L, List.of(), RequestMailMode.DESIGNATED,
+        var body = request(0L, List.of(), RequestMailMode.DESIGNATED,
                 "격리 예외 대조", true, org.getPublicId());
         try (var threads = Executors.newFixedThreadPool(2)) {
             var owner = threads.submit(() -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
@@ -322,7 +332,7 @@ class OrgOperationsWriteTest {
                 users.flush();
             }));
             assertThat(loaded.await(5, TimeUnit.SECONDS)).isTrue();
-            var body = new SaveOrgOperationsRequest(0L,
+            var body = request(0L,
                     List.of(assignment(admin, UserRole.ORG_MANAGER, false), assignment(manager, UserRole.ORG_ADMIN, true),
                             assignment(viewer, UserRole.ORG_VIEWER, false)), RequestMailMode.DESIGNATED, null, false, null);
             operations.save(principal(sys), org.getPublicId(), body, "127.0.0.1");
@@ -332,7 +342,7 @@ class OrgOperationsWriteTest {
         } finally { release.countDown(); }
         User stored = users.findById(admin.getId()).orElseThrow();
         assertThat(stored.getRole()).isEqualTo(UserRole.ORG_MANAGER);
-        assertThat(stored.getTokenVersion()).isEqualTo(1);
+        assertThat(stored.getTokenVersion()).isZero();
         assertThat(stored.getName()).isEqualTo(admin.getName());
     }
 
@@ -340,7 +350,7 @@ class OrgOperationsWriteTest {
     void voluntaryWithdrawalNeedsAnotherInstitutionAdministrator() {
         assertThatThrownBy(() -> accountStatusChanges.requireMayWithdraw(admin.getId()))
                 .isInstanceOf(kr.ac.pusan.pickle.common.error.ApiException.class);
-        var body = new SaveOrgOperationsRequest(0L,
+        var body = request(0L,
                 List.of(assignment(admin, UserRole.ORG_ADMIN, false), assignment(manager, UserRole.ORG_ADMIN, true),
                         assignment(viewer, UserRole.ORG_VIEWER, false)), RequestMailMode.DESIGNATED, null, false, null);
         operations.save(principal(sys), org.getPublicId(), body, "127.0.0.1");
@@ -431,8 +441,9 @@ class OrgOperationsWriteTest {
         }
     }
 
-    private static AuthenticatedUser principal(User user) {
-        return new AuthenticatedUser(user.getId(), user.getPublicId(), user.getEmail(), user.getRole(), Map.of());
+    @Autowired private kr.ac.pusan.pickle.security.institution.InstitutionActorProvider actors;
+    private AuthenticatedUser principal(User user) {
+        return actors.authenticate(user.getPublicId(), user.getTokenVersion()).orElseThrow();
     }
 
     private void publishRequest() {
@@ -449,13 +460,37 @@ class OrgOperationsWriteTest {
     }
 
     private SaveOrgOperationsRequest settings(long revision, RequestMailMode mode, boolean adminMail, boolean managerMail) {
-        return new SaveOrgOperationsRequest(revision,
+        return request(revision,
                 List.of(assignment(admin, UserRole.ORG_ADMIN, adminMail), assignment(manager, UserRole.ORG_MANAGER, managerMail),
                         assignment(viewer, UserRole.ORG_VIEWER, false)), mode, null, false, null);
     }
 
-    private static SaveOrgOperationsRequest.Assignment assignment(User user, UserRole role, boolean mail) {
-        return new SaveOrgOperationsRequest.Assignment(user.getPublicId(), role, mail);
+    private SaveOrgOperationsRequest.Assignment assignment(User user, UserRole role, boolean mail) {
+        return assignment(org, user, role, mail);
+    }
+
+    private SaveOrgOperationsRequest.Assignment assignment(Org target, User user, UserRole role, boolean mail) {
+        var preset = kr.ac.pusan.pickle.security.institution.InstitutionLegacyPresets.create(user.getPublicId(), target.getPublicId(), role);
+        var view = kr.ac.pusan.pickle.security.institution.dto.InstitutionPermissionView.from(preset);
+        Map<kr.ac.pusan.pickle.security.institution.InstitutionWorkGroup, kr.ac.pusan.pickle.security.institution.dto.InstitutionWorkspaceScopeInput> scopes = new java.util.LinkedHashMap<>();
+        view.scopes().forEach((group,scope) -> scopes.put(group, new kr.ac.pusan.pickle.security.institution.dto.InstitutionWorkspaceScopeInput(scope.mode(),scope.workspaceIds())));
+        Long version = jdbc.query("select permission_revision from user_org_roles where user_id=? and org_id=?",
+                (rs,index)->rs.getLong(1), user.getId(), target.getId()).stream().findFirst().orElse(0L);
+        return new SaveOrgOperationsRequest.Assignment(user.getPublicId(),
+                new kr.ac.pusan.pickle.security.institution.dto.InstitutionPermissionInput(view.mode(),view.work(),scopes,version),mail);
+    }
+
+    private SaveOrgOperationsRequest request(Long revision, List<SaveOrgOperationsRequest.Assignment> members,
+            RequestMailMode mode, String reason, boolean vacancy, UUID confirmation) {
+        return request(org, revision, members, mode, reason, vacancy, confirmation);
+    }
+
+    private SaveOrgOperationsRequest request(Org target, Long revision, List<SaveOrgOperationsRequest.Assignment> members,
+            RequestMailMode mode, String reason, boolean vacancy, UUID confirmation) {
+        Map<UUID,Long> versions = new java.util.LinkedHashMap<>();
+        jdbc.query("select u.public_id,r.permission_revision from user_org_roles r join users u on u.id=r.user_id where r.org_id=?",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> versions.put(rs.getObject(1,UUID.class),rs.getLong(2)),target.getId());
+        return new SaveOrgOperationsRequest(revision,versions,members,mode,reason,vacancy,confirmation);
     }
 
     private ResultActions save(SaveOrgOperationsRequest body, User actor) throws Exception {

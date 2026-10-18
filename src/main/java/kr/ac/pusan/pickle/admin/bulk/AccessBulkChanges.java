@@ -69,17 +69,18 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final ObjectMapper objectMapper;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
 
     AccessBulkChanges(kr.ac.pusan.pickle.access.ResourceAccessGrantService grantChanges,
             kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock, List<ResourceTypeAdapter> adapters,
             DomainRepository domainRepository, UserRepository userRepository,
             WorkspaceMemberRepository workspaceMemberRepository, ResourceAccessGrantRepository grantRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper, kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions) {
         this.grantChanges = grantChanges; this.administrationLock = administrationLock;
         this.adapters = adapters.stream().collect(Collectors.toMap(ResourceTypeAdapter::type, Function.identity()));
         this.domainRepository = domainRepository; this.userRepository = userRepository;
         this.workspaceMemberRepository = workspaceMemberRepository; this.grantRepository = grantRepository;
-        this.objectMapper = objectMapper;
+        this.objectMapper = objectMapper; this.permissions = permissions;
     }
 
     @Override
@@ -151,8 +152,20 @@ class AccessBulkChanges extends BulkChangeHandler<AccessBulkChanges.Target> {
     @Override
     @Nullable AdminBulkChangeReason accessRefusal(AuthenticatedUser actor, Target target,
             AdminBulkChangeSpec change) {
-        return kr.ac.pusan.pickle.admin.StudentSupportPolicy.canWriteWorkspaceAccess(actor)
-                ? null : AdminBulkChangeReason.FORBIDDEN;
+        ResourceType type = target.adapter().type();
+        boolean manage = grantChanges.canManageSupport(actor, type, target.identity());
+        if (!target.listed()) {
+            Domain domain = domainRepository.findByPublicId(target.identity().publicId()).orElse(null);
+            boolean reference = domain != null && (permissions.resource(actor,
+                    kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_READ,
+                    domain.getOrgId(), domain.getWorkspaceId(), true,
+                    kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER, kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)
+                    || permissions.resource(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_SUPPORT_READ,
+                            domain.getOrgId(), domain.getWorkspaceId(), true));
+            return manage && reference ? null : AdminBulkChangeReason.NOT_FOUND;
+        }
+        return manage ? null : grantChanges.canReadSupport(actor, type, target.identity())
+                ? AdminBulkChangeReason.FORBIDDEN : AdminBulkChangeReason.NOT_FOUND;
     }
 
     @Override

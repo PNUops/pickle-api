@@ -31,7 +31,6 @@ import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.user.UserRepository;
-import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.jobs.lambdas.JobLambda;
@@ -45,7 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
  * The three deletion flows (contract v0.3.1):
  *
  * <ul>
- *   <li><b>Self-delete</b> (workspace OWNER, or ORG_ADMIN of the org / SYS_ADMIN):
+ *   <li><b>Self-delete</b> (workspace OWNER, explicit institution deletion work / SYS_ADMIN):
  *       immediate DELETING + async graceful shutdown, hard delete after
  *       {@code settings.vm_delete_grace_hours}; users cannot cancel.
  *       ERROR VMs skip guest destruction but still use the asynchronous
@@ -62,7 +61,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Cancellation is admin-only and kind-aware: SELF returns the (already
  * shut down) VM to STOPPED, ADMIN merely clears the schedule, FORCE can
- * never be canceled. ORG_ADMIN scoping masks other orgs' VMs as 404.</p>
+ * never be canceled. Institution deletion targets outside the complete grant scope are masked as 404.</p>
  */
 @Service
 public class VmDeletionService {
@@ -115,6 +114,7 @@ public class VmDeletionService {
 
     @Transactional
     public VmDeletionResponse selfDelete(AuthenticatedUser actor, UUID publicVmId, String ip) {
+        actor = adminVmAccess.currentForWrite(actor);
         DeletableVm deletable = requireDeletableByActor(actor, publicVmId);
         Vm vm = deletable.vm();
         long vmId = vm.getId();
@@ -170,6 +170,7 @@ public class VmDeletionService {
     @Transactional
     public VmDeletionResponse scheduleDeletion(AuthenticatedUser actor, UUID publicVmId,
             ScheduleVmDeletionRequest request, String ip) {
+        actor = adminVmAccess.currentForWrite(actor);
         Vm vm = adminVmAccess.requireAdministeredVm(actor, publicVmId);
         ScheduleOutcome outcome = scheduleAdminDeletion(actor, vm, request.scheduledFor(),
                 request.reason(), null, ip);
@@ -192,6 +193,7 @@ public class VmDeletionService {
      */
     public ScheduleOutcome scheduleAdminDeletion(AuthenticatedUser actor, Vm vm,
             Instant scheduledFor, String rawReason, @Nullable UUID batchId, String ip) {
+        if (!adminVmAccess.canDelete(actor, vm)) { return new ScheduleOutcome(null, AdminVmAccess.vmNotFound()); }
         long vmId = vm.getId();
         if (vm.getDeleteKind() != null) {
             return new ScheduleOutcome(null, alreadyPendingDeletion());
@@ -246,6 +248,7 @@ public class VmDeletionService {
 
     @Transactional
     public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, UUID publicVmId, String ip) {
+        actor = adminVmAccess.currentForWrite(actor);
         Vm vm = adminVmAccess.requireAdministeredVm(actor, publicVmId);
         ApiException refusal = cancelDeletion(actor, vm, null, ip);
         if (refusal != null) {
@@ -261,6 +264,7 @@ public class VmDeletionService {
      */
     public @Nullable ApiException cancelDeletion(AuthenticatedUser actor, Vm vm,
             @Nullable UUID batchId, String ip) {
+        if (!adminVmAccess.canDelete(actor, vm)) { return AdminVmAccess.vmNotFound(); }
         long vmId = vm.getId();
         Instant now = Instant.now();
         if (vm.getDeleteKind() == VmDeleteKind.SELF) {
@@ -427,7 +431,7 @@ public class VmDeletionService {
     /**
      * Self-delete authorization: an owner of the VM's access list, an owner of
      * the workspace that owns it (deletion is one of the three standing rights),
-     * ORG_ADMIN of the VM's org, or SYS_ADMIN. Non-members and cross-org admins
+     * explicit institution deletion work for the actual VM, or SYS_ADMIN. Non-members and cross-org admins
      * get 404 (masking); anyone else who can see the VM gets 403.
      */
     private DeletableVm requireDeletableByActor(AuthenticatedUser actor, UUID vmId) {
@@ -442,17 +446,7 @@ public class VmDeletionService {
         if (access.manages()) {
             return new DeletableVm(vm, VmActorKind.MEMBER);
         }
-        if (actor.role() == UserRole.SYS_ADMIN) {
-            return new DeletableVm(vm, VmActorKind.ADMIN);
-        }
-        if (actor.role() == UserRole.ORG_ADMIN) {
-            // The admin override belongs to the org this VM is in, not to the
-            // account's highest role somewhere else.
-            if (!actor.administers(vm.getOrgId())) {
-                throw VmAccessService.vmNotFound();
-            }
-            return new DeletableVm(vm, VmActorKind.ADMIN);
-        }
+        if (adminVmAccess.canDelete(actor, vm)) { return new DeletableVm(vm, VmActorKind.ADMIN); }
         access.requireVisible();
         throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                 "VM을 삭제할 권한이 없습니다",

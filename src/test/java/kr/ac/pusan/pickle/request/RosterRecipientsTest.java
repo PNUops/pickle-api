@@ -147,7 +147,7 @@ class RosterRecipientsTest {
     }
 
     @Test
-    void resolveIsForOwnersAndTheOrganisationsApprovers() throws Exception {
+    void resolveIsForOwnersAndTheExplicitRosterWork() throws Exception {
         UUID workspace = createWorkspace();
         User plain = addMember(workspace, user("plain", studentNo()));
         List<String> roster = List.of(studentNo());
@@ -477,6 +477,7 @@ class RosterRecipientsTest {
         body.put("studentNos", studentNos);
         if (orgId != null) {
             body.put("orgId", orgId);
+            body.put("type", "LLM_API_KEY");
         }
         return postJson("/api/v1/workspaces/" + workspace + "/roster/resolve", token, body);
     }

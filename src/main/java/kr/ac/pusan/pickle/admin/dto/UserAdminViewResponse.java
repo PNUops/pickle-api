@@ -6,6 +6,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.orgs.dto.ManagedOrgResponse;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code UserAdminView} — admin user-list item. */
 public record UserAdminViewResponse(
@@ -13,8 +14,9 @@ public record UserAdminViewResponse(
         String email,
         String name,
         UserRole role,
-        List<ManagedOrgResponse> managedOrgs,
+        @Nullable List<ManagedOrgResponse> managedOrgs,
         UserStatus status,
-        boolean mfaEnabled,
-        Instant createdAt) {
+        @Nullable Boolean mfaEnabled,
+        @Nullable Instant createdAt,
+        boolean relationshipsLimited) {
 }

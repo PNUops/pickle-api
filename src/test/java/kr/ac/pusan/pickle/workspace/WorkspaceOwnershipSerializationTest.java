@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -54,7 +53,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Import(EmbeddedPostgresConfig.class)
 class WorkspaceOwnershipSerializationTest {
     private static final String PASSWORD = "Synthetic-owner-271!";
+    private final java.util.Map<UUID, AuthenticatedUser> capturedActors = new java.util.concurrent.ConcurrentHashMap<>();
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private kr.ac.pusan.pickle.security.institution.InstitutionActorProvider actors;
     @Autowired private UserRepository users;
     @Autowired private WorkspaceRepository workspaces;
     @Autowired private WorkspaceMemberRepository members;
@@ -409,13 +410,13 @@ class WorkspaceOwnershipSerializationTest {
         User user = new User("ownership." + UUID.randomUUID() + "@pusan.ac.kr", passwords.encode(PASSWORD), "합성 소유자");
         user.setStatus(UserStatus.ACTIVE);
         user.setEmailVerifiedAt(Instant.now());
-        return users.saveAndFlush(user);
+        return rememberActor(users.saveAndFlush(user));
     }
 
     private User administrator() {
         User user = user();
         user.setRole(UserRole.SYS_ADMIN);
-        return users.saveAndFlush(user);
+        return rememberActor(users.saveAndFlush(user));
     }
 
     private Workspace workspace(WorkspaceKind kind, User... owners) {
@@ -469,8 +470,14 @@ class WorkspaceOwnershipSerializationTest {
         };
     }
 
+    private User rememberActor(User user) {
+        // HTTP authentication precedes the service transaction whose lock PID this fixture observes.
+        capturedActors.put(user.getPublicId(), actors.authenticate(user.getPublicId(), user.getTokenVersion()).orElseThrow());
+        return user;
+    }
+
     private AuthenticatedUser actor(User user) {
-        return new AuthenticatedUser(user.getId(), user.getPublicId(), user.getEmail(), user.getRole(), Map.of());
+        return java.util.Objects.requireNonNull(capturedActors.get(user.getPublicId()), "Fixture principal was not captured");
     }
 
     private void withdraw(User user) {

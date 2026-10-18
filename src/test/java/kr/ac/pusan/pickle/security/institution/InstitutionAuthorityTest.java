@@ -248,7 +248,7 @@ class InstitutionAuthorityTest {
                 .map(line -> line.split(":")[0]).collect(Collectors.toSet());
 
         assertThat(globalResourceReads).containsExactly(InstitutionWork.LLM_KEY_COST_READ.id());
-        assertThat(InstitutionWorkCatalogue.REVISION).isEqualTo("3");
+        assertThat(InstitutionWorkCatalogue.REVISION).isEqualTo("4");
         assertThat(InstitutionWork.values()).hasSize(86);
         assertThat(InstitutionWork.LLM_KEY_COST_READ.boundary()).isEqualTo(InstitutionWork.Boundary.RESOURCE);
         assertThat(InstitutionWork.LLM_KEY_COST_READ.selectable()).isTrue();

@@ -29,6 +29,7 @@ import kr.ac.pusan.pickle.admin.dto.AdminUserProfileImpactRequest;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.security.JwtService;
+import kr.ac.pusan.pickle.security.institution.InstitutionActorProvider;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.RequestFixtures;
 import kr.ac.pusan.pickle.support.SeedFixtures;
@@ -82,6 +83,7 @@ class ResourceAccessSupportTest {
     @Autowired private MockMvc mvc;
     @Autowired private JwtService jwt;
     @Autowired private ObjectMapper json;
+    @Autowired private InstitutionActorProvider actors;
 
     @ParameterizedTest
     @EnumSource(ResourceType.class)
@@ -266,10 +268,11 @@ class ResourceAccessSupportTest {
         Fixture fixture = fixture(ResourceType.VM);
         User reader = user(role);
         String path = "/api/v1/admin/resource-access/VM/" + fixture.publicId();
+        // Institution roles reach work checks; missing write work hides the target.
         mvc.perform(post(path).header("Authorization", "Bearer " + jwt.createAccessToken(reader))
                 .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("granteeType", "USER",
                         "userId", fixture.owner().getPublicId(), "role", "MEMBER"))))
-                .andExpect(status().isForbidden());
+                .andExpect(role == UserRole.ORG_VIEWER ? status().isNotFound() : status().isForbidden());
         if (role != UserRole.USER) {
             String response = mvc.perform(get(path).header("Authorization", "Bearer " + jwt.createAccessToken(reader)))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -327,8 +330,7 @@ class ResourceAccessSupportTest {
             long foreignOrg = jdbc.queryForObject("insert into orgs(name) values(?) returning id", Long.class, "합성 별도 기관");
             jdbc.update("delete from user_org_roles where user_id = ?", admin.getId());
             SeedFixtures.grantOrgRole(jdbc, admin.getId(), foreignOrg, UserRole.ORG_ADMIN);
-            var foreignActor = new AuthenticatedUser(admin.getId(), admin.getPublicId(), admin.getEmail(), UserRole.ORG_ADMIN,
-                    Map.of(foreignOrg, UserRole.ORG_ADMIN));
+            var foreignActor = actor(admin);
             keys.revoke(foreignActor, fixture.publicId());
             assertThat(jdbc.queryForObject("select status::text from llm_api_keys where id = ?", String.class, fixture.id())).isEqualTo("REVOKED");
         }
@@ -339,13 +341,14 @@ class ResourceAccessSupportTest {
         Fixture allowed = fixture(ResourceType.LLM_API_KEY);
         long org = jdbc.queryForObject("select org_id from llm_api_keys where id = ?", Long.class, allowed.id());
         User admin = user(UserRole.ORG_ADMIN);
-        keys.revoke(new AuthenticatedUser(admin.getId(), admin.getPublicId(), admin.getEmail(), UserRole.ORG_ADMIN,
-                Map.of(org, UserRole.ORG_ADMIN)), allowed.publicId());
+        SeedFixtures.grantOrgRole(jdbc, admin.getId(), org, UserRole.ORG_ADMIN);
+        keys.revoke(actor(admin), allowed.publicId());
         assertThat(jdbc.queryForObject("select status::text from llm_api_keys where id = ?", String.class, allowed.id())).isEqualTo("REVOKED");
         Fixture denied = fixture(ResourceType.LLM_API_KEY);
         User manager = user(UserRole.ORG_MANAGER);
-        assertThatThrownBy(() -> keys.revoke(new AuthenticatedUser(manager.getId(), manager.getPublicId(), manager.getEmail(),
-                UserRole.ORG_MANAGER, Map.of(org, UserRole.ORG_MANAGER)), denied.publicId())).isInstanceOf(ApiException.class);
+        SeedFixtures.grantOrgRole(jdbc, manager.getId(), jdbc.queryForObject(
+                "select org_id from llm_api_keys where id=?", Long.class, denied.id()), UserRole.ORG_MANAGER);
+        assertThatThrownBy(() -> keys.revoke(actor(manager), denied.publicId())).isInstanceOf(ApiException.class);
         assertThat(jdbc.queryForObject("select status::text from llm_api_keys where id = ?", String.class, denied.id())).isEqualTo("ACTIVE");
     }
 
@@ -476,7 +479,7 @@ class ResourceAccessSupportTest {
         members.saveAndFlush(new WorkspaceMember(workspace, user.getId(), role));
     }
     private AuthenticatedUser actor(User user) {
-        return new AuthenticatedUser(user.getId(), user.getPublicId(), user.getEmail(), user.getRole(), Map.of());
+        return actors.authenticate(user.getPublicId(), user.getTokenVersion()).orElseThrow();
     }
     private static AccessConfirmation confirmation(ActorAccessImpact impact) { return new AccessConfirmation("합성 지원 목적", impact.fingerprint(), true); }
     private static ResourceAccessChangePreviewRequest change(String action, UUID grantId, AccessGranteeType grantee, UUID userId, ResourceRole role) {

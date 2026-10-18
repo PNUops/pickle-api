@@ -129,10 +129,10 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
             select r from Route r
               join Domain d on d.id = r.domainId
               join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
-            where (:orgIds is null or v.orgId in :orgIds)
+            where r.id in :authorizedIds and (:orgIds is null or v.orgId in :orgIds)
               and (:status is null or cast(r.status as string) = :status)
             order by r.id desc
             """)
-    Page<Route> findAdmin(@Param("orgIds") Collection<Long> orgIds, @Param("status") String status,
+    Page<Route> findAdmin(@Param("authorizedIds") Collection<Long> authorizedIds, @Param("orgIds") Collection<Long> orgIds, @Param("status") String status,
             Pageable pageable);
 }

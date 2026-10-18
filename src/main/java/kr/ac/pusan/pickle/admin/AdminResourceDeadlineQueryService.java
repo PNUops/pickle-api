@@ -21,7 +21,6 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
-import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.publishing.SubdomainPolicy;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
@@ -96,6 +95,8 @@ public class AdminResourceDeadlineQueryService {
     private final SettingsService settings;
     private final Clock clock;
     private final ObjectMapper mapper;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.security.institution.InstitutionAuthorization authorization;
 
     public AdminResourceDeadlineQueryService(JdbcTemplate jdbc, OrgRepository orgs,
             WorkspaceRepository workspaces, SettingsService settings, Clock clock, ObjectMapper mapper) {
@@ -108,15 +109,17 @@ public class AdminResourceDeadlineQueryService {
             @Nullable UUID orgId, @Nullable UUID workspaceId, @Nullable ResourceType type,
             @Nullable AdminResourceDeadlineKind deadlineKind, @Nullable Integer expiringInDays,
             @Nullable Boolean expired, String sort, int page, int size) {
-        StudentSupportPolicy.requireRead(actor);
+        if (!actor.role().isSysTier() && metadataWork().stream().allMatch(work -> authorization.sources(actor, work).isEmpty())) {
+            throw new ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "조회 권한이 없습니다", "종류별 자원 정보 조회 업무가 필요합니다.");
+        }
         String order = ORDERS.get(sort);
         if (order == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("sort", "지원하지 않는 정렬 기준입니다.")));
         }
         Long org = orgId == null ? null : orgs.findByPublicId(orgId).map(value -> value.getId()).orElse(null);
-        OrgScope scope = StudentSupportPolicy.filterScope(actor, orgId, org);
         Long workspace = workspaceId == null ? null : workspaces.findByPublicId(workspaceId).map(value -> value.getId()).orElse(null);
-        if (!scope.isUnrestricted() && scope.orgIds().isEmpty() || workspaceId != null && workspace == null) {
+        if (orgId != null && org == null || workspaceId != null && workspace == null) {
             return new PageResponse<>(List.of(), page, size, 0, 0);
         }
         // Truncate once before deriving dates: JDBC rounds submicrosecond instants forward.
@@ -128,9 +131,8 @@ public class AdminResourceDeadlineQueryService {
         List<Object> args = new ArrayList<>(List.of(OffsetDateTime.ofInstant(now, ZoneOffset.UTC), today,
                 OffsetDateTime.ofInstant(cutoff, ZoneOffset.UTC), reserveDays));
         StringBuilder where = new StringBuilder(" where x.deadline_at is not null");
-        if (!scope.isUnrestricted()) {
-            where.append(" and ").append(scope.inList("x.org_id")); args.addAll(scope.orgIds());
-        }
+        where.append(" and ").append(metadataPredicate(actor, args));
+        if (org != null) { where.append(" and x.org_id=?"); args.add(org); }
         if (workspace != null) { where.append(" and x.workspace_id = ?"); args.add(workspace); }
         if (type != null) { where.append(" and x.type = ?"); args.add(type.name()); }
         if (deadlineKind != null) { where.append(" and x.deadline_kind = ?"); args.add(deadlineKind.name()); }
@@ -154,6 +156,44 @@ public class AdminResourceDeadlineQueryService {
                 + where + " order by " + order + " limit ? offset ?", this::row, pageArgs.toArray());
         long count = total == null ? 0 : total;
         return new PageResponse<>(content, page, size, count, (int) ((count + size - 1) / size));
+    }
+
+    private static List<kr.ac.pusan.pickle.security.institution.InstitutionWork> metadataWork() {
+        return List.of(kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_SUPPORT_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_METADATA_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_METADATA_SUPPORT_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_METADATA_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_METADATA_SUPPORT_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_METADATA_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_METADATA_SUPPORT_READ);
+    }
+
+    private String metadataPredicate(AuthenticatedUser actor, List<Object> args) {
+        if (actor.role().isSysTier()) { return "true"; }
+        List<String> branches = new ArrayList<>();
+        for (var work : metadataWork()) {
+            String kind = switch (work.group()) {
+                case VM -> "VM"; case LLM -> "LLM_API_KEY"; case DOMAIN -> "DOMAIN"; case GPU -> "GPU";
+                case WORKSPACE -> throw new IllegalStateException("Resource metadata requires its fixed resource group");
+            };
+            for (var source : authorization.sources(actor, work)) {
+                List<String> terms = new ArrayList<>();
+                terms.add("x.type='" + kind + "'");
+                if (source.requiredInstitutionId() != null) {
+                    terms.add("(select public_id from orgs where id=x.org_id)=?::uuid"); args.add(source.requiredInstitutionId());
+                }
+                terms.add("(select public_id from workspaces where id=x.workspace_id) is not null");
+                var scope = source.workspaceScope();
+                if (scope.mode() == kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope.Mode.LISTED) {
+                    List<UUID> ids = scope.workspaceIds().stream().sorted().toList();
+                    terms.add("(select public_id from workspaces where id=x.workspace_id) in ("
+                            + String.join(",", ids.stream().map(id -> "?::uuid").toList()) + ")"); args.addAll(ids);
+                }
+                branches.add("(" + String.join(" and ", terms) + ")");
+            }
+        }
+        return branches.isEmpty() ? "false" : "(" + String.join(" or ", branches) + ")";
     }
 
     private AdminResourceDeadlineResponse row(ResultSet rs, int number) throws SQLException {

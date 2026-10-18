@@ -33,10 +33,10 @@ public record ApprovalContextResponse(
         List<HistoryEntry> history,
         @Schema(deprecated = true)
         @Deprecated
-        OrgHeadroom orgHeadroom,
+        @Nullable OrgHeadroom orgHeadroom,
         @Schema(deprecated = true)
         @Deprecated
-        String guidance,
+        @Nullable String guidance,
         @Nullable VmContext vm,
         @Nullable LlmKeyContext llmKey,
         @Nullable GpuContext gpu,
@@ -51,7 +51,7 @@ public record ApprovalContextResponse(
                 + "워크스페이스를 떠난 계정도 포함합니다. 가입 전 식별자로 계정을 추정하지 않습니다.")
         Map<UUID, Boolean> recipientUserReadFlags) {
 
-    public record GpuContext(long availableCards, long queuedAllocations, int requestedLeaseHours, @Nullable String vmName) {}
+    public record GpuContext(@Nullable Long availableCards, @Nullable Long queuedAllocations, int requestedLeaseHours, @Nullable String vmName) {}
 
     /**
      * What a reviewer needs before approving a name.
@@ -72,13 +72,13 @@ public record ApprovalContextResponse(
             UUID id,
             String name,
             String email,
-            Instant signupAt,
-            long approvedCount,
-            long rejectedCount,
+            @Nullable Instant signupAt,
+            @Schema(description = "현재 신청 열람 권한 범위에서 확인되는 승인 수") long approvedCount,
+            @Schema(description = "현재 신청 열람 권한 범위에서 확인되는 반려 수") long rejectedCount,
             boolean canReadDetail) {
     }
 
-    public record Resources(List<VmBriefResponse> activeVms, ResourceTotalsResponse totals) {
+    public record Resources(@Nullable List<VmBriefResponse> activeVms, @Nullable ResourceTotalsResponse totals) {
     }
 
     public record WorkspacePanel(
@@ -89,11 +89,11 @@ public record ApprovalContextResponse(
             @Schema(deprecated = true,
                     description = "호환용 VM 목록. 새 클라이언트는 vm.workspaceResources.activeVms를 사용합니다.")
             @Deprecated
-            List<VmBriefResponse> activeVms,
+            @Nullable List<VmBriefResponse> activeVms,
             @Schema(deprecated = true,
                     description = "호환용 VM 합계. 새 클라이언트는 vm.workspaceResources.totals를 사용합니다.")
             @Deprecated
-            ResourceTotalsResponse totals,
+            @Nullable ResourceTotalsResponse totals,
             boolean canReadDetail) {
     }
 
@@ -135,14 +135,15 @@ public record ApprovalContextResponse(
     public record VmContext(
             Resources applicantResources,
             Resources workspaceResources,
-            OrgHeadroom orgHeadroom,
-            String guidance,
+            @Nullable OrgHeadroom orgHeadroom,
+            @Nullable String guidance,
             @Nullable AdminApprovalImageReference requestedImage) {
     }
 
     public record LlmKeyContext(
             List<LlmKeyBrief> applicantKeys,
-            List<LlmKeyBrief> workspaceKeys) {
+            List<LlmKeyBrief> workspaceKeys, @Nullable List<InstitutionLlmAccountReference> accountReferences) {
+        public LlmKeyContext(List<LlmKeyBrief> applicantKeys, List<LlmKeyBrief> workspaceKeys) { this(applicantKeys, workspaceKeys, null); }
     }
 
     public record LlmKeyBrief(
@@ -156,10 +157,16 @@ public record ApprovalContextResponse(
             @Nullable Integer tpm,
             @Nullable Integer concurrency,
             @Nullable Long dailyTokens,
-            BigDecimal creditLimit,
+            @Nullable BigDecimal creditLimit,
             @Nullable CreditLimitReset creditLimitReset,
-            boolean creditAxisConnected,
+            @Nullable Boolean creditAxisConnected,
             UUID orgId,
-            boolean canReadDetail) {
+            boolean canReadDetail, boolean financeVisible) {
+        public LlmKeyBrief(UUID id, String name, UUID workspaceId, String workspaceName, LlmApiKeyStatus status,
+                Instant expiresAt, Integer rpm, Integer tpm, Integer concurrency, Long dailyTokens,
+                BigDecimal creditLimit, CreditLimitReset creditLimitReset, boolean creditAxisConnected, UUID orgId, boolean canReadDetail) {
+            this(id, name, workspaceId, workspaceName, status, expiresAt, rpm, tpm, concurrency, dailyTokens,
+                    creditLimit, creditLimitReset, creditAxisConnected, orgId, canReadDetail, true);
+        }
     }
 }

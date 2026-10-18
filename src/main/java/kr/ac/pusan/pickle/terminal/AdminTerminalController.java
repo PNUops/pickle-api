@@ -18,12 +18,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Admin web-terminal surface (contract tag {@code admin}, v0.10.0). The list is
- * SYS tier (all) / ORG tier (own-org sessions only, service-layer scoped);
+ * SYS tier (all) / institution work (actual VM and typed workspace scope);
  * force-terminate is SYS_ADMIN-only (method gate overrides the class gate).
  */
 @RestController
 @RequestMapping("/api/v1/admin/terminal-sessions")
-@PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+@PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN', 'SYS_MANAGER')")
 public class AdminTerminalController {
 
     private final TerminalService terminalService;

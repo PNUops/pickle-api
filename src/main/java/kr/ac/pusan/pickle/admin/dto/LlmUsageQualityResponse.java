@@ -13,9 +13,9 @@ public record LlmUsageQualityResponse(
         @Schema(description = "API가 마지막 usage event를 받은 시각. Completeness watermark가 아님")
         @Nullable Instant latestUsageReceivedAt,
         @Schema(description = "양수 credit limit을 가진 key 수")
-        long creditMetersTotal,
+        @Nullable Long creditMetersTotal,
         @Schema(description = "양수 credit limit key 중 vendor meter 관측 이력이 있는 수")
-        long creditMetersObserved,
+        @Nullable Long creditMetersObserved,
         @Nullable Instant oldestCreditUsageAt,
         @Nullable Instant latestCreditUsageAt,
         long totalRequests,
@@ -44,7 +44,7 @@ public record LlmUsageQualityResponse(
                 **totalRequests와 견주지 마십시오** — 그 비율은 「금액을 못 받은 비율」이 \
                 아니라 자체 서빙 비중을 함께 담습니다. 이 요약 층에는 유료 요청 수가 없고, \
                 그것이 필요하면 소비처와 호출 종류 행의 creditAxisRequests를 씁니다.""")
-        long pricedRequests,
+        @Nullable Long pricedRequests,
         @Schema(description = """
                 이 기간 요청 중 들어온 경로가 기록된 수. 경로 축은 2026-09-06에 생겼으므로 \
                 그 전 요청은 여기 들어가지 않고, 경로별 분해도 그만큼 덜 덮습니다.""")

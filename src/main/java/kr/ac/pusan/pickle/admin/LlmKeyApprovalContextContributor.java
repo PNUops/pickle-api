@@ -29,9 +29,14 @@ public class LlmKeyApprovalContextContributor implements ApprovalContextContribu
     private final LlmApiKeyRepository keyRepository;
     private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
+    private final InstitutionLlmAccess access;
+    private final kr.ac.pusan.pickle.request.InstitutionRequestAccess requests;
+    private final InstitutionLlmAccountReferences accountReferences;
 
     public LlmKeyApprovalContextContributor(LlmApiKeyRepository keyRepository,
-            WorkspaceRepository workspaceRepository, OrgRepository orgRepository) {
+            WorkspaceRepository workspaceRepository, OrgRepository orgRepository, InstitutionLlmAccess access, kr.ac.pusan.pickle.request.InstitutionRequestAccess requests, InstitutionLlmAccountReferences accountReferences) {
+        this.accountReferences = accountReferences;
+        this.access = access; this.requests = requests;
         this.keyRepository = keyRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
@@ -57,18 +62,28 @@ public class LlmKeyApprovalContextContributor implements ApprovalContextContribu
         Map<Long, Org> orgs = orgRepository.findAllById(java.util.stream.Stream.concat(applicant.stream(), workspace.stream())
                 .map(LlmApiKey::getOrgId).distinct().toList()).stream().collect(Collectors.toMap(Org::getId, Function.identity()));
         List<LlmKeyBrief> applicantKeys = applicant.stream()
+                .filter(key -> visible(actor, request, key))
                 .map(key -> brief(key, workspaces.get(key.getWorkspaceId()), orgs.get(key.getOrgId()), actor, now)).toList();
         List<LlmKeyBrief> workspaceKeys = workspace.stream()
+                .filter(key -> visible(actor, request, key))
                 .map(key -> brief(key, workspaces.get(key.getWorkspaceId()), orgs.get(key.getOrgId()), actor, now)).toList();
-        return Contribution.llmKey(new LlmKeyContext(applicantKeys, workspaceKeys));
+        return Contribution.llmKey(new LlmKeyContext(applicantKeys, workspaceKeys, accountReferences.forRequest(actor, request)));
     }
 
-    private static LlmKeyBrief brief(LlmApiKey key, Workspace workspace, Org org, AuthenticatedUser actor, Instant now) {
+    private LlmKeyBrief brief(LlmApiKey key, Workspace workspace, Org org, AuthenticatedUser actor, Instant now) {
         return new LlmKeyBrief(key.getPublicId(), key.getName(),
                 workspace == null ? null : workspace.getPublicId(),
                 workspace == null ? "" : workspace.getName(), key.effectiveStatus(now),
-                key.getExpiresAt(), key.getRpm(), key.getTpm(), key.getConcurrency(),
-                key.getDailyTokens(), key.getCreditLimit(), key.getCreditLimitReset(),
-                key.isCreditAxisConnected(), org.getPublicId(), StudentSupportPolicy.canRead(actor));
+                key.getExpiresAt(), access.metadata(actor, key) || access.observation(actor, key) ? key.getRpm() : null,
+                access.metadata(actor, key) || access.observation(actor, key) ? key.getTpm() : null,
+                access.metadata(actor, key) || access.observation(actor, key) ? key.getConcurrency() : null,
+                access.metadata(actor, key) || access.observation(actor, key) ? key.getDailyTokens() : null, access.cost(actor, key) ? key.getCreditLimit() : null, access.cost(actor, key) ? key.getCreditLimitReset() : null,
+                access.cost(actor, key) ? key.isCreditAxisConnected() : null, org.getPublicId(), access.selectable(actor, key), access.cost(actor, key));
+    }
+    private boolean visible(AuthenticatedUser actor, Request request, LlmApiKey key) {
+        return access.metadata(actor, key) || access.observation(actor, key) || access.cost(actor, key)
+                || (request.getResourceType() == ResourceType.LLM_API_KEY && request.getOrgId().equals(key.getOrgId())
+                    && request.getWorkspaceId().equals(key.getWorkspaceId())
+                    && requests.decide(actor, request.getResourceType(), request.getOrgId(), request.getWorkspaceId()));
     }
 }

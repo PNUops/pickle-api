@@ -1,0 +1,96 @@
+package kr.ac.pusan.pickle.security.institution;
+
+/** Human-readable names for the fixed work catalogue. */
+public final class InstitutionWorkLabels {
+    private InstitutionWorkLabels() { }
+    public static String label(InstitutionWork work) {
+        return switch (work) {
+            case VM_REQUEST_READ -> "VM 신청 조회";
+            case VM_REQUEST_DECIDE -> "VM 신청 승인·반려";
+            case VM_ROSTER_ISSUE -> "VM 학번 명단 지급";
+            case VM_RECIPIENT_RETRY -> "VM 실패 대상자 재시도";
+            case VM_METADATA_READ -> "VM 정보 조회";
+            case VM_OBSERVE -> "VM 관측 조회";
+            case VM_POWER -> "VM 전원 제어";
+            case VM_PERIOD -> "VM 기간 변경";
+            case VM_DELETION_SCHEDULE -> "VM 삭제 예약·취소";
+            case VM_NETWORK_POLICY_READ -> "VM 네트워크 정책 조회";
+            case VM_NETWORK_POLICY_WRITE -> "VM 네트워크 정책 변경";
+            case VM_PUBLICATION_READ -> "VM 게시 정보 조회";
+            case VM_PUBLICATION_OPERATE -> "VM 게시 운영";
+            case VM_CUSTOM_DOMAIN_VERIFY -> "VM 커스텀 도메인 검증";
+            case VM_TERMINAL_SESSION_READ -> "VM 터미널 세션 정보 조회";
+            case VM_REQUEST_SUPPORT_READ -> "VM 신청 지원 조회";
+            case VM_METADATA_SUPPORT_READ -> "VM 정보 지원 조회";
+            case VM_ACL_SUPPORT_READ -> "VM 접근권한 지원 조회";
+            case VM_ACL_SUPPORT_MANAGE -> "VM 접근권한 지원 변경";
+            case LLM_REQUEST_READ -> "LLM 신청 조회";
+            case LLM_REQUEST_DECIDE -> "LLM 신청 승인·반려";
+            case LLM_ROSTER_ISSUE -> "LLM 학번 명단 지급";
+            case LLM_RECIPIENT_RETRY -> "LLM 실패 대상자 재시도";
+            case LLM_METADATA_READ -> "LLM 정보 조회";
+            case LLM_OBSERVE -> "LLM 관측 조회";
+            case LLM_TOKEN_OPERATE -> "LLM 토큰 한도 변경";
+            case LLM_STATE_OPERATE -> "LLM 정지·재개";
+            case LLM_PERIOD -> "LLM 기간 변경";
+            case LLM_REVOKE -> "LLM 키 폐기";
+            case LLM_KEY_COST_READ -> "LLM 키 비용 조회";
+            case LLM_KEY_BUDGET -> "LLM 키 예산 관리";
+            case LLM_REQUEST_SUPPORT_READ -> "LLM 신청 지원 조회";
+            case LLM_METADATA_SUPPORT_READ -> "LLM 정보 지원 조회";
+            case LLM_OBSERVE_SUPPORT_READ -> "LLM 관측 지원 조회";
+            case LLM_ACL_SUPPORT_READ -> "LLM 접근권한 지원 조회";
+            case LLM_ACL_SUPPORT_MANAGE -> "LLM 접근권한 지원 변경";
+            case DOMAIN_REQUEST_READ -> "외부 도메인 신청 조회";
+            case DOMAIN_REQUEST_DECIDE -> "외부 도메인 신청 승인·반려";
+            case DOMAIN_METADATA_READ -> "외부 도메인 정보 조회";
+            case DOMAIN_OBSERVE -> "외부 도메인 관측 조회";
+            case DOMAIN_RENEWAL -> "외부 도메인 갱신 기한 변경";
+            case DOMAIN_RELEASE -> "외부 도메인 해제";
+            case DOMAIN_REQUEST_SUPPORT_READ -> "외부 도메인 신청 지원 조회";
+            case DOMAIN_METADATA_SUPPORT_READ -> "외부 도메인 정보 지원 조회";
+            case DOMAIN_ACL_SUPPORT_READ -> "외부 도메인 접근권한 지원 조회";
+            case DOMAIN_ACL_SUPPORT_MANAGE -> "외부 도메인 접근권한 지원 변경";
+            case GPU_REQUEST_READ -> "GPU 신청 조회";
+            case GPU_REQUEST_DECIDE -> "GPU 신청 승인·반려";
+            case GPU_METADATA_READ -> "GPU 정보 조회";
+            case GPU_OBSERVE -> "GPU 관측 조회";
+            case GPU_PERIOD -> "GPU 기간 변경";
+            case GPU_RECALL -> "GPU 회수";
+            case GPU_REQUEST_SUPPORT_READ -> "GPU 신청 지원 조회";
+            case GPU_METADATA_SUPPORT_READ -> "GPU 정보 지원 조회";
+            case GPU_OBSERVE_SUPPORT_READ -> "GPU 관측 지원 조회";
+            case GPU_ACL_SUPPORT_READ -> "GPU 접근권한 지원 조회";
+            case GPU_ACL_SUPPORT_MANAGE -> "GPU 접근권한 지원 변경";
+            case WORKSPACE_SUPPORT_READ -> "워크스페이스 지원 조회";
+            case WORKSPACE_INFO_UPDATE -> "워크스페이스 정보 변경";
+            case WORKSPACE_MEMBERS_MANAGE -> "워크스페이스 구성원 관리";
+            case WORKSPACE_INVITATIONS_MANAGE -> "워크스페이스 초대 관리";
+            case WORKSPACE_OWNERS_MANAGE -> "워크스페이스 소유자 관리";
+            case WORKSPACE_TERMINATE -> "워크스페이스 종료";
+            case WORKSPACE_RECIPIENT_CANCEL -> "미등록 지급 대상자 취소";
+            case WORKSPACE_ANNOUNCEMENT_SEND -> "워크스페이스 안내 발송";
+            case STUDENT_LOOKUP -> "사용자 찾기";
+            case STUDENT_SUPPORT_READ -> "사용자 지원 정보 조회";
+            case STUDENT_PROFILE_CORRECT -> "사용자 프로필 정정";
+            case NOTICE_READ -> "공지 관리 목록 조회";
+            case NOTICE_MANAGE -> "공지 작성·변경";
+            case SHARED_CERTIFICATE_READ -> "공유 인증서 조회";
+            case ROOT_DOMAIN_CATALOGUE_READ -> "루트 도메인 목록 조회";
+            case LLM_MODEL_CATALOGUE_READ -> "LLM 모델 목록·가격 조회";
+            case INSTITUTION_AUDIT_READ -> "기관 감사 기록 조회";
+            case INSTITUTION_STAFF_READ -> "기관 담당자·업무 조회";
+            case INSTITUTION_REQUEST_MAIL_READ -> "기관 신청 메일 설정 조회";
+            case INSTITUTION_REQUEST_MAIL_CONFIGURE -> "기관 신청 메일 설정 변경";
+            case INSTITUTION_ANNOUNCEMENT_READ -> "기관 안내 발송 이력 조회";
+            case INSTITUTION_ANNOUNCEMENT_SEND -> "기관 안내 발송";
+            case INSTITUTION_ACCOUNT_READ -> "기관 사업 계정 조회";
+            case INSTITUTION_ACCOUNT_FINANCE_READ -> "기관 사업 계정 재무 조회";
+            case INSTITUTION_ACCOUNT_MANAGE -> "기관 사업 계정 관리";
+            case INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE -> "기관 사업 계정 자격증명 관리";
+            case INSTITUTION_ROOT_POLICY_READ -> "기관 루트 도메인 정책 조회";
+            case INSTITUTION_ROOT_POLICY_WRITE -> "기관 루트 도메인 정책 변경";
+            case INSTITUTION_DELEGATE -> "기관 권한 위임";
+        };
+    }
+}

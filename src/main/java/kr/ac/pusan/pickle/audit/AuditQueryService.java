@@ -10,10 +10,13 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.audit.dto.ActivityEntryResponse;
 import kr.ac.pusan.pickle.audit.dto.AuditLogViewResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.institution.InstitutionAuthorization;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
+import kr.ac.pusan.pickle.common.error.ApiException;
+import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,13 +29,10 @@ import tools.jackson.databind.ObjectMapper;
  * append-only with no JPA entity, so no accidental mutation path exists.
  *
  * <p>Scoping is enforced <b>in SQL</b>: {@code /me/activity} is hard-bound to
- * {@code actor_id = principal}, and {@code /admin/audit} confines the org tier
- * to the organisations it may <b>act</b> in ({@code AdminOrgScope.operated}), so
- * a read-only role reaches nothing here. Within those, an actor belongs to an
- * organisation by holding any role in it or by the canonical <b>derived
- * membership</b> rule ({@link OrgMembershipSql}: an ACTIVE member of a workspace
- * with requests / non-DELETED VMs in the org). System rows — null actor — are
- * therefore sys-tier-only. Date bounds are KST calendar days.</p>
+ * {@code actor_id = principal}. Institution audit work requires a verified,
+ * immutable target institution before count and page, independently of the
+ * actor's current memberships. Genuinely unclassified history is SYS-only.
+ * Date bounds are KST calendar days.</p>
  */
 @Service
 public class AuditQueryService {
@@ -43,7 +43,7 @@ public class AuditQueryService {
      * field): the smallest id among the organisations the actor holds a role in,
      * whatever that role is, else the smallest derived from the actor's
      * workspace resources (requests / non-DELETED VMs — the canonical rule,
-     * {@link OrgMembershipSql}). "Smallest" is arbitrary and deliberately so:
+     * {@code OrgMembershipSql}). "Smallest" is arbitrary and deliberately so:
      * the column names one organisation for display and an account may belong
      * to several. Null for system rows and actors with no organisation at all.
      * Correlated on
@@ -64,10 +64,12 @@ public class AuditQueryService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final InstitutionAuthorization authorization;
 
-    public AuditQueryService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public AuditQueryService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, InstitutionAuthorization authorization) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.authorization = authorization;
     }
 
     @Transactional(readOnly = true)
@@ -103,20 +105,8 @@ public class AuditQueryService {
         StringBuilder where = new StringBuilder(" where 1 = 1");
         List<Object> params = new ArrayList<>();
         if (!scope.isUnrestricted()) {
-            // actor-org scoping in SQL (never post-filtered): the orgs' own
-            // administrators plus derived members; system rows (null actor) and
-            // out-of-scope actors drop out
-            where.append(" and ((a.target_org_id is not null and ")
-                    .append(scope.inList("a.target_org_id"))
-                    .append(") or (a.target_org_id is null and (exists (select 1 from user_org_roles uor")
-                    .append(" where uor.user_id = u.id and ")
-                    .append(scope.inList("uor.org_id"))
-                    .append(") or (u.status = 'ACTIVE' and ")
-                    .append(OrgMembershipSql.memberOfOrgLinkedWorkspace("a.actor_id", scope))
-                    .append("))))");
-            params.addAll(scope.orgIds());
-            params.addAll(scope.orgIds());
-            params.addAll(scope.orgIds());
+            // Unknown historical targets remain SYS-only; an actor's current relationships grant nothing.
+            where.append(" and ").append(scope.inList(AuditTargetInstitutions.verifiedIdSql()));
             params.addAll(scope.orgIds());
         }
         if (actorEmail != null && !actorEmail.isBlank()) {
@@ -124,7 +114,8 @@ public class AuditQueryService {
             params.add(actorEmail.strip());
         }
         if (targetOrgId != null) {
-            where.append(" and a.target_org_id = (select id from orgs where public_id = ?)");
+            where.append(" and ").append(AuditTargetInstitutions.verifiedIdSql())
+                    .append(" = (select id from orgs where public_id = ?)");
             params.add(targetOrgId);
         }
         if (targetType != null && !targetType.isBlank()) {
@@ -150,7 +141,7 @@ public class AuditQueryService {
                 + "a.actor_role, a.action, a.target_type, a.target_id, a.detail, a.ip, "
                 + "a.created_at, u.email as actor_email, u.name as actor_name, "
                 + ACTOR_ORG_NAME + " as org_name, "
-                + "(select o.public_id from orgs o where o.id = a.target_org_id) as target_org_public_id, "
+                + "(select o.public_id from orgs o where o.id = " + AuditTargetInstitutions.verifiedIdSql() + ") as target_org_public_id, "
                 + "a.target_org_name"
                 + base + where + " order by a.created_at desc, a.id desc limit ? offset ?",
                 (rs, rowNum) -> new AuditLogViewResponse(rs.getObject("public_id", UUID.class),
@@ -200,14 +191,31 @@ public class AuditQueryService {
     }
 
     /**
-     * The audit log is the one admin surface a read-only role does not reach:
-     * it carries login addresses, which are evidence rather than operational
-     * state, so it answers for the organisations the account may act in.
+     * Sensitive audit visibility comes from its exact institution work sources,
+     * never a display role or generic readable/operated institution set.
      */
     private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null : jdbcTemplate.query(
                 "select id from orgs where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
-        return AdminOrgScope.operated(actor, orgId, requested);
+        if (actor.role().isSysTier()) {
+            return orgId != null && requested == null ? OrgScope.nothing() : OrgScope.of(requested);
+        }
+        List<Long> allowed = authorization.sources(actor, InstitutionWork.INSTITUTION_AUDIT_READ).stream()
+                .flatMap(source -> jdbcTemplate.query("select id from orgs where public_id=?",
+                        (rs, row) -> rs.getLong(1), source.source().institutionId()).stream())
+                .distinct().toList();
+        if (allowed.isEmpty()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "기관 감사 기록을 조회할 권한이 없습니다.");
+        }
+        if (orgId != null) {
+            if (requested == null || !allowed.contains(requested)) {
+                throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                        "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
+            }
+            return OrgScope.of(requested);
+        }
+        return OrgScope.of(allowed);
     }
 }

@@ -8,176 +8,192 @@ import kr.ac.pusan.pickle.admin.dto.AdminWorkspaceMemberResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminWorkspaceOptionResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.workspace.WorkspaceKind;
-import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.orgs.OrgScope;
+import kr.ac.pusan.pickle.resource.ResourceTypeAdapter;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
+import kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.workspace.LifecycleActors;
+import kr.ac.pusan.pickle.workspace.WorkspaceInvitationService;
+import kr.ac.pusan.pickle.workspace.WorkspaceKind;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
+import kr.ac.pusan.pickle.workspace.dto.WorkspaceInvitationResponse;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Global support reads over live workspaces. The optional institution filters
- * derived links through requests and resources. Announcement sending still
- * uses its own institution authority and ACTIVE-member fan-out rules.
- */
+/** Workspace support projections and command references use the target's own WORKSPACE scope. */
 @Service
 public class AdminWorkspaceQueryService {
-    private final JdbcTemplate jdbcTemplate;
-    private final java.util.List<kr.ac.pusan.pickle.resource.ResourceTypeAdapter> adapters;
-    private final kr.ac.pusan.pickle.workspace.WorkspaceInvitationService invitationService;
+    private final JdbcTemplate jdbc;
+    private final List<ResourceTypeAdapter> adapters;
+    private final WorkspaceInvitationService invitations;
+    private final InstitutionResourceQueries queries;
+    private final ResourceInstitutionPermissions permissions;
+    private final LifecycleActors actors;
 
-    public AdminWorkspaceQueryService(java.util.List<kr.ac.pusan.pickle.resource.ResourceTypeAdapter> adapters, JdbcTemplate jdbcTemplate,
-            kr.ac.pusan.pickle.workspace.WorkspaceInvitationService invitationService) {
-        this.jdbcTemplate = jdbcTemplate; this.adapters = adapters;
-        this.invitationService = invitationService;
+    public AdminWorkspaceQueryService(List<ResourceTypeAdapter> adapters, JdbcTemplate jdbc,
+            WorkspaceInvitationService invitations, InstitutionResourceQueries queries,
+            ResourceInstitutionPermissions permissions, LifecycleActors actors) {
+        this.jdbc = jdbc; this.adapters = adapters; this.invitations = invitations;
+        this.queries = queries; this.permissions = permissions; this.actors = actors;
     }
 
-    /**
-     * Every live workspace is searchable by support readers. The optional institution
-     * narrows derived membership; the legacy {@code all=true} explicitly bypasses
-     * that filter for clients using the unrestricted picker.
-     */
     @Transactional(readOnly = true)
-    public List<AdminWorkspaceOptionResponse> list(AuthenticatedUser actor, UUID orgId, boolean all) {
-        StudentSupportPolicy.requireRead(actor);
-        OrgScope scope = all ? OrgScope.unrestricted() : scopeOrgId(actor, orgId);
-        String select = """
-                select g.public_id, g.name, g.kind, g.created_at,
-                       (select count(*) from workspace_members gm
-                          join users mu on mu.id = gm.user_id
-                         where gm.workspace_id = g.id and mu.status = 'ACTIVE')
-                           as member_count
-                  from workspaces g
-                """;
-        if (!scope.isUnrestricted()) {
-            List<Object> params = new ArrayList<>(scope.orgIds());
-            params.addAll(scope.orgIds());
-            return jdbcTemplate.query(
-                    select + " where g.deleted_at is null and "
-                            + OrgMembershipSql.workspaceLinkedToOrg("g.id", scope)
-                            + " order by g.id",
-                    AdminWorkspaceQueryService::toOption, params.toArray());
+    public List<AdminWorkspaceOptionResponse> list(AuthenticatedUser actor, @Nullable UUID orgId, boolean all) {
+        permissions.requireReadSource(actor, java.util.stream.Stream.concat(
+                InstitutionResourceQueries.WORKSPACE_REFERENCE_WORKS.stream(), java.util.stream.Stream.concat(
+                    InstitutionResourceQueries.REQUEST_WORKSPACE_REFERENCE_WORKS.stream(), java.util.stream.Stream.of(InstitutionWork.WORKSPACE_ANNOUNCEMENT_SEND)))
+                .toArray(InstitutionWork[]::new));
+        List<Long> ids = queries.workspaces(actor);
+        Long requested = orgId == null ? null : jdbc.query("select id from orgs where public_id=?",
+                rs -> rs.next() ? rs.getLong(1) : null, orgId);
+        if (orgId != null && requested == null) { return List.of(); }
+        OrgScope filter = all ? OrgScope.unrestricted() : OrgScope.of(requested);
+        List<Object> args = new ArrayList<>();
+        String clause = "g.id in (" + idList(ids) + ")";
+        if (!filter.isUnrestricted()) {
+            clause += " and " + OrgMembershipSql.workspaceLinkedToOrg("g.id", filter);
+            args.addAll(filter.orgIds()); args.addAll(filter.orgIds());
         }
-        // Sys tier without a filter: every live workspace (soft-deleted excluded)
-        return jdbcTemplate.query(select + " where g.deleted_at is null order by g.id",
-                AdminWorkspaceQueryService::toOption);
+        java.util.UUID commandInstitution = orgId;
+        List<Long> commandReferences = new ArrayList<>(queries.requestWorkspaces(actor, commandInstitution));
+        commandReferences.addAll(queries.announcementWorkspaces(actor, commandInstitution));
+        if (!filter.isUnrestricted()) {
+            // Full metadata rows retain the query filter; independently authorized command references remain minimal.
+            commandReferences.removeAll(queries.workspaceMetadata(actor));
+        }
+        clause = "g.deleted_at is null and ((" + clause + ") or g.id in (" + idList(commandReferences) + "))";
+        return jdbc.query("select g.id,g.public_id,g.name,g.kind,g.created_at,"
+                + "(select count(*) from workspace_members m join users u on u.id=m.user_id "
+                + "where m.workspace_id=g.id and u.status='ACTIVE') as members from workspaces g where "
+                + clause + " order by g.id", (rs, row) -> {
+                    UUID actual = rs.getObject("public_id", UUID.class);
+                    boolean read = permissions.resolvedWorkspace(actor, InstitutionWork.WORKSPACE_SUPPORT_READ, actual,
+                            UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN);
+                    java.util.Set<String> work = InstitutionResourceQueries.WORKSPACE_REFERENCE_WORKS.stream()
+                            .filter(item -> permissions.resolvedWorkspace(actor, item, actual,
+                                    item.write() ? new UserRole[]{UserRole.SYS_ADMIN} : new UserRole[]{UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN}))
+                            .map(InstitutionWork::id).collect(java.util.stream.Collectors.toCollection(java.util.HashSet::new));
+                    work.addAll(queries.workspaceCommandWorkIdsForResolvedWorkspace(actor, rs.getLong("id"), actual, commandInstitution));
+                    return new AdminWorkspaceOptionResponse(actual, rs.getString("name"), read ? rs.getLong("members") : null,
+                            WorkspaceKind.valueOf(rs.getString("kind")), read ? rs.getTimestamp("created_at").toInstant() : null, read, java.util.Set.copyOf(work));
+                }, args.toArray());
     }
 
-    private static AdminWorkspaceOptionResponse toOption(java.sql.ResultSet rs, int rowNum)
-            throws java.sql.SQLException {
-        return new AdminWorkspaceOptionResponse(rs.getObject("public_id", UUID.class),
-                rs.getString("name"),
-                rs.getLong("member_count"),
-                WorkspaceKind.valueOf(rs.getString("kind")),
-                rs.getTimestamp("created_at").toInstant());
+    private java.util.Set<String> allowedWorkIds(AuthenticatedUser actor, long workspace) { return allowedWorkIds(actor, workspace, null); }
+
+    private java.util.Set<String> allowedWorkIds(AuthenticatedUser actor, long workspace, java.util.UUID selectedInstitution) {
+        java.util.Set<String> result = InstitutionResourceQueries.WORKSPACE_REFERENCE_WORKS.stream()
+                .filter(work -> may(actor, work, workspace)).map(InstitutionWork::id)
+                .collect(java.util.stream.Collectors.toCollection(java.util.HashSet::new));
+        result.addAll(queries.workspaceCommandWorkIds(actor, workspace, selectedInstitution));
+        return java.util.Set.copyOf(result);
     }
 
-    /**
-     * Contract {@code GET /admin/workspaces/{workspaceId}} (v0.19.0): admin inspection
-     * detail. Unknown and soft-deleted workspaces answer 404, the admin masking
-     * convention, unlike the user-facing workspace detail's member-only 403.
-     * Every admin role reads every workspace (operator decision, 2026-09-28;
-     * see {@link #list}).
-     */
     @Transactional(readOnly = true)
-    public AdminWorkspaceDetailResponse get(AuthenticatedUser actor, UUID publicWorkspaceId) {
-        StudentSupportPolicy.requireRead(actor);
-        Long workspaceId = jdbcTemplate.query("select id from workspaces where public_id = ?",
-                rs -> rs.next() ? rs.getLong(1) : null, publicWorkspaceId);
-        if (workspaceId == null) {
-            throw workspaceNotFound();
-        }
-        List<AdminWorkspaceDetailResponse> rows = jdbcTemplate.query("""
-                select g.public_id, g.kind, g.name, g.description, g.created_at,
-                       (select count(*) from workspace_members gm
-                          join users mu on mu.id = gm.user_id
-                         where gm.workspace_id = g.id and mu.status = 'ACTIVE')
-                           as member_count,
-                       (select count(*) from vms v
-                         where v.workspace_id = g.id and v.status <> 'DELETED') as vm_count
-                  from workspaces g
-                 where g.id = ? and g.deleted_at is null
-                """, (rs, rowNum) -> new AdminWorkspaceDetailResponse(
-                        rs.getObject("public_id", UUID.class),
-                        WorkspaceKind.valueOf(rs.getString("kind")), rs.getString("name"),
-                        rs.getString("description"),
-                        rs.getTimestamp("created_at").toInstant(),
-                        rs.getLong("member_count"), rs.getLong("vm_count"), List.of()),
-                workspaceId);
-        if (rows.isEmpty()) {
-            throw workspaceNotFound();
-        }
-        AdminWorkspaceDetailResponse base = rows.getFirst();
-        List<AdminWorkspaceMemberResponse> members = jdbcTemplate.query("""
-                select u.public_id as user_public_id, u.name, u.email, gm.role, u.status,
-                       u.role as user_role,
-                       gm.created_at
-                  from workspace_members gm
-                  join users u on u.id = gm.user_id
-                 where gm.workspace_id = ?
-                 -- enum declaration order is OWNER first (V2), so asc = highest role first
-                 order by gm.role asc, gm.user_id
-                """, (rs, rowNum) -> new AdminWorkspaceMemberResponse(
-                        rs.getObject("user_public_id", UUID.class),
-                        rs.getString("name"), rs.getString("email"),
-                        WorkspaceMemberRole.valueOf(rs.getString("role")),
-                        UserStatus.valueOf(rs.getString("status")),
-                        StudentSupportPolicy.canReadUser(actor, UserRole.valueOf(rs.getString("user_role"))),
-                        rs.getTimestamp("created_at").toInstant()),
-                workspaceId);
-        boolean writer = StudentSupportPolicy.canWriteWorkspaceAccess(actor);
-        boolean structure = writer && base.kind() != WorkspaceKind.PERSONAL;
-        long owners = members.stream().filter(m -> m.workspaceRole() == WorkspaceMemberRole.OWNER).count();
-        List<AdminWorkspaceMemberResponse> capableMembers = members.stream().map(m -> new AdminWorkspaceMemberResponse(
-                m.userId(), m.name(), m.email(), m.workspaceRole(), m.userStatus(), m.supportDetailVisible(), m.joinedAt(),
-                structure && (m.workspaceRole() != WorkspaceMemberRole.OWNER || owners > 1),
-                structure && (m.workspaceRole() != WorkspaceMemberRole.OWNER || owners > 1))).toList();
-        boolean remaining = adapters.stream().anyMatch(a -> a.countLiveInWorkspace(workspaceId) > 0);
-        String blocked = !writer ? "FORBIDDEN" : base.kind() == WorkspaceKind.PERSONAL ? "PERSONAL"
-                : remaining ? "REMAINING_RESOURCES" : null;
-        return new AdminWorkspaceDetailResponse(base.id(), base.kind(), base.name(),
-                base.description(), base.createdAt(), base.memberCount(), base.vmCount(), capableMembers,
-                writer, structure, structure, structure, blocked == null, blocked);
-    }
+    public AdminWorkspaceDetailResponse get(AuthenticatedUser actor, UUID id) { return view(actor, id, null, false); }
 
-    /** Pending invitation metadata for all support readers; deleted workspaces remain unavailable. */
+    /** A successful command returns only its own current fields unless support read is independently held. */
     @Transactional(readOnly = true)
-    public List<kr.ac.pusan.pickle.workspace.dto.WorkspaceInvitationResponse> listInvitations(
-            AuthenticatedUser actor, UUID publicWorkspaceId) {
-        return invitationService.pending(requireOperated(actor, publicWorkspaceId));
+    public AdminWorkspaceDetailResponse commandReference(AuthenticatedUser actor, UUID id, InstitutionWork command, boolean descriptionChanged) {
+        return view(actors.current(actor), id, command, descriptionChanged);
     }
 
-    /**
-     * The internal id of a live workspace, for an admin role acting on it as
-     * an approver. Any live workspace, PERSONAL included, for every admin role
-     * (operator decision, 2026-09-28; see {@link #list}). Unknown and deleted
-     * workspaces answer 404.
-     */
-    @Transactional(readOnly = true)
-    public long requireOperated(AuthenticatedUser actor, UUID publicWorkspaceId) {
-        Long workspaceId = jdbcTemplate.query(
-                "select id from workspaces where public_id = ? and deleted_at is null",
-                rs -> rs.next() ? rs.getLong(1) : null, publicWorkspaceId);
-        if (workspaceId == null) {
-            throw workspaceNotFound();
+    private AdminWorkspaceDetailResponse view(AuthenticatedUser actor, UUID id, @Nullable InstitutionWork command, boolean descriptionChanged) {
+        long internal = requireLive(id);
+        boolean read = readable(actor, internal);
+        java.util.Set<String> allowed = allowedWorkIds(actor, internal);
+        if (!read && allowed.isEmpty()) { throw notFound(); }
+        boolean vmTotalReadable=read && queries.canReadWorkspaceVmTotal(actor,id);
+        AdminWorkspaceDetailResponse base = jdbc.query("""
+                select w.public_id,w.kind,w.name,w.description,w.created_at,
+                    case when ? then (select count(*) from workspace_members m join users u on u.id=m.user_id
+                        where m.workspace_id=w.id and u.status='ACTIVE') else null end as member_count,
+                    case when ? then (select count(*) from vms v where v.workspace_id=w.id and v.status<>'DELETED') else null end as vm_count
+                  from workspaces w where w.id=?
+                """, (rs, row) -> new AdminWorkspaceDetailResponse(rs.getObject("public_id", UUID.class),
+                        WorkspaceKind.valueOf(rs.getString("kind")), rs.getString("name"), rs.getString("description"),
+                        rs.getTimestamp("created_at").toInstant(), rs.getObject("member_count",Long.class), rs.getObject("vm_count",Long.class), List.of()), read,vmTotalReadable,internal).getFirst();
+        List<AdminWorkspaceMemberResponse> members = null;
+        boolean memberWork = may(actor, InstitutionWork.WORKSPACE_MEMBERS_MANAGE, internal);
+        boolean ownerWork = may(actor, InstitutionWork.WORKSPACE_OWNERS_MANAGE, internal);
+        boolean structure = base.kind() != WorkspaceKind.PERSONAL;
+        boolean memberReference = memberWork || may(actor, InstitutionWork.WORKSPACE_OWNERS_MANAGE, internal)
+                || may(actor, InstitutionWork.WORKSPACE_INVITATIONS_MANAGE, internal);
+        if (read || memberReference) {
+            long owners = jdbc.queryForObject("select count(*) from workspace_members where workspace_id=? and role='OWNER'", Long.class, internal);
+            boolean profiles = permissions.global(actor, InstitutionWork.STUDENT_SUPPORT_READ,
+                    UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN);
+            members = jdbc.query("""
+                    select u.public_id,u.name,u.email,u.role as account_role,u.status,m.role,m.created_at
+                      from workspace_members m join users u on u.id=m.user_id where m.workspace_id=?
+                     order by m.role asc,m.user_id
+                    """, (rs, row) -> {
+                        boolean owner = WorkspaceMemberRole.valueOf(rs.getString("role")) == WorkspaceMemberRole.OWNER;
+                        boolean change = structure && ownerWork && (!owner || owners > 1);
+                        boolean remove = structure && (owner ? ownerWork && owners > 1 : memberWork);
+                        return new AdminWorkspaceMemberResponse(rs.getObject("public_id", UUID.class), rs.getString("name"),
+                                read ? rs.getString("email") : null, WorkspaceMemberRole.valueOf(rs.getString("role")),
+                                UserStatus.valueOf(rs.getString("status")), read && profiles && (actor.role().isSysTier() || !UserRole.valueOf(rs.getString("account_role")).isSysTier()), read ? rs.getTimestamp("created_at").toInstant() : null, change, remove);
+                    }, internal);
         }
-        return workspaceId;
+        boolean terminate = may(actor, InstitutionWork.WORKSPACE_TERMINATE, internal);
+        boolean remaining = terminate && adapters.stream().anyMatch(adapter -> adapter.countLiveInWorkspace(internal) > 0);
+        String blocked = !terminate ? "FORBIDDEN" : !structure ? "PERSONAL" : remaining ? "REMAINING_RESOURCES" : null;
+        List<AdminWorkspaceDetailResponse.RosterCandidate> rosterCandidates = null;
+        if (allowed.contains(InstitutionWork.VM_ROSTER_ISSUE.id()) || allowed.contains(InstitutionWork.LLM_ROSTER_ISSUE.id())) {
+            rosterCandidates = jdbc.query("""
+                    select u.public_id,u.name,m.role,u.status
+                      from workspace_members m join users u on u.id=m.user_id
+                     where m.workspace_id=? and u.status='ACTIVE' order by m.role,m.user_id
+                    """, (rs, row) -> new AdminWorkspaceDetailResponse.RosterCandidate(rs.getObject("public_id", UUID.class),
+                            rs.getString("name"), WorkspaceMemberRole.valueOf(rs.getString("role")),
+                            UserStatus.valueOf(rs.getString("status"))), internal);
+        }
+        return new AdminWorkspaceDetailResponse(base.id(), base.kind(), base.name(), read || descriptionChanged ? base.description() : null, read ? base.createdAt() : null,
+                read ? base.memberCount() : null, vmTotalReadable ? base.vmCount() : null, members, rosterCandidates,
+                may(actor, InstitutionWork.WORKSPACE_INFO_UPDATE, internal),
+                structure && may(actor, InstitutionWork.WORKSPACE_INVITATIONS_MANAGE, internal),
+                structure && memberWork, structure && ownerWork, blocked == null, blocked, read, allowed);
     }
 
-    private static ApiException workspaceNotFound() {
+    @Transactional(readOnly = true)
+    public List<WorkspaceInvitationResponse> listInvitations(AuthenticatedUser actor, UUID id) {
+        long internal = requireLive(id);
+        if (!readable(actor, internal) && !may(actor, InstitutionWork.WORKSPACE_INVITATIONS_MANAGE, internal)) { throw notFound(); }
+        return invitations.pending(internal);
+    }
+
+    public long requireOperated(AuthenticatedUser actor, UUID id) {
+        long internal = requireLive(id);
+        if (!readable(actor, internal)) { throw notFound(); }
+        return internal;
+    }
+
+    private long requireLive(UUID id) {
+        return jdbc.query("select id from workspaces where public_id=? and deleted_at is null",
+                (rs, row) -> rs.getLong(1), id).stream().findFirst().orElseThrow(AdminWorkspaceQueryService::notFound);
+    }
+
+    private boolean readable(AuthenticatedUser actor, long id) {
+        return permissions.workspace(actor, InstitutionWork.WORKSPACE_SUPPORT_READ, id,
+                UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN);
+    }
+
+    private boolean may(AuthenticatedUser actor, InstitutionWork work, long id) {
+        return permissions.workspace(actor, work, id, UserRole.SYS_ADMIN);
+    }
+
+    private static String idList(List<Long> ids) { return ids.isEmpty() ? "null" : String.join(",", ids.stream().map(String::valueOf).toList()); }
+    private static ApiException notFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                 "리소스를 찾을 수 없습니다", "해당 워크스페이스가 존재하지 않습니다.");
-    }
-
-    private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
-        Long requested = orgId == null ? null : jdbcTemplate.query(
-                "select id from orgs where public_id = ?",
-                rs -> rs.next() ? rs.getLong(1) : null, orgId);
-        return StudentSupportPolicy.filterScope(actor, orgId, requested);
     }
 }
