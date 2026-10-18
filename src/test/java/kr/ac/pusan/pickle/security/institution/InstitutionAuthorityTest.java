@@ -116,6 +116,27 @@ class InstitutionAuthorityTest {
     }
 
     @Test
+    void fullIncludesStandaloneModelCatalogueWithoutAResourceOrWorkspace() {
+        assertThat(authority(InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 7))
+                .evaluate("llm.model-catalogue.read", InstitutionWorkTarget.global()).sources())
+                .containsExactly(new InstitutionWorkDecision.GrantSource(
+                        ACCOUNT, FIRST_ORG, InstitutionAssignment.Mode.FULL, 7));
+    }
+
+    @Test
+    void fullIncludesForeignLlmNonfinancialObservationSupport() {
+        assertThat(authority(InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 7))
+                .evaluate("llm.observe.support.read", llm(SECOND_ORG, FIRST_WORKSPACE)).allowed()).isTrue();
+    }
+
+    @Test
+    void fullIncludesForeignGpuObservationSupport() {
+        assertThat(authority(InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 7))
+                .evaluate("gpu.observe.support.read", InstitutionWorkTarget.resource(
+                        SECOND_ORG, InstitutionWorkGroup.GPU, FIRST_WORKSPACE)).allowed()).isTrue();
+    }
+
+    @Test
     void fullKeyCostReadIncludesKeysOwnedByAnotherInstitution() {
         InstitutionAssignment full = InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 7);
         InstitutionWorkDecision decision = authority(full).evaluate(InstitutionWork.LLM_KEY_COST_READ,
@@ -227,8 +248,8 @@ class InstitutionAuthorityTest {
                 .map(line -> line.split(":")[0]).collect(Collectors.toSet());
 
         assertThat(globalResourceReads).containsExactly(InstitutionWork.LLM_KEY_COST_READ.id());
-        assertThat(InstitutionWorkCatalogue.REVISION).isEqualTo("2");
-        assertThat(InstitutionWork.values()).hasSize(83);
+        assertThat(InstitutionWorkCatalogue.REVISION).isEqualTo("3");
+        assertThat(InstitutionWork.values()).hasSize(86);
         assertThat(InstitutionWork.LLM_KEY_COST_READ.boundary()).isEqualTo(InstitutionWork.Boundary.RESOURCE);
         assertThat(InstitutionWork.LLM_KEY_COST_READ.selectable()).isTrue();
         assertThat(InstitutionWork.LLM_KEY_COST_READ.write()).isFalse();
@@ -258,7 +279,8 @@ class InstitutionAuthorityTest {
         assertThat(actual).containsExactlyInAnyOrder(InstitutionWork.STUDENT_LOOKUP,
                 InstitutionWork.STUDENT_SUPPORT_READ, InstitutionWork.STUDENT_PROFILE_CORRECT,
                 InstitutionWork.NOTICE_READ, InstitutionWork.NOTICE_MANAGE,
-                InstitutionWork.SHARED_CERTIFICATE_READ, InstitutionWork.ROOT_DOMAIN_CATALOGUE_READ);
+                InstitutionWork.SHARED_CERTIFICATE_READ, InstitutionWork.ROOT_DOMAIN_CATALOGUE_READ,
+                InstitutionWork.LLM_MODEL_CATALOGUE_READ);
     }
 
     @Test

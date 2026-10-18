@@ -7,7 +7,7 @@ import java.util.stream.Collectors;
 
 /** FULL's global trust is a curated list; adding a global enum never grants it automatically. */
 public final class InstitutionWorkCatalogue {
-    public static final String REVISION = "2";
+    public static final String REVISION = "3";
 
     private static final Set<InstitutionWork> FULL_GLOBAL_RESOURCE_READ = Set.of(InstitutionWork.LLM_KEY_COST_READ);
 
@@ -15,10 +15,12 @@ public final class InstitutionWorkCatalogue {
             InstitutionWork.VM_REQUEST_SUPPORT_READ, InstitutionWork.VM_METADATA_SUPPORT_READ,
             InstitutionWork.VM_ACL_SUPPORT_READ, InstitutionWork.VM_ACL_SUPPORT_MANAGE,
             InstitutionWork.LLM_REQUEST_SUPPORT_READ, InstitutionWork.LLM_METADATA_SUPPORT_READ,
+            InstitutionWork.LLM_OBSERVE_SUPPORT_READ,
             InstitutionWork.LLM_ACL_SUPPORT_READ, InstitutionWork.LLM_ACL_SUPPORT_MANAGE,
             InstitutionWork.DOMAIN_REQUEST_SUPPORT_READ, InstitutionWork.DOMAIN_METADATA_SUPPORT_READ,
             InstitutionWork.DOMAIN_ACL_SUPPORT_READ, InstitutionWork.DOMAIN_ACL_SUPPORT_MANAGE,
             InstitutionWork.GPU_REQUEST_SUPPORT_READ, InstitutionWork.GPU_METADATA_SUPPORT_READ,
+            InstitutionWork.GPU_OBSERVE_SUPPORT_READ,
             InstitutionWork.GPU_ACL_SUPPORT_READ, InstitutionWork.GPU_ACL_SUPPORT_MANAGE,
             InstitutionWork.WORKSPACE_SUPPORT_READ, InstitutionWork.WORKSPACE_INFO_UPDATE,
             InstitutionWork.WORKSPACE_MEMBERS_MANAGE, InstitutionWork.WORKSPACE_INVITATIONS_MANAGE,
@@ -26,7 +28,8 @@ public final class InstitutionWorkCatalogue {
             InstitutionWork.WORKSPACE_RECIPIENT_CANCEL, InstitutionWork.WORKSPACE_ANNOUNCEMENT_SEND,
             InstitutionWork.STUDENT_LOOKUP, InstitutionWork.STUDENT_SUPPORT_READ,
             InstitutionWork.STUDENT_PROFILE_CORRECT, InstitutionWork.NOTICE_READ, InstitutionWork.NOTICE_MANAGE,
-            InstitutionWork.SHARED_CERTIFICATE_READ, InstitutionWork.ROOT_DOMAIN_CATALOGUE_READ);
+            InstitutionWork.SHARED_CERTIFICATE_READ, InstitutionWork.ROOT_DOMAIN_CATALOGUE_READ,
+            InstitutionWork.LLM_MODEL_CATALOGUE_READ);
 
     public static boolean includedInFull(InstitutionWork work) {
         return switch (work.boundary()) {
@@ -51,7 +54,8 @@ public final class InstitutionWorkCatalogue {
                 .map(work -> work.id() + ":" + work.group() + ":" + work.boundary()
                         + ":" + work.write() + ":" + work.selectable() + ":" + includedInFull(work)
                         + ":" + isGlobalResourceReadInFull(work))
-                .collect(Collectors.joining("\n"));
+                .collect(Collectors.joining("\n"))
+                + "\n" + InstitutionQuerySourceConstraints.bindingDescriptor();
     }
 
     private InstitutionWorkCatalogue() { }
