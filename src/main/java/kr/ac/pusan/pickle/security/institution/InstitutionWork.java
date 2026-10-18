@@ -40,6 +40,7 @@ public enum InstitutionWork {
     LLM_KEY_BUDGET("llm.key.budget", InstitutionWorkGroup.LLM, Boundary.RESOURCE, true),
     LLM_REQUEST_SUPPORT_READ("llm.request.support.read", InstitutionWorkGroup.LLM, Boundary.RESOURCE_SUPPORT, false),
     LLM_METADATA_SUPPORT_READ("llm.metadata.support.read", InstitutionWorkGroup.LLM, Boundary.RESOURCE_SUPPORT, false),
+    LLM_OBSERVE_SUPPORT_READ("llm.observe.support.read", InstitutionWorkGroup.LLM, Boundary.RESOURCE_SUPPORT, false),
     LLM_ACL_SUPPORT_READ("llm.acl.support.read", InstitutionWorkGroup.LLM, Boundary.RESOURCE_SUPPORT, false),
     LLM_ACL_SUPPORT_MANAGE("llm.acl.support.manage", InstitutionWorkGroup.LLM, Boundary.RESOURCE_SUPPORT, true),
 
@@ -62,6 +63,7 @@ public enum InstitutionWork {
     GPU_RECALL("gpu.recall", InstitutionWorkGroup.GPU, Boundary.RESOURCE, true),
     GPU_REQUEST_SUPPORT_READ("gpu.request.support.read", InstitutionWorkGroup.GPU, Boundary.RESOURCE_SUPPORT, false),
     GPU_METADATA_SUPPORT_READ("gpu.metadata.support.read", InstitutionWorkGroup.GPU, Boundary.RESOURCE_SUPPORT, false),
+    GPU_OBSERVE_SUPPORT_READ("gpu.observe.support.read", InstitutionWorkGroup.GPU, Boundary.RESOURCE_SUPPORT, false),
     GPU_ACL_SUPPORT_READ("gpu.acl.support.read", InstitutionWorkGroup.GPU, Boundary.RESOURCE_SUPPORT, false),
     GPU_ACL_SUPPORT_MANAGE("gpu.acl.support.manage", InstitutionWorkGroup.GPU, Boundary.RESOURCE_SUPPORT, true),
 
@@ -81,6 +83,7 @@ public enum InstitutionWork {
     NOTICE_MANAGE("notice.manage", null, Boundary.GLOBAL, true),
     SHARED_CERTIFICATE_READ("shared-certificate.read", null, Boundary.GLOBAL, false),
     ROOT_DOMAIN_CATALOGUE_READ("root-domain.catalogue.read", null, Boundary.GLOBAL, false),
+    LLM_MODEL_CATALOGUE_READ("llm.model-catalogue.read", null, Boundary.GLOBAL, false),
     INSTITUTION_AUDIT_READ("institution.audit.read", null, Boundary.INSTITUTION, false),
     INSTITUTION_STAFF_READ("institution.staff.read", null, Boundary.INSTITUTION, false),
     INSTITUTION_REQUEST_MAIL_READ("institution.request-mail.read", null, Boundary.INSTITUTION, false),
