@@ -7,7 +7,9 @@ import java.util.stream.Collectors;
 
 /** FULL's global trust is a curated list; adding a global enum never grants it automatically. */
 public final class InstitutionWorkCatalogue {
-    public static final String REVISION = "1";
+    public static final String REVISION = "2";
+
+    private static final Set<InstitutionWork> FULL_GLOBAL_RESOURCE_READ = Set.of(InstitutionWork.LLM_KEY_COST_READ);
 
     private static final Set<InstitutionWork> FULL_GLOBAL_WORK = Set.of(
             InstitutionWork.VM_REQUEST_SUPPORT_READ, InstitutionWork.VM_METADATA_SUPPORT_READ,
@@ -33,6 +35,11 @@ public final class InstitutionWorkCatalogue {
         };
     }
 
+    /** Resource reads whose institution boundary is global only for actual FULL sources. */
+    public static boolean isGlobalResourceReadInFull(InstitutionWork work) {
+        return FULL_GLOBAL_RESOURCE_READ.contains(work);
+    }
+
     public static Set<InstitutionWork> selectableWork() {
         return Arrays.stream(InstitutionWork.values()).filter(InstitutionWork::selectable).collect(Collectors.toUnmodifiableSet());
     }
@@ -42,7 +49,8 @@ public final class InstitutionWorkCatalogue {
         return REVISION + "\n" + Arrays.stream(InstitutionWork.values())
                 .sorted(Comparator.comparing(InstitutionWork::id))
                 .map(work -> work.id() + ":" + work.group() + ":" + work.boundary()
-                        + ":" + work.write() + ":" + work.selectable() + ":" + includedInFull(work))
+                        + ":" + work.write() + ":" + work.selectable() + ":" + includedInFull(work)
+                        + ":" + isGlobalResourceReadInFull(work))
                 .collect(Collectors.joining("\n"));
     }
 

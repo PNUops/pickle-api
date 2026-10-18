@@ -105,7 +105,7 @@ class InstitutionAuthorityTest {
     }
 
     @Test
-    void fullStillRequiresKnownWorkAndTheActualInstitution() {
+    void fullStillRequiresKnownWorkAndTheActualInstitutionForVmOperations() {
         InstitutionAuthority authority = authority(InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 1));
 
         assertThat(authority.displayRole()).contains(UserRole.ORG_ADMIN);
@@ -113,6 +113,140 @@ class InstitutionAuthorityTest {
         assertThat(authority.evaluate("sys.vm.force-delete", vm(FIRST_ORG, FIRST_WORKSPACE)).allowed()).isFalse();
         assertThat(authority.evaluate("new-global-work", InstitutionWorkTarget.global()).allowed()).isFalse();
         assertThat(authority.evaluate(InstitutionWork.VM_METADATA_SUPPORT_READ, vm(SECOND_ORG, FIRST_WORKSPACE)).allowed()).isTrue();
+    }
+
+    @Test
+    void fullKeyCostReadIncludesKeysOwnedByAnotherInstitution() {
+        InstitutionAssignment full = InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 7);
+        InstitutionWorkDecision decision = authority(full).evaluate(InstitutionWork.LLM_KEY_COST_READ,
+                llm(SECOND_ORG, SECOND_WORKSPACE));
+
+        assertThat(decision.sources()).containsExactly(new InstitutionWorkDecision.GrantSource(
+                ACCOUNT, FIRST_ORG, InstitutionAssignment.Mode.FULL, 7));
+    }
+
+    @Test
+    void fullKeyCostReadNeedsVerifiedKindAndWorkspaceRatherThanInstitutionOwnership() {
+        InstitutionAuthority authority = authority(InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 7));
+
+        assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ,
+                InstitutionWorkTarget.resource(null, InstitutionWorkGroup.LLM, FIRST_WORKSPACE)).allowed()).isTrue();
+    }
+
+    @Test
+    void fullKeyCostReadRejectsUnknownKindOrWorkspace() {
+        InstitutionAuthority authority = authority(InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 7));
+        for (InstitutionWorkTarget target : List.of(
+                InstitutionWorkTarget.resource(SECOND_ORG, null, FIRST_WORKSPACE),
+                InstitutionWorkTarget.resource(null, null, FIRST_WORKSPACE),
+                InstitutionWorkTarget.resource(SECOND_ORG, InstitutionWorkGroup.VM, FIRST_WORKSPACE),
+                InstitutionWorkTarget.resource(SECOND_ORG, InstitutionWorkGroup.LLM, null),
+                InstitutionWorkTarget.resource(null, InstitutionWorkGroup.LLM, null),
+                InstitutionWorkTarget.global(), InstitutionWorkTarget.institution(SECOND_ORG))) {
+            assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ, target).allowed()).as("target %s", target).isFalse();
+        }
+    }
+
+    @Test
+    void selectedKeyCostReadCannotBorrowAnotherSourcesWorkOrWorkspaceScope() {
+        InstitutionAuthority authority = authority(
+                selected(FIRST_ORG, InstitutionWork.LLM_KEY_COST_READ, listed(FIRST_WORKSPACE)),
+                selected(SECOND_ORG, InstitutionWork.LLM_STATE_OPERATE, listed(SECOND_WORKSPACE)));
+
+        assertThat(authority.displayRole()).contains(UserRole.ORG_MANAGER);
+        assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ, llm(FIRST_ORG, FIRST_WORKSPACE)).allowed()).isTrue();
+        assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ, llm(FIRST_ORG, SECOND_WORKSPACE)).allowed()).isFalse();
+        assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ, llm(SECOND_ORG, FIRST_WORKSPACE)).allowed()).isFalse();
+        assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ, llm(SECOND_ORG, SECOND_WORKSPACE)).allowed()).isFalse();
+        assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ,
+                InstitutionWorkTarget.resource(null, InstitutionWorkGroup.LLM, FIRST_WORKSPACE)).allowed()).isFalse();
+        assertThat(authority(selected(FIRST_ORG, InstitutionWork.LLM_KEY_COST_READ, listed()))
+                .evaluate(InstitutionWork.LLM_KEY_COST_READ, llm(FIRST_ORG, FIRST_WORKSPACE)).allowed()).isFalse();
+    }
+
+    @Test
+    void selectedKeyCostReadWithAllWorkspacesStillRequiresItsActualInstitution() {
+        InstitutionAuthority authority = authority(selected(FIRST_ORG, InstitutionWork.LLM_KEY_COST_READ,
+                InstitutionWorkspaceScope.all()));
+
+        assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ, llm(FIRST_ORG, FIRST_WORKSPACE)).allowed()).isTrue();
+        assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ, llm(FIRST_ORG, SECOND_WORKSPACE)).allowed()).isTrue();
+        assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ, llm(SECOND_ORG, FIRST_WORKSPACE)).allowed()).isFalse();
+        assertThat(authority.evaluate(InstitutionWork.LLM_KEY_COST_READ,
+                InstitutionWorkTarget.resource(FIRST_ORG, InstitutionWorkGroup.LLM, null)).allowed()).isFalse();
+    }
+
+    @Test
+    void globalKeyCostReadKeepsOtherFullSourcesAfterDowngradeUntilTheLastIsRevoked() {
+        InstitutionAssignment first = InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 7);
+        InstitutionAssignment second = InstitutionAssignment.full(ACCOUNT, SECOND_ORG, 11);
+        Map<InstitutionWorkGroup, InstitutionWorkspaceScope> scopes = new EnumMap<>(InstitutionWorkGroup.class);
+        for (InstitutionWorkGroup group : InstitutionWorkGroup.values()) { scopes.put(group, InstitutionWorkspaceScope.all()); }
+        InstitutionAssignment downgraded = InstitutionAssignment.selected(ACCOUNT, FIRST_ORG,
+                InstitutionWorkCatalogue.selectableWork(), scopes, 8);
+        InstitutionWorkTarget foreignKey = llm(id(99), FIRST_WORKSPACE);
+
+        assertThat(authority(first, second).evaluate(InstitutionWork.LLM_KEY_COST_READ, foreignKey).sources())
+                .containsExactly(new InstitutionWorkDecision.GrantSource(ACCOUNT, FIRST_ORG, InstitutionAssignment.Mode.FULL, 7),
+                        new InstitutionWorkDecision.GrantSource(ACCOUNT, SECOND_ORG, InstitutionAssignment.Mode.FULL, 11));
+        assertThat(authority(downgraded, second).evaluate(InstitutionWork.LLM_KEY_COST_READ, foreignKey).sources())
+                .containsExactly(new InstitutionWorkDecision.GrantSource(ACCOUNT, SECOND_ORG, InstitutionAssignment.Mode.FULL, 11));
+        assertThat(authority(first).evaluate(InstitutionWork.LLM_KEY_COST_READ, foreignKey).sources())
+                .containsExactly(new InstitutionWorkDecision.GrantSource(ACCOUNT, FIRST_ORG, InstitutionAssignment.Mode.FULL, 7));
+        assertThat(downgraded.mode()).isEqualTo(InstitutionAssignment.Mode.SELECTED);
+        assertThat(authority(downgraded).displayRole()).contains(UserRole.ORG_MANAGER);
+        assertThat(authority(downgraded).evaluate(InstitutionWork.LLM_KEY_COST_READ, foreignKey).allowed()).isFalse();
+        assertThat(authority(downgraded).evaluate(InstitutionWork.LLM_KEY_COST_READ,
+                llm(FIRST_ORG, FIRST_WORKSPACE)).sources()).containsExactly(new InstitutionWorkDecision.GrantSource(
+                        ACCOUNT, FIRST_ORG, InstitutionAssignment.Mode.SELECTED, 8));
+        assertThat(authority().evaluate(InstitutionWork.LLM_KEY_COST_READ, foreignKey).allowed()).isFalse();
+    }
+
+    @Test
+    void fullKeyCostExceptionDoesNotExpandOtherResourceOrInstitutionWork() {
+        InstitutionAuthority authority = authority(InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 7));
+        for (InstitutionWork work : InstitutionWork.values()) {
+            if (work.boundary() == InstitutionWork.Boundary.RESOURCE && work != InstitutionWork.LLM_KEY_COST_READ) {
+                assertThat(authority.evaluate(work,
+                        InstitutionWorkTarget.resource(SECOND_ORG, work.group(), FIRST_WORKSPACE)).allowed())
+                        .as("foreign resource work %s", work).isFalse();
+                assertThat(authority.evaluate(work,
+                        InstitutionWorkTarget.resource(null, work.group(), FIRST_WORKSPACE)).allowed())
+                        .as("resource without institution for %s", work).isFalse();
+            } else if (work.boundary() == InstitutionWork.Boundary.INSTITUTION) {
+                assertThat(authority.evaluate(work, InstitutionWorkTarget.institution(SECOND_ORG)).allowed())
+                        .as("foreign institution work %s", work).isFalse();
+            }
+        }
+    }
+
+    @Test
+    void catalogueKeepsOnlyIndividualKeyCostAsAnExplicitFullGlobalResourceRead() {
+        Set<String> globalResourceReads = InstitutionWorkCatalogue.descriptor().lines()
+                .filter(line -> line.split(":").length == 7 && line.endsWith(":true"))
+                .map(line -> line.split(":")[0]).collect(Collectors.toSet());
+
+        assertThat(globalResourceReads).containsExactly(InstitutionWork.LLM_KEY_COST_READ.id());
+        assertThat(InstitutionWorkCatalogue.REVISION).isEqualTo("2");
+        assertThat(InstitutionWork.values()).hasSize(83);
+        assertThat(InstitutionWork.LLM_KEY_COST_READ.boundary()).isEqualTo(InstitutionWork.Boundary.RESOURCE);
+        assertThat(InstitutionWork.LLM_KEY_COST_READ.selectable()).isTrue();
+        assertThat(InstitutionWork.LLM_KEY_COST_READ.write()).isFalse();
+    }
+
+    @Test
+    void catalogueGlobalReadMeaningChangesFingerprintWithoutChangingTheGrantRevision() {
+        InstitutionAssignment full = InstitutionAssignment.full(ACCOUNT, FIRST_ORG, 7);
+        String descriptor = InstitutionWorkCatalogue.descriptor();
+        String globalCostEntry = "llm.key.cost.read:LLM:RESOURCE:false:true:true:true";
+        assertThat(descriptor).contains(globalCostEntry);
+        String withoutGlobalRead = descriptor.replace(globalCostEntry,
+                "llm.key.cost.read:LLM:RESOURCE:false:true:true:false");
+
+        assertThat(authority(full).fingerprint())
+                .isNotEqualTo(new InstitutionAuthority(ACCOUNT, List.of(full), withoutGlobalRead).fingerprint());
+        assertThat(full.revision()).isEqualTo(7);
+        assertThat(authority(full).assignments()).containsExactly(full);
     }
 
     @Test
