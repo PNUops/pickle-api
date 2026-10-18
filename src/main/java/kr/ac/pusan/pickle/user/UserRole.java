@@ -1,16 +1,9 @@
 package kr.ac.pusan.pickle.user;
 
 /**
- * Global user role (contract schema {@code UserRole}), in increasing order of
- * privilege — the order is load-bearing, because an account's effective role is
- * the highest one it holds across its organisations.
- *
- * <p>Each tier is three deep. An administrator does everything in its tier; an
- * operator does the daily work but none of the consequential mutations; a
- * viewer only reads. The viewer roles exist so that organisations can give each
- * other sight of their resources without giving each other the ability to touch
- * them: an organisation grants a viewer role <b>in itself</b> to somebody who
- * administers another.
+ * Account display and coarse controller admission. Institution display roles are derived
+ * from complete FULL/SELECTED sources; this enum never supplies a work or workspace scope.
+ * SYS operation allow-lists and personal OWNER/ACL standing remain independent.
  */
 public enum UserRole {
     USER,
@@ -21,15 +14,7 @@ public enum UserRole {
     SYS_MANAGER,
     SYS_ADMIN;
 
-    /**
-     * Org tier: scoped to the organisations the account holds a role in, which
-     * since V90 can be several and can carry a different role in each. Kept out
-     * of {@code @PreAuthorize} strings, which stay explicit allow-lists.
-     *
-     * <p>Careful: this says the account is <b>org-scoped</b>, not that it may
-     * act. A guard asking what may be changed asks
-     * {@code AuthenticatedUser.operates}, which excludes the viewer.
-     */
+    /** An institution display tier, never proof of a particular work or target. */
     public boolean isOrgTier() {
         return this == ORG_ADMIN || this == ORG_MANAGER || this == ORG_VIEWER;
     }

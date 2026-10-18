@@ -7,7 +7,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -50,6 +49,7 @@ import tools.jackson.databind.ObjectMapper;
 class RequestRecipientRetryTest {
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
+    @Autowired kr.ac.pusan.pickle.security.institution.InstitutionActorProvider actorProvider;
     @Autowired UserRepository users;
     @Autowired JwtService tokens;
     @Autowired ObjectMapper json;
@@ -95,7 +95,7 @@ class RequestRecipientRetryTest {
     void retryRetainsItsExistingWriterRoleSet(UserRole role) throws Exception {
         User actor = user(role);
         boolean allowed = List.of(UserRole.ORG_MANAGER, UserRole.ORG_ADMIN, UserRole.SYS_ADMIN).contains(role);
-        retry(actor).andExpect(allowed ? status().isOk() : status().isForbidden());
+        retry(actor).andExpect(allowed ? status().isOk() : role == UserRole.ORG_VIEWER ? status().isNotFound() : status().isForbidden());
         assertThat(state()).isEqualTo(allowed ? "QUEUED" : "FAILED");
         assertThat(audits()).isEqualTo(allowed ? 1 : 0);
     }
@@ -118,7 +118,7 @@ class RequestRecipientRetryTest {
             long otherOrg = jdbc.queryForObject("insert into orgs(name) values(?) returning id", Long.class, "재시도 유지 기관 " + UUID.randomUUID());
             SeedFixtures.grantOrgRole(jdbc, writer.getId(), otherOrg, UserRole.ORG_MANAGER);
         }
-        int expected = "ORG_REVOKED".equals(change) ? 404 : "ACCOUNT_DISABLED".equals(change) ? 401 : 403;
+        int expected = "ACCOUNT_DISABLED".equals(change) ? 401 : 404;
         String code = expected == 404 ? "RESOURCE_NOT_FOUND" : expected == 401 ? "AUTH_TOKEN_INVALID" : "ACCESS_DENIED";
         String capturedToken = tokens.createAccessToken(writer);
         var pool = Executors.newSingleThreadExecutor();
@@ -136,7 +136,7 @@ class RequestRecipientRetryTest {
                     accounts.disable(actor(administrator), writer.getPublicId(), "격리 테스트 비활성화", "127.0.0.1");
                 } else {
                     long revision = jdbc.queryForObject("select admin_revision from orgs where id=?", Long.class, org);
-                    administration.revokeOrgRole(actor(administrator), writer.getPublicId(), pub("orgs", org), revision, "127.0.0.1");
+                    administration.revokeOrgRole(actor(administrator), writer.getPublicId(), pub("orgs", org), revision, jdbc.queryForObject("select permission_revision from user_org_roles where user_id=? and org_id=?", Long.class, writer.getId(), org), "127.0.0.1");
                 }
             });
             response.get().get(15, TimeUnit.SECONDS);
@@ -251,7 +251,7 @@ class RequestRecipientRetryTest {
         if (role.isOrgTier()) SeedFixtures.grantOrgRole(jdbc, user.getId(), org, role);
         return user;
     }
-    private AuthenticatedUser actor(User user) { return new AuthenticatedUser(user.getId(), user.getPublicId(), user.getEmail(), user.getRole(), Map.of()); }
+    private AuthenticatedUser actor(User user) { return actorProvider.authenticate(user.getPublicId(), user.getTokenVersion()).orElseThrow(); }
     private String state() { return jdbc.queryForObject("select status from request_recipients where id=?", String.class, recipient); }
     private long audits() { return jdbc.queryForObject("select count(*) from audit_logs where action='request.recipient_retry' and target_id=?", Long.class, pub("requests", request).toString()); }
     private long materializerJobs() { return jdbc.queryForObject("select count(*) from jobrunr_jobs where jobsignature like '%RequestRecipientMaterializer.run(%'", Long.class); }

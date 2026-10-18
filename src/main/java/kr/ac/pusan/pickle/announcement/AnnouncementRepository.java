@@ -11,8 +11,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface AnnouncementRepository extends JpaRepository<Announcement, Long> {
     String ORG_VISIBILITY = """
-            (a.scope = :allScope or exists (select 1 from UserOrgRole r
-                where r.userId = a.authorId and r.orgId in :orgIds))
+            (a.scope = :allScope or exists (select 1 from UserOrgRole r, Org o
+                where r.userId = a.authorId and r.orgId = o.id and o.publicId in :orgIds))
             """;
 
     /** Resolution of the identifier this row wears outside the API boundary. */
@@ -30,9 +30,9 @@ public interface AnnouncementRepository extends JpaRepository<Announcement, Long
      */
     @Query("select a from Announcement a where " + ORG_VISIBILITY + " order by a.id desc")
     Page<Announcement> findVisibleToOrgAdmin(@Param("allScope") AnnouncementScope allScope,
-            @Param("orgIds") Collection<Long> orgIds, Pageable pageable);
+            @Param("orgIds") Collection<UUID> orgIds, Pageable pageable);
 
     @Query("select a from Announcement a where a.publicId = :publicId and " + ORG_VISIBILITY)
     Optional<Announcement> findVisibleByPublicId(@Param("publicId") UUID publicId,
-            @Param("allScope") AnnouncementScope allScope, @Param("orgIds") Collection<Long> orgIds);
+            @Param("allScope") AnnouncementScope allScope, @Param("orgIds") Collection<UUID> orgIds);
 }

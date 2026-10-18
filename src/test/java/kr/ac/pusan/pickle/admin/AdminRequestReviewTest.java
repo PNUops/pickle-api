@@ -258,10 +258,11 @@ class AdminRequestReviewTest {
                 .andExpect(status().isForbidden());
         User outsider = user(UserRole.ORG_ADMIN);
         SeedFixtures.grantOrgRole(jdbc, outsider.getId(), otherOrg, UserRole.ORG_ADMIN);
-        for (User denied : List.of(outsider, user(UserRole.ORG_VIEWER))) {
-            mvc.perform(get("/api/v1/admin/domains/" + domainId).header("Authorization", "Bearer " + token(denied)))
-                    .andExpect(status().isOk());
-        }
+        mvc.perform(get("/api/v1/admin/domains/" + domainId).header("Authorization", "Bearer " + token(outsider)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(domainId.toString()));
+        User unassigned = user(UserRole.ORG_VIEWER);
+        mvc.perform(get("/api/v1/admin/domains/" + domainId).header("Authorization", "Bearer " + token(unassigned)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         mvc.perform(get("/api/v1/admin/domains/" + UUID.randomUUID()).header("Authorization", "Bearer " + token(sys)))
                 .andExpect(status().isNotFound());
         assertThat(count("domains")).isEqualTo(domainsBefore);
@@ -344,7 +345,10 @@ class AdminRequestReviewTest {
                 mvc.perform(get("/api/v1/admin/nodes").header("Authorization", "Bearer " + token(actor))).andExpect(status().isForbidden());
             }
         }
-        for (UserRole role : List.of(UserRole.USER, UserRole.ORG_VIEWER, UserRole.SYS_VIEWER, UserRole.SYS_MANAGER)) {
+        User readOnly = actor(UserRole.ORG_VIEWER);
+        preview(readOnly, body).andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("orgId"));
+        for (UserRole role : List.of(UserRole.USER, UserRole.SYS_VIEWER, UserRole.SYS_MANAGER)) {
             preview(actor(role), body).andExpect(status().isForbidden());
         }
         preview(actor(UserRole.ORG_ADMIN), Map.of("orgId", pub("orgs", otherOrg), "imageId", pub("os_images", image), "vcpu", 1, "memoryMb", 512, "diskGb", 10))

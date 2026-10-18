@@ -7,17 +7,19 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.orgs.RequestMailMode;
-import kr.ac.pusan.pickle.user.UserRole;
+import java.util.Map;
+import kr.ac.pusan.pickle.security.institution.dto.InstitutionPermissionInput;
 import org.jspecify.annotations.Nullable;
 
 public record SaveOrgOperationsRequest(
         @NotNull @Min(0) Long expectedRevision,
+        @NotNull Map<@NotNull UUID, @NotNull @Min(1) Long> expectedPermissionRevisions,
         @NotNull @Size(max = 2000) List<@NotNull @Valid Assignment> members,
         @Nullable RequestMailMode mailMode,
         @Nullable @Size(max = 2000) String reason,
         boolean allowVacancy,
         @Nullable UUID confirmedOrgId) {
 
-    public record Assignment(@NotNull UUID userId, @NotNull UserRole role, boolean requestMail) {
+    public record Assignment(@NotNull UUID userId, @NotNull @Valid InstitutionPermissionInput permission, boolean requestMail) {
     }
 }

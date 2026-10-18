@@ -82,13 +82,20 @@ class AdminWorkspacesTest {
 
     @Test
     void legacyAllFlagExplicitlyBypassesTheInstitutionFilter() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/workspaces").param("orgId", SeedFixtures.UNKNOWN_ID.toString())
+        long unrelatedOrg = jdbcTemplate.queryForObject("insert into orgs(name) values(?) returning id",
+                Long.class, "Workspace filter " + UUID.randomUUID());
+        String unrelatedOrgId = pub("orgs", unrelatedOrg).toString();
+        mockMvc.perform(get("/api/v1/admin/workspaces").param("orgId", unrelatedOrgId)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk()).andExpect(jsonPath(bySlug()).doesNotExist());
         mockMvc.perform(get("/api/v1/admin/workspaces").param("all", "true")
-                        .param("orgId", SeedFixtures.UNKNOWN_ID.toString())
+                        .param("orgId", unrelatedOrgId)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk()).andExpect(jsonPath(bySlug()).exists());
+        mockMvc.perform(get("/api/v1/admin/workspaces").param("all", "true")
+                        .param("orgId", SeedFixtures.UNKNOWN_ID.toString())
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
     }
 
     @Test

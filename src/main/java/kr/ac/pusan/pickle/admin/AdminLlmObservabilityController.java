@@ -40,8 +40,8 @@ public class AdminLlmObservabilityController {
                     + "모델 이름을 직접 입력해 승인할 수 있습니다. 목록이 빈 이유는 신선도 하나로 갈리지 "
                     + "않습니다. 한 번도 못 가져온 것과 계속 실패하는 것이 둘 다 UNKNOWN이므로, "
                     + "lastError와 consecutiveFailures를 함께 읽어야 구분됩니다.")
-    public OpenRouterCatalogueResponse openRouterModels() {
-        return catalogue.catalogue();
+    public OpenRouterCatalogueResponse openRouterModels(@AuthenticationPrincipal AuthenticatedUser actor) {
+        return catalogue.catalogue(actor);
     }
 
     @GetMapping("/status")

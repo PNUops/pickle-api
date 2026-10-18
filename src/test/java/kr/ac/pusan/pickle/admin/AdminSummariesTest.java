@@ -217,6 +217,88 @@ class AdminSummariesTest {
 
     // --- fixtures ---------------------------------------------------------------
 
+    @Test
+    void selectedDashboardFieldsKeepEachInstitutionAndWorkspaceInsideTheirOwnSource() throws Exception {
+        createVm(workspaceBig, "RUNNING", null); createVm(workspaceSmall, "RUNNING", null);
+        User actor = createUser("summary.selected." + UUID.randomUUID() + "@pusan.ac.kr", UserRole.USER, null);
+        Org other = orgRepository.save(new Org("요약 관측 다른 기관 " + UUID.randomUUID(), null));
+        assign(actor, org.getId(), java.util.Set.of(kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_READ),
+                kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope.listed(java.util.Set.of(pub("workspaces", workspaceBig))));
+        assign(actor, other.getId(), java.util.Set.of(kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_OBSERVE),
+                kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope.listed(java.util.Set.of(pub("workspaces", workspaceSmall))));
+        String token = jwtService.createAccessToken(userRepository.findById(actor.getId()).orElseThrow());
+        mockMvc.perform(get("/api/v1/admin/summary").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.vmCountsByStatus.RUNNING").value(1))
+                .andExpect(jsonPath("$.topWorkspacesByVmCount.length()").value(1))
+                .andExpect(jsonPath("$.resource.allocatedVcpu").value(0))
+                .andExpect(jsonPath("$.pendingRequestCount").doesNotExist())
+                .andExpect(jsonPath("$.publishedServiceCount").doesNotExist());
+        mockMvc.perform(get("/api/v1/admin/summary").param("orgId",org.getPublicId().toString())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.resource").doesNotExist());
+        mockMvc.perform(get("/api/v1/admin/capacity-trend").param("orgId",org.getPublicId().toString())
+                        .header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void requestCountsRequireTheExactResourceKindAndWorkspaceBeforeAggregation() throws Exception {
+        createRequest(workspaceBig,"SUBMITTED"); createRequest(workspaceSmall,"SUBMITTED");
+        RequestFixtures.insertLlmKeyRequest(jdbcTemplate, workspaceBig, org.getId(), SeedFixtures.orgadminId(jdbcTemplate), "다른 종류 신청");
+        User actor = createUser("summary.request." + UUID.randomUUID() + "@pusan.ac.kr", UserRole.USER, null);
+        assign(actor, org.getId(), java.util.Set.of(kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_REQUEST_READ),
+                kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope.listed(java.util.Set.of(pub("workspaces",workspaceBig))));
+        mockMvc.perform(get("/api/v1/admin/summary").header("Authorization", "Bearer "
+                        + jwtService.createAccessToken(userRepository.findById(actor.getId()).orElseThrow())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.pendingRequestCount").value(1))
+                .andExpect(jsonPath("$.vmCountsByStatus").doesNotExist())
+                .andExpect(jsonPath("$.resource").doesNotExist()).andExpect(jsonPath("$.attention").doesNotExist());
+    }
+
+    @Test
+    void emptyListedAndNoticeOnlyAuthorityDoNotBecomeAnUnrestrictedDashboard() throws Exception {
+        User actor = createUser("summary.empty." + UUID.randomUUID() + "@pusan.ac.kr", UserRole.USER, null);
+        assign(actor, org.getId(), java.util.Set.of(kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_OBSERVE),
+                kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope.listed(java.util.Set.of()));
+        String token = jwtService.createAccessToken(userRepository.findById(actor.getId()).orElseThrow());
+        mockMvc.perform(get("/api/v1/admin/summary").header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/admin/capacity-trend").header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        var assignment = kr.ac.pusan.pickle.security.institution.InstitutionAssignment.selected(actor.getPublicId(), org.getPublicId(),
+                java.util.Set.of(kr.ac.pusan.pickle.security.institution.InstitutionWork.NOTICE_MANAGE), java.util.Map.of(), 0);
+        replaceAssignment(actor, org.getId(), assignment);
+        mockMvc.perform(get("/api/v1/admin/summary").header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/admin/notices").header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+    }
+
+    @Test
+    void allAllocationScopeIncludesAWorkspaceAndResourceCreatedAfterTheGrant() throws Exception {
+        User actor = createUser("summary.all." + UUID.randomUUID() + "@pusan.ac.kr", UserRole.USER, null);
+        assign(actor, org.getId(), java.util.Set.of(kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_OBSERVE),
+                kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope.all());
+        long future = createWorkspace(); createVm(future,"RUNNING",null);
+        mockMvc.perform(get("/api/v1/admin/capacity-trend").param("days","7").header("Authorization", "Bearer "
+                        + jwtService.createAccessToken(userRepository.findById(actor.getId()).orElseThrow())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.points[6].vmCount").value(1))
+                .andExpect(jsonPath("$.points[6].vcpu").value(2));
+    }
+
+    private void assign(User actor,long institution,java.util.Set<kr.ac.pusan.pickle.security.institution.InstitutionWork> work,
+            kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope scope) {
+        var assignment=kr.ac.pusan.pickle.security.institution.InstitutionAssignment.selected(actor.getPublicId(),pub("orgs",institution),work,
+                java.util.Map.of(kr.ac.pusan.pickle.security.institution.InstitutionWorkGroup.VM,scope),0);
+        replaceAssignment(actor,institution,assignment);
+    }
+
+    private void replaceAssignment(User actor,long institution,kr.ac.pusan.pickle.security.institution.InstitutionAssignment assignment) {
+        var encoded=new kr.ac.pusan.pickle.security.institution.InstitutionAssignmentCodec().encode(assignment);
+        jdbcTemplate.update("""
+                insert into user_org_roles(user_id,org_id,role,permission_mode,permission_payload,permission_revision)
+                values(?,?,?::user_role,?,?::jsonb,nextval('institution_permission_revision_seq'))
+                on conflict(user_id,org_id) do update set role=excluded.role,permission_mode=excluded.permission_mode,
+                permission_payload=excluded.permission_payload,permission_revision=excluded.permission_revision
+                """,actor.getId(),institution,assignment.displayRole().name(),encoded.mode(),encoded.payload());
+        jdbcTemplate.update("update users set role=?::user_role where id=?",assignment.displayRole().name(),actor.getId());
+    }
+
     private User createUser(String email, UserRole role, Long orgId) {
         User user = new User(email, "{test-no-login}", "요약테스트");
         user.setRole(role);

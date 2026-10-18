@@ -32,33 +32,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * Contract tag {@code admin}, notice management.
- *
- * <p>Every role above USER reads the list; only the two admin roles write. The
- * viewer roles are in because a viewer holds whatever read access its tier's
- * operator holds, and a notice carries nothing that argues otherwise. The one
- * surface that does argue otherwise is the audit log, and only for the org
- * viewer: its rows carry login addresses, so within the org tier it stays with
- * the roles that may act. SYS_VIEWER reads it like every other system read.</p>
- *
- * <p>The list is unscoped since V95: a notice belongs to no organisation, so
- * every role admitted here reads every notice, and every organisation
- * administrator writes for the whole platform. The gate below is therefore the
- * entire authorization story for this surface — including for an org-tier
- * account granted no organisation at all, which is admitted like any other,
- * because refusing it would be an organisation deciding who may use a
- * feature.</p>
- *
- * <p>Reading the list is not the whole of what that grants. The same roles
- * reach the images of those notices while they are outside their active window,
- * through {@code NoticeQueryService.manageableBy} — the list row carries the
- * image URLs, so a management view whose every image 404s is not one.</p>
- *
- * <p>Each write carries its own {@code @PreAuthorize}, which fully replaces
- * this class-level one, so widening the read gate cannot reach them.</p>
- *
- * <p>The detail read uses the same gate and view as the list. An editor stays
- * attached to its public id when publication changes move it off a page.</p>
+ * Global notice administration with coarse role admission and exact service work guards.
+ * The SYS tier retains management reads and SYS_ADMIN retains all five writes.
+ * Institution callers require notice read or management work; notices are not
+ * institution-owned and a permitted writer may edit another author's notice.
+ * Management image access outside the publication window uses the same work
+ * check while the public notice and anonymous popup rules remain unchanged.
  */
 @RestController
 @RequestMapping("/api/v1/admin/notices")
@@ -76,18 +55,19 @@ public class AdminNoticeController {
 
     @GetMapping
     public PageResponse<AdminNoticeView> listAdminNotices(
+            @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return noticeQueryService.listForAdmin(page, size);
+        return noticeQueryService.listForAdmin(principal, page, size);
     }
 
     @GetMapping("/{noticeId}")
-    public AdminNoticeView getAdminNotice(@PathVariable UUID noticeId) {
-        return noticeQueryService.getForAdmin(noticeId);
+    public AdminNoticeView getAdminNotice(@AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID noticeId) {
+        return noticeQueryService.getForAdmin(principal, noticeId);
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     @ResponseStatus(HttpStatus.CREATED)
     public AdminNoticeView createAdminNotice(
             @AuthenticationPrincipal AuthenticatedUser principal,
@@ -97,7 +77,7 @@ public class AdminNoticeController {
     }
 
     @PatchMapping("/{noticeId}")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public AdminNoticeView updateAdminNotice(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID noticeId,
@@ -107,7 +87,7 @@ public class AdminNoticeController {
     }
 
     @DeleteMapping("/{noticeId}")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteAdminNotice(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID noticeId, HttpServletRequest httpRequest) {
@@ -120,7 +100,7 @@ public class AdminNoticeController {
      * than a framework 500.
      */
     @PostMapping(value = "/{noticeId}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     @ResponseStatus(HttpStatus.CREATED)
     public NoticeImageView uploadAdminNoticeImage(
             @AuthenticationPrincipal AuthenticatedUser principal,
@@ -131,7 +111,7 @@ public class AdminNoticeController {
     }
 
     @DeleteMapping("/{noticeId}/images/{imageId}")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteAdminNoticeImage(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID noticeId, @PathVariable UUID imageId,

@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
+import kr.ac.pusan.pickle.user.UserStatus;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -18,19 +20,24 @@ public record AdminWorkspaceDetailResponse(
         WorkspaceKind kind,
         String name,
         @Nullable String description,
-        Instant createdAt,
-        long memberCount,
-        long vmCount,
-        List<AdminWorkspaceMemberResponse> members,
+        @Nullable Instant createdAt,
+        @Nullable Long memberCount,
+        @Nullable Long vmCount,
+        @Nullable List<AdminWorkspaceMemberResponse> members,
+        @Nullable List<RosterCandidate> rosterCandidates,
         boolean canUpdateInfo,
         boolean canInviteMembers,
         boolean canManageMembers,
         boolean canManageOwners,
         boolean canDelete,
-        @Nullable String deleteBlockedReason) {
+        @Nullable String deleteBlockedReason,
+        boolean metadataVisible,
+        java.util.Set<String> allowedWorkIds) {
 
     public AdminWorkspaceDetailResponse(UUID id, WorkspaceKind kind, String name, @Nullable String description,
-            Instant createdAt, long memberCount, long vmCount, List<AdminWorkspaceMemberResponse> members) {
-        this(id, kind, name, description, createdAt, memberCount, vmCount, members, false, false, false, false, false, null);
+            @Nullable Instant createdAt, @Nullable Long memberCount, @Nullable Long vmCount, List<AdminWorkspaceMemberResponse> members) {
+        this(id, kind, name, description, createdAt, memberCount, vmCount, members, null, false, false, false, false, false, null, true, java.util.Set.of());
     }
+
+    public record RosterCandidate(UUID userId, String name, WorkspaceMemberRole role, UserStatus status) { }
 }

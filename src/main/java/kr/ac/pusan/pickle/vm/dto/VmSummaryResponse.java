@@ -49,13 +49,15 @@ public record VmSummaryResponse(
         @Nullable Instant expiryStoppedAt,
         @Schema(description = "예약된 삭제. 예약이 없거나 접근 제한 행이면 null입니다.")
         @Nullable VmDeletionResponse deletion,
-        Instant createdAt,
+        @Nullable Instant createdAt,
         @Schema(description = "true면 이 VM의 접근 권한이 없어 이름·상태·소유자만 표시됩니다.")
         boolean accessLimited,
         @Schema(description = "이 VM의 소유자 이름. 접근을 요청할 상대입니다.")
-        List<String> ownerNames,
+        @Nullable List<String> ownerNames,
         @Schema(description = "접근 권한이 없어도 접근 권한 목록을 관리할 수 있는지. 워크스페이스 소유자가 참입니다.")
-        boolean accessManageAllowed) {
+        boolean accessManageAllowed,
+        boolean metadataVisible,
+        java.util.Set<String> allowedWorkIds) {
 
     public static VmSummaryResponse from(Vm vm, UUID workspaceId, String workspaceName,
             @Nullable UUID orgId, String orgName, String displayName, UUID requestId,
@@ -64,7 +66,21 @@ public record VmSummaryResponse(
                 vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), workspaceId, workspaceName, orgId, orgName,
                 displayName, requestId, vm.getStatusDetail(), vm.isSshGatewayBlocked(),
                 vm.getEndDate(), vm.getExpiryStoppedAt(), VmDeletionResponse.from(vm, deleteRequestedById),
-                vm.getCreatedAt(), false, List.of(), false);
+                vm.getCreatedAt(), false, List.of(), false, true, java.util.Set.of());
+    }
+
+    public VmSummaryResponse withInstitutionWorks(java.util.Set<String> work) {
+        return new VmSummaryResponse(id, name, hostname, status, vcpu, memoryMb, diskGb, workspaceId, workspaceName, orgId, orgName, displayName, requestId, statusDetail, sshGatewayBlocked, endDate, expiryStoppedAt, deletion, createdAt, accessLimited, ownerNames, accessManageAllowed, metadataVisible, java.util.Set.copyOf(work));
+    }
+
+    public static VmSummaryResponse commandReference(Vm vm, UUID workspaceId, String workspaceName,
+            UUID orgId, String orgName, java.util.Set<String> work) {
+        boolean period = work.contains("vm.period");
+        return new VmSummaryResponse(vm.getPublicId(), vm.getName(), null, vm.getStatus(),
+                null, null, null, workspaceId, workspaceName, orgId, orgName, null, null, null, null,
+                period ? vm.getEndDate() : null, period ? vm.getExpiryStoppedAt() : null,
+                work.contains("vm.deletion.schedule") ? VmDeletionResponse.from(vm, null) : null,
+                null, false, null, false, false, java.util.Set.copyOf(work));
     }
 
     /**
@@ -81,7 +97,7 @@ public record VmSummaryResponse(
         return new VmSummaryResponse(vm.getPublicId(), restrictedName(vm, displayName), null, vm.getStatus(),
                 null, null, null, workspaceId, workspaceName, null, null,
                 null, null, null, null,
-                null, null, null, vm.getCreatedAt(), true, ownerNames, accessManageAllowed);
+                null, null, null, vm.getCreatedAt(), true, ownerNames, accessManageAllowed, false, java.util.Set.of());
     }
 
     /**

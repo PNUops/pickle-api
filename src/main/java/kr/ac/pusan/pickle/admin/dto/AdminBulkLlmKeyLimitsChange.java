@@ -67,6 +67,7 @@ public class AdminBulkLlmKeyLimitsChange {
 
     @DecimalMin(value = "0", message = "금액 한도는 0 이상이어야 합니다.")
     @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.")
+    @kr.ac.pusan.pickle.common.openapi.NonNullWhenPresent
     private @Nullable BigDecimal creditLimit;
     private boolean creditLimitSet;
 

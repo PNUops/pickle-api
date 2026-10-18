@@ -130,6 +130,8 @@ class AdminUserSupportTest {
             removed.andExpect(status().isNoContent());
             diagnose(actor, resource).andExpect(status().isOk()).andExpect(jsonPath("$.canRevoke").value(false))
                     .andExpect(jsonPath("$.revokeReason").value("NO_PERSONAL_GRANT"));
+        } else if (role.isOrgTier()) {
+            removed.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         } else { removed.andExpect(status().isForbidden()); }
         assertThat(jdbc.queryForObject("select count(*) from resource_access_grants where public_id=?", Long.class, grantId))
                 .isEqualTo(allowed ? 0L : 1L);

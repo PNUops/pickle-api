@@ -46,6 +46,12 @@ public class GpuStore {
         return jdbc.queryForObject("select * from gpu_allocations where id = ? for update", GpuStore::allocation, id);
     }
 
+    public List<GpuAllocation> authorized(List<Long> ids) {
+        if (ids.isEmpty()) { return List.of(); }
+        return jdbc.query("select * from gpu_allocations where id in ("
+                + String.join(",", ids.stream().map(id -> "?").toList()) + ")", GpuStore::allocation, ids.toArray());
+    }
+
     public List<GpuAllocation> all() {
         return jdbc.query("select * from gpu_allocations order by created_at desc, id desc", GpuStore::allocation);
     }

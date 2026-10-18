@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -52,6 +53,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
@@ -686,8 +688,12 @@ class AdminBulkChangeTest {
             assertThat(item(previewJson(denied, schedule), pub("vms", plain))
                     .get("reason").asString()).isEqualTo("FORBIDDEN");
         }
-        assertThat(item(previewJson(otherOrgAdminToken, schedule), pub("vms", plain))
-                .get("reason").asString()).isEqualTo("NOT_FOUND");
+        // Global metadata support exposes the row, while deletion remains institution-scoped.
+        JsonNode foreignPreview = item(previewJson(otherOrgAdminToken, schedule), pub("vms", plain));
+        assertThat(foreignPreview.get("reason").asString()).isEqualTo("FORBIDDEN");
+        assertThat(foreignPreview.get("applicable").asBoolean()).isFalse();
+        assertThat(jdbcTemplate.queryForObject("select delete_kind from vms where id = ?",
+                String.class, plain)).isNull();
 
         JsonNode scheduled = applyJson(orgAdminToken, schedule);
         assertThat(item(scheduled, pub("vms", plain)).get("result").asString()).isEqualTo("APPLIED");
@@ -1093,9 +1099,10 @@ class AdminBulkChangeTest {
     void aFailedSummaryInsertLeavesEveryTargetsWorkInPlace() throws Exception {
         long first = customDomain(orgA.getId(), workspaceA);
         long second = customDomain(orgA.getId(), workspaceA);
-        doThrow(new IllegalStateException("audit storage unavailable"))
-                .when(auditService).record(any(), anyString(), eq(AuditService.ADMIN_BULK_CHANGE),
-                        anyString(), any(), any(), any());
+        // The captured-institution parameter is intentionally package-private.
+        ReflectionTestUtils.invokeMethod(doThrow(new IllegalStateException("audit storage unavailable"))
+                        .when(auditService), "recordCaptured", any(), anyString(), eq(AuditService.ADMIN_BULK_CHANGE),
+                anyString(), any(), any(), any(), any());
         Map<String, Object> body = request("DOMAIN",
                 List.of(pub("domains", first), pub("domains", second)),
                 Map.of("kind", "DOMAIN_VERIFY", "domainVerify", Map.of()));
@@ -1105,6 +1112,9 @@ class AdminBulkChangeTest {
         // only thing lost.
         JsonNode apply = applyJson(orgAdminToken, body);
 
+        ReflectionTestUtils.invokeMethod(verify(auditService), "recordCaptured", any(), anyString(),
+                eq(AuditService.ADMIN_BULK_CHANGE), eq("bulk_change"),
+                eq(UUID.fromString(apply.get("batchId").asString())), any(), any(), any());
         assertThat(verifyJobCount()).isEqualTo(before + 2);
         assertThat(auditCount(pub("domains", first), "domain.admin_verify")).isEqualTo(1);
         assertThat(auditCount(pub("domains", second), "domain.admin_verify")).isEqualTo(1);

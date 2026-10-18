@@ -49,7 +49,7 @@ class InstitutionAssignmentStoreTest {
         jdbc.update("update user_org_roles set request_mail=true where user_id=? and org_id=?", legacy.userId(), legacy.orgId());
         legacyBeforeMigration = jdbc.queryForObject("select to_jsonb(r)::text from user_org_roles r where user_id=? and org_id=?",
                 String.class, legacy.userId(), legacy.orgId());
-        Flyway.configure().dataSource(source).locations("classpath:db/migration").load().migrate();
+        Flyway.configure().dataSource(source).locations("classpath:db/migration").target("142").load().migrate();
         sequenceInitiallyUnallocated = !Boolean.TRUE.equals(jdbc.queryForObject(
                 "select is_called from institution_permission_revision_seq", Boolean.class));
         store = new InstitutionAssignmentStore(jdbc, new InstitutionAssignmentCodec());

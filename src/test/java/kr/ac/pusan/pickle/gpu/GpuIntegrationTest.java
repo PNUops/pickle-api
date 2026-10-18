@@ -28,6 +28,8 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.dto.TaskStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.institution.InstitutionActorContext;
+import kr.ac.pusan.pickle.security.institution.InstitutionActorProvider;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.RequestFixtures;
@@ -76,6 +78,8 @@ class GpuIntegrationTest {
     @Autowired GpuReviewService reviews;
     @Autowired SettingsService settings;
     @Autowired UserRepository users;
+    @Autowired InstitutionActorProvider actors;
+    @Autowired kr.ac.pusan.pickle.orgs.OrgAdministrationLock administrationLock;
     @Autowired VmRepository vms;
     @Autowired ObjectMapper json;
     @Autowired MockMvc mvc;
@@ -101,9 +105,8 @@ class GpuIntegrationTest {
         User user = new User(UUID.randomUUID() + "@example.com", "unused", "GPU owner");
         user.setStatus(UserStatus.ACTIVE);
         user = users.saveAndFlush(user);
-        owner = new AuthenticatedUser(user.getId(), user.getPublicId(), user.getEmail(), UserRole.USER, Map.of());
-        User adminUser = users.findById(SeedFixtures.sysadminId(jdbc)).orElseThrow();
-        admin = new AuthenticatedUser(adminUser.getId(), adminUser.getPublicId(), adminUser.getEmail(), UserRole.SYS_ADMIN, Map.of());
+        owner = currentActor(user.getId());
+        admin = currentActor(SeedFixtures.sysadminId(jdbc));
         jdbc.update("insert into workspace_members(workspace_id,user_id,role) values (?,?,'OWNER')", workspace, owner.id());
         running.set(false); config.set(Map.of()); pending.set(List.of());
         when(guest.blockingReason(any())).thenReturn(null);
@@ -311,7 +314,9 @@ class GpuIntegrationTest {
     @Test
     void outsiderGetsMaskedNotFoundAndWorkspaceMemberGetsRestrictedList() throws Exception {
         long id = allocated();
-        AuthenticatedUser outsider = new AuthenticatedUser(admin.id(), admin.publicId(), admin.email(), UserRole.USER, Map.of());
+        User outsiderUser = new User(UUID.randomUUID() + "@example.com", "unused", "GPU outsider");
+        outsiderUser.setStatus(UserStatus.ACTIVE);
+        AuthenticatedUser outsider = currentActor(users.saveAndFlush(outsiderUser).getId());
         mvc.perform(get("/api/v1/gpu-allocations/" + publicId(id)).with(authentication(auth(outsider)))).andExpect(status().isNotFound());
         jdbc.update("delete from resource_access_grants where resource_type='GPU' and resource_id=?", id);
         // Without a grant this is no longer one of the holder's own rows, so an
@@ -751,6 +756,18 @@ class GpuIntegrationTest {
     private UUID publicId(long id) { return SeedFixtures.publicId(jdbc,"gpu_allocations",id); }
     private UUID vmPublicId(long id) { return SeedFixtures.publicId(jdbc,"vms",id); }
     private long reviewCount(long id) { return jdbc.queryForObject("select count(*) from gpu_reclaim_reviews where allocation_id=?",Long.class,id); }
+    private AuthenticatedUser currentActor(long userId) {
+        return transactionTemplate.execute(status -> {
+            administrationLock.acquire();
+            entityManager.flush();
+            AuthenticatedUser identity = jdbc.queryForObject("""
+                    select id,public_id,email,role::text,token_version from users where id=?
+                    """, (rs, index) -> new AuthenticatedUser(rs.getLong("id"), rs.getObject("public_id", UUID.class),
+                            rs.getString("email"), UserRole.valueOf(rs.getString("role")), Map.of(), rs.getInt("token_version"),
+                            InstitutionActorContext.invalid(InstitutionActorContext.Failure.NOT_LOADED)), userId);
+            return actors.reloadAfterAdministrationLock(identity);
+        });
+    }
     private UsernamePasswordAuthenticationToken auth(AuthenticatedUser actor) {
         return UsernamePasswordAuthenticationToken.authenticated(actor,"test",List.of(new SimpleGrantedAuthority("ROLE_"+actor.role().name())));
     }

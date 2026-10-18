@@ -26,27 +26,33 @@ public record OpenRouterAccountResponse(
         @Schema(description = "현재 positive-credit key binding에 선택할 수 있는지")
         boolean eligibleForBinding,
         @Schema(description = "이 사업 계정에 연결된 LLM API 키 수")
-        long boundKeyCount,
+        @Nullable Long boundKeyCount,
         @Schema(description = "프로비저닝과 대사에 사용할 management credential이 있는지")
-        boolean credentialAvailable,
+        @Nullable Boolean credentialAvailable,
         @Schema(description = "현재 ACTIVE credential의 secret-free 상태. 없으면 null")
         @Nullable OpenRouterCredentialStateResponse activeCredential,
         @Schema(description = "STAGED 또는 RETIRING credential의 secret-free 상태. 없으면 null")
         @Nullable OpenRouterCredentialStateResponse rotationCredential,
         @Schema(description = "DB cache에서 읽은 account credits·예상·미관리 지출 관측 상태")
-        OpenRouterAccountCreditsResponse credits,
+        @Nullable OpenRouterAccountCreditsResponse credits,
         @Schema(description = "이 account에 걸린 살아 있는 key의 금액 한도 합계")
-        OpenRouterAccountAllocationResponse allocation,
+        @Nullable OpenRouterAccountAllocationResponse allocation,
         @Schema(description = "승인 화면이 프리필에 쓰는 유료 모델 허용 목록 기본값. 복사 원본이지 "
                 + "상속원이 아니라서 여기를 바꿔도 이미 발급된 키는 그대로입니다."
                 + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
-        List<String> defaultCreditAllowedModels,
+        @Nullable List<String> defaultCreditAllowedModels,
         @Schema(description = "승인 화면이 프리필에 쓰는 유료 모델 차단 목록 기본값. 복사 원본이지 "
                 + "상속원이 아니라서 여기를 바꿔도 이미 발급된 키는 그대로입니다."
                 + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
-        List<String> defaultCreditDeniedModels,
+        @Nullable List<String> defaultCreditDeniedModels,
         @Schema(description = "등록 시각")
         Instant createdAt,
         @Schema(description = "Metadata 최종 변경 시각")
-        Instant updatedAt) {
+        Instant updatedAt, boolean financeVisible, boolean credentialVisible, boolean policyReferenceVisible) {
+    public OpenRouterAccountResponse project(boolean finance, boolean credential, boolean metadata, boolean managementReference) {
+        return new OpenRouterAccountResponse(id, orgId, orgName, name, status, metadata ? program : null, metadata ? contact : null, eligibleForBinding, metadata || finance ? boundKeyCount : null,
+                credential ? credentialAvailable : null, credential ? activeCredential : null, credential ? rotationCredential : null,
+                finance ? credits : null, finance ? allocation : null, finance || managementReference ? defaultCreditAllowedModels : null,
+                finance || managementReference ? defaultCreditDeniedModels : null, createdAt, updatedAt, finance, credential, finance || managementReference);
+    }
 }

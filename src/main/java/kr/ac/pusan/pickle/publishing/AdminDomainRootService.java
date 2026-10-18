@@ -30,14 +30,40 @@ public class AdminDomainRootService {
     private final DomainRepository domainRepository;
     private final OrgRepository orgRepository;
     private final AuditService auditService;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
 
     public AdminDomainRootService(DomainRootRepository rootRepository,
             DomainRepository domainRepository, OrgRepository orgRepository,
-            AuditService auditService) {
+            AuditService auditService, kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions) {
         this.rootRepository = rootRepository;
         this.domainRepository = domainRepository;
         this.orgRepository = orgRepository;
-        this.auditService = auditService;
+        this.auditService = auditService; this.permissions = permissions;
+    }
+
+    private boolean readableRoot(AuthenticatedUser actor, DomainRoot root) {
+        return permissions.global(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.ROOT_DOMAIN_CATALOGUE_READ,
+                kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER,
+                kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)
+                || permissions.institution(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.INSTITUTION_ROOT_POLICY_READ,
+                        root.getOrgId());
+    }
+
+    private boolean writableRoot(AuthenticatedUser actor, DomainRoot root) {
+        return permissions.institution(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.INSTITUTION_ROOT_POLICY_WRITE,
+                root.getOrgId(), kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER, kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN);
+    }
+
+    private java.util.Set<String> rootWorks(AuthenticatedUser actor, DomainRoot root) {
+        java.util.Set<String> work = new java.util.HashSet<>();
+        if (permissions.global(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.ROOT_DOMAIN_CATALOGUE_READ,
+                kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER,
+                kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)) { work.add("root-domain.catalogue.read"); }
+        if (permissions.institution(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.INSTITUTION_ROOT_POLICY_READ,
+                root.getOrgId(), kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER,
+                kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)) { work.add("institution.root-policy.read"); }
+        if (writableRoot(actor, root)) { work.add("institution.root-policy.write"); }
+        return java.util.Set.copyOf(work);
     }
 
     private static ApiException rootNotFound() {
@@ -58,13 +84,16 @@ public class AdminDomainRootService {
      */
     @Transactional(readOnly = true)
     public List<AdminDomainRootView> list(AuthenticatedUser actor) {
-        return rootRepository.findAll().stream()
+        permissions.requireReadSource(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.ROOT_DOMAIN_CATALOGUE_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.INSTITUTION_ROOT_POLICY_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.INSTITUTION_ROOT_POLICY_WRITE);
+        return rootRepository.findAll().stream().filter(root -> readableRoot(actor, root) || writableRoot(actor, root))
                 .map(root -> new AdminDomainRootView(root.getRootDomain(),
                         orgRepository.findById(root.getOrgId()).map(Org::getPublicId).orElse(null),
                         orgRepository.findById(root.getOrgId()).map(Org::getName).orElse(""),
                         root.isAutoApprove(),
-                        domainRepository.countByRootDomainAndKindAndStatusNot(root.getRootDomain(),
-                                DomainKind.EXTERNAL, DomainStatus.REMOVED)))
+                        readableRoot(actor, root) ? domainRepository.countByRootDomainAndKindAndStatusNot(root.getRootDomain(),
+                                DomainKind.EXTERNAL, DomainStatus.REMOVED) : null, readableRoot(actor, root), rootWorks(actor, root)))
                 .toList();
     }
 
@@ -81,6 +110,7 @@ public class AdminDomainRootService {
     @Transactional
     public AdminDomainRootView update(AuthenticatedUser actor, String rootDomain,
             UpdateDomainRootRequest form, String ip) {
+        actor = permissions.currentForWrite(actor);
         DomainRoot root = rootRepository.findByRootDomain(rootDomain)
                 .orElseThrow(AdminDomainRootService::rootNotFound);
         // Reading every root is deliberate; writing one is not. An organisation
@@ -88,7 +118,8 @@ public class AdminDomainRootService {
         // and the refusal is the same not-found a root they cannot see would
         // give — telling them it exists but is somebody else's is the sentence
         // the read surface already declines to write.
-        if (actor.role().isOrgTier() && !actor.operates(root.getOrgId())) {
+        if (!permissions.institution(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.INSTITUTION_ROOT_POLICY_WRITE,
+                root.getOrgId(), kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER, kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)) {
             throw rootNotFound();
         }
         boolean before = root.isAutoApprove();
@@ -102,7 +133,7 @@ public class AdminDomainRootService {
                 orgRepository.findById(root.getOrgId()).map(Org::getPublicId).orElse(null),
                 orgRepository.findById(root.getOrgId()).map(Org::getName).orElse(""),
                 root.isAutoApprove(),
-                domainRepository.countByRootDomainAndKindAndStatusNot(rootDomain,
-                        DomainKind.EXTERNAL, DomainStatus.REMOVED));
+                readableRoot(actor, root) ? domainRepository.countByRootDomainAndKindAndStatusNot(rootDomain,
+                        DomainKind.EXTERNAL, DomainStatus.REMOVED) : null, readableRoot(actor, root), rootWorks(actor, root));
     }
 }

@@ -263,12 +263,14 @@ public class AuditService {
      *  REQUIRES_NEW {@link #record} through the proxy (self-invocation would
      *  bypass it); ObjectProvider defers resolution and breaks the cycle. */
     private final ObjectProvider<AuditService> self;
+    private final AuditTargetInstitutions targetInstitutions;
 
     public AuditService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
             ObjectProvider<AuditService> self) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.self = self;
+        this.targetInstitutions = new AuditTargetInstitutions(jdbcTemplate);
     }
 
     /**
@@ -287,24 +289,29 @@ public class AuditService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(Long actorId, String actorRole, String action, String targetType, UUID targetId,
             Map<String, Object> detail, String ip) {
-        insert(actorId, actorRole, action, targetType, targetId, detail, ip);
+        insert(actorId, actorRole, action, targetType, targetId, detail, ip,
+                targetInstitutions.resolve(action, targetType, targetId, detail).orElse(null));
     }
 
     /** The caller's business change and this generic audit INSERT are atomic. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void recordInTransaction(Long actorId, String actorRole, String action, String targetType, UUID targetId,
             Map<String, Object> detail, String ip) {
-        insert(actorId, actorRole, action, targetType, targetId, detail, ip);
+        insert(actorId, actorRole, action, targetType, targetId, detail, ip,
+                targetInstitutions.resolve(action, targetType, targetId, detail).orElse(null));
     }
 
     private void insert(Long actorId, String actorRole, String action, String targetType, UUID targetId,
-            Map<String, Object> detail, String ip) {
+            Map<String, Object> detail, String ip, AuditTargetInstitutions.Target targetInstitution) {
         String detailJson = (detail == null || detail.isEmpty()) ? null : objectMapper.writeValueAsString(detail);
         jdbcTemplate.update("""
-                insert into audit_logs (actor_id, actor_role, action, target_type, target_id, detail, ip)
-                values (?, ?, ?, ?, ?, ?::jsonb, ?)
+                insert into audit_logs (actor_id, actor_role, action, target_type, target_id,
+                                        target_org_id, target_org_name, detail, ip)
+                values (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
                 """, actorId, actorRole, action, targetType,
-                targetId == null ? null : targetId.toString(), detailJson, ip);
+                targetId == null ? null : targetId.toString(),
+                targetInstitution == null ? null : targetInstitution.id(),
+                targetInstitution == null ? null : targetInstitution.name(), detailJson, ip);
     }
 
     /**
@@ -326,8 +333,16 @@ public class AuditService {
             record(actorId, actorRole, action, targetType, targetId, detail, ip);
             return;
         }
-        AfterCommit.run("audit " + action + " " + targetId, () -> self.getObject().record(actorId, actorRole, action, targetType,
-                targetId, detail, ip));
+        AuditTargetInstitutions.Target captured = targetInstitutions.resolve(action, targetType, targetId, detail).orElse(null);
+        AfterCommit.run("audit " + action + " " + targetId, () -> self.getObject().recordCaptured(actorId, actorRole, action,
+                targetType, targetId, detail, ip, captured));
+    }
+
+    /** The target institution was captured on the business connection before its commit. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordCaptured(Long actorId, String actorRole, String action, String targetType,
+            UUID targetId, Map<String, Object> detail, String ip, AuditTargetInstitutions.Target captured) {
+        insert(actorId, actorRole, action, targetType, targetId, detail, ip, captured);
     }
 
     /** Institution changes and their audit commit or roll back together. */

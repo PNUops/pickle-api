@@ -30,7 +30,6 @@ import kr.ac.pusan.pickle.publishing.dto.AdminDomainView;
 import kr.ac.pusan.pickle.publishing.dto.DnsRecordSetView;
 import kr.ac.pusan.pickle.publishing.dto.UpdateDomainRenewalRequest;
 import kr.ac.pusan.pickle.publishing.dto.AdminRouteView;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -79,6 +78,8 @@ public class AdminPublishingService {
     private final NotificationService notificationService;
     private final PublicSourcePolicyService sourcePolicies;
     private final Clock clock;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
+    private final kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries institutionQueries;
 
     public AdminPublishingService(RouteRepository routeRepository, DomainRecordRepository recordRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
@@ -88,7 +89,8 @@ public class AdminPublishingService {
             DomainVerificationJob domainVerificationJob, RouteGenerations routeGenerations,
             RouteApplyJob routeApplyJob, VmEventRepository vmEventRepository,
             NotificationService notificationService, PublicSourcePolicyService sourcePolicies,
-            Clock clock) {
+            Clock clock, kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions,
+            kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries institutionQueries) {
         this.routeRepository = routeRepository;
         this.recordRepository = recordRepository;
         this.domainRepository = domainRepository;
@@ -107,7 +109,7 @@ public class AdminPublishingService {
         this.vmEventRepository = vmEventRepository;
         this.notificationService = notificationService;
         this.sourcePolicies = sourcePolicies;
-        this.clock = clock;
+        this.clock = clock; this.permissions = permissions; this.institutionQueries = institutionQueries;
     }
 
     @Transactional(readOnly = true)
@@ -116,33 +118,42 @@ public class AdminPublishingService {
                 .orElseThrow(AdminPublishingService::routeNotFound);
         Domain domain = domainRepository.findById(route.getDomainId())
                 .orElseThrow(AdminPublishingService::routeNotFound);
-        requireScope(actor, domain, true);
+        if (!allowedDomainWorks(actor, domain).contains("vm.publication.read")) {
+            requireWork(actor, domain, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_OPERATE, false);
+        }
         return sourcePolicies.domainView(domain);
     }
 
     @Transactional
     public SourcePolicyView updateRouteSourcePolicy(AuthenticatedUser actor, UUID routeId,
             long expectedRevision, List<String> allowedCidrs, String ip) {
+        actor = permissions.currentForWrite(actor);
         Route route = routeRepository.findByPublicId(routeId)
                 .orElseThrow(AdminPublishingService::routeNotFound);
         Domain domain = domainRepository.findById(route.getDomainId())
                 .orElseThrow(AdminPublishingService::routeNotFound);
-        requireScope(actor, domain);
+        requireWork(actor, domain, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_OPERATE, false);
         return sourcePolicies.updateDomain(domain, actor, expectedRevision, allowedCidrs, true, ip);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<AdminRouteView> listRoutes(AuthenticatedUser actor, UUID orgId,
             RouteStatus status, int page, int size) {
+        permissions.requireReadSource(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_SUPPORT_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_READ, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_OPERATE);
         Long requested = orgId == null ? null : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        OrgScope scope = kr.ac.pusan.pickle.admin.StudentSupportPolicy.filterScope(actor, orgId, requested);
-        Page<Route> routes = routeRepository.findAdmin(orgFilter(scope), name(status), page(page, size));
+        OrgScope scope = orgId != null && requested == null ? OrgScope.nothing() : OrgScope.of(requested);
+        Page<Route> routes = routeRepository.findAdmin(institutionQueries.routes(actor), orgFilter(scope), name(status), page(page, size));
         Context ctx = context(routes.getContent().stream()
                 .map(r -> domainRepository.findById(r.getDomainId()).orElse(null))
                 .filter(d -> d != null).toList());
         List<AdminRouteView> content = routes.getContent().stream().map(route -> {
             Domain domain = ctx.domains.get(route.getDomainId());
             Vm vm = domain != null ? ctx.vms.get(domain.getVmId()) : null;
+            boolean metadata = domain != null && canReadMetadata(actor, domain);
+            java.util.Set<String> work = new java.util.HashSet<>(domain == null ? java.util.Set.of() : allowedDomainWorks(actor, domain));
+            if (domain != null && route.getStatus() == RouteStatus.REMOVED && historicalRouteOperation(actor, domain)) { work.add("vm.publication.operate"); }
+            work = java.util.Set.copyOf(work);
             return new AdminRouteView(route.getPublicId(),
                     domain != null ? domain.getPublicId() : null,
                     domain != null ? domain.getFqdn() : null,
@@ -150,9 +161,9 @@ public class AdminPublishingService {
                     vm != null ? vm.getPublicId() : null, name(vm),
                     ctx.workspaceId(domain), ctx.workspaceName(domain),
                     ctx.orgId(domain), ctx.orgName(domain),
-                    route.getTargetPort(), route.getProtocol(), route.getStatus(),
-                    route.getAppliedGeneration(), route.getAppliedAt(), route.getLastError(),
-                    route.getUpdatedAt());
+                    metadata ? route.getTargetPort() : null, metadata ? route.getProtocol() : null, route.getStatus(),
+                    route.getAppliedGeneration(), metadata ? route.getAppliedAt() : null, metadata ? route.getLastError() : null,
+                    route.getUpdatedAt(), metadata, work);
         }).toList();
         return PageResponse.of(content, routes);
     }
@@ -167,22 +178,26 @@ public class AdminPublishingService {
     @Transactional(readOnly = true)
     public PageResponse<AdminDomainView> listDomains(AuthenticatedUser actor, UUID orgId,
             UUID workspaceId, DomainKind kind, DomainStatus status, int page, int size) {
+        permissions.requireReadSource(actor, java.util.stream.Stream.concat(
+                kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries.DOMAIN_REFERENCE_WORKS.stream(),
+                kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries.PUBLICATION_REFERENCE_WORKS.stream())
+                .toArray(kr.ac.pusan.pickle.security.institution.InstitutionWork[]::new));
         Long requested = orgId == null ? null : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        OrgScope scope = kr.ac.pusan.pickle.admin.StudentSupportPolicy.filterScope(actor, orgId, requested);
+        OrgScope scope = orgId != null && requested == null ? OrgScope.nothing() : OrgScope.of(requested);
         Long internalWorkspace = workspaceId == null ? null : workspaceRepository.findByPublicId(workspaceId)
                 .map(Workspace::getId).orElse(-1L);
-        Page<Domain> domains = domainRepository.findAdmin(orgFilter(scope), internalWorkspace, name(kind), name(status),
+        Page<Domain> domains = domainRepository.findAdmin(institutionQueries.domainReferences(actor), orgFilter(scope), internalWorkspace, name(kind), name(status),
                 page(page, size));
         Context ctx = context(domains.getContent());
         List<AdminDomainView> content = domains.getContent().stream()
-                .map(domain -> view(domain, ctx)).toList();
+                .map(domain -> view(actor, domain, ctx)).toList();
         return PageResponse.of(content, domains);
     }
 
     @Transactional(readOnly = true)
     public AdminDomainView getDomain(AuthenticatedUser actor, UUID domainId) {
         Domain domain = requireReadableDomain(actor, domainId);
-        AdminDomainView observed = view(domain, context(List.of(domain)));
+        AdminDomainView observed = view(actor, domain, context(List.of(domain)));
         if (observed.orgId() == null || observed.orgName() == null
                 || observed.workspaceId() == null || observed.workspaceName() == null) {
             throw domainNotFound();
@@ -193,12 +208,14 @@ public class AdminPublishingService {
     @Transactional(readOnly = true)
     public PageResponse<AdminCertificateView> listCertificates(AuthenticatedUser actor, UUID orgId,
             CertificateStatus status, Integer expiringInDays, int page, int size) {
+        permissions.requireReadSource(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.SHARED_CERTIFICATE_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_READ);
         OrgScope scope = scopedOrgId(actor, orgId);
         Instant now = Instant.now();
         Page<Certificate> certs = expiringInDays != null
-                ? certificateRepository.findAdminExpiring(orgFilter(scope), name(status),
+                ? certificateRepository.findAdminExpiring(institutionQueries.certificates(actor), orgFilter(scope), name(status),
                         now.plus(expiringInDays, ChronoUnit.DAYS), page(page, size))
-                : certificateRepository.findAdmin(orgFilter(scope), name(status), page(page, size));
+                : certificateRepository.findAdmin(institutionQueries.certificates(actor), orgFilter(scope), name(status), page(page, size));
         // The certificate names its domain by public id, and unlike its sibling
         // listings this one had no domain load at all — hence the batch.
         Map<Long, UUID> domainIds = domainRepository.findAllById(certs.getContent().stream()
@@ -217,7 +234,17 @@ public class AdminPublishingService {
     }
 
     /** One row as the administrator's listing reports it. */
-    private AdminDomainView view(Domain domain, Context ctx) {
+    private AdminDomainView view(AuthenticatedUser actor, Domain domain, Context ctx) {
+        java.util.Set<String> work = allowedDomainWorks(actor, domain);
+        if (!canReadMetadata(actor, domain)) {
+            return new AdminDomainView(domain.getPublicId(), null, domain.getKind(), domain.getFqdn(), null,
+                    domain.getStatus(), work.contains("vm.custom-domain.verify") ? domain.getVerifiedAt() : null,
+                    work.contains("domain.release") ? domain.getReleasedAt() : null, null,
+                    work.contains("domain.renewal") ? domain.getRenewDueAt() : null, null, null,
+                    ctx.workspaceId(domain), ctx.workspaceName(domain), ctx.orgId(domain), ctx.orgName(domain),
+                    work.contains("vm.publication.operate") ? routeRepository.findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED).map(Route::getStatus).orElse(null) : null,
+                    null, null, null, null, domain.getUpdatedAt(), false, work);
+        }
         Vm vm = ctx.vms.get(domain.getVmId());
         RouteStatus routeStatus = routeRepository
                 .findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
@@ -232,7 +259,7 @@ public class AdminPublishingService {
                 ctx.workspaceId(domain), ctx.workspaceName(domain),
                 ctx.orgId(domain), ctx.orgName(domain),
                 routeStatus, certStatus, domain.getDnsStatus(), domain.getDnsLastError(),
-                domain.getDnsAppliedAt(), domain.getUpdatedAt());
+                domain.getDnsAppliedAt(), domain.getUpdatedAt(), true, work);
     }
 
     @Transactional
@@ -263,7 +290,10 @@ public class AdminPublishingService {
      */
     @Transactional(readOnly = true)
     public List<DnsRecordSetView> listRecords(AuthenticatedUser actor, UUID domainId) {
-        Domain domain = requireScopedDomain(actor, domainId, true);
+        Domain domain = findExistingDomain(domainId);
+        requireWork(actor, domain, domain.getKind() == DomainKind.EXTERNAL
+                ? kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_OBSERVE
+                : kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_READ, true);
         return recordRepository
                 .findByDomainIdAndStatusNotOrderByIdAsc(domain.getId(), DomainRecordStatus.REMOVED)
                 .stream()
@@ -290,13 +320,14 @@ public class AdminPublishingService {
     @Transactional
     public AdminDomainView updateRenewal(AuthenticatedUser actor, UUID domainId,
             UpdateDomainRenewalRequest form, String ip) {
-        Domain domain = requireScopedDomain(actor, domainId);
+        actor = permissions.currentForWrite(actor);
+        Domain domain = requireDomainWork(actor, domainId, kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_RENEWAL);
         ApiException refusal = changeRenewal(actor, domain, form.renewDueAt(), form.reason(),
                 clock.instant(), null, ip);
         if (refusal != null) {
             throw refusal;
         }
-        return view(domain, context(List.of(domain)));
+        return view(actor, domain, context(List.of(domain)));
     }
 
     /** Whether the name has a renewal deadline to move at all: only an external name does. */
@@ -319,6 +350,7 @@ public class AdminPublishingService {
     public @Nullable ApiException changeRenewal(AuthenticatedUser actor, Domain domain,
             Instant renewDueAt, @Nullable String reason, Instant now, @Nullable UUID batchId,
             String ip) {
+        if (!mayIntervene(actor, domain, kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_RENEWAL)) { return domainNotFound(); }
         if (!hasRenewalDeadline(domain)) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
                     "사용 기한이 없는 도메인입니다",
@@ -393,7 +425,8 @@ public class AdminPublishingService {
      */
     @Transactional
     public MessageResponse forceRelease(AuthenticatedUser actor, UUID domainId, String ip) {
-        Domain domain = requireScopedDomain(actor, domainId);
+        actor = permissions.currentForWrite(actor);
+        Domain domain = requireDomainWork(actor, domainId, domainWork(findExistingDomain(domainId), false));
         releaseByAdmin(actor, domain, null, ip);
         return new MessageResponse("도메인을 강제 해제했습니다. 라우트 제거가 곧 적용되며, 이름은 즉시 회수됩니다.");
     }
@@ -412,6 +445,7 @@ public class AdminPublishingService {
      */
     public void releaseByAdmin(AuthenticatedUser actor, Domain domain, @Nullable UUID batchId,
             String ip) {
+        requireWork(actor, domain, domainWork(domain, false), false);
         boolean served = assembler.hasLiveRoute(domain);
         DomainStatus statusBefore = domain.getStatus();
         Instant releasedBefore = domain.getReleasedAt();
@@ -466,7 +500,8 @@ public class AdminPublishingService {
      */
     @Transactional
     public MessageResponse verify(AuthenticatedUser actor, UUID publicDomainId, String ip) {
-        Domain domain = requireScopedDomain(actor, publicDomainId);
+        actor = permissions.currentForWrite(actor);
+        Domain domain = requireDomainWork(actor, publicDomainId, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_CUSTOM_DOMAIN_VERIFY);
         ApiException refusal = requestVerification(actor, domain, null, ip);
         if (refusal != null) {
             throw refusal;
@@ -492,6 +527,7 @@ public class AdminPublishingService {
      */
     public @Nullable ApiException requestVerification(AuthenticatedUser actor, Domain domain,
             @Nullable UUID batchId, String ip) {
+        if (!mayIntervene(actor, domain, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_CUSTOM_DOMAIN_VERIFY)) { return domainNotFound(); }
         if (!isVerifiable(domain)) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
                     "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
@@ -526,11 +562,18 @@ public class AdminPublishingService {
      */
     @Transactional
     public MessageResponse applyRoute(AuthenticatedUser actor, UUID routeId, String ip) {
+        actor = permissions.currentForWrite(actor);
         Route route = routeRepository.findByPublicId(routeId)
                 .orElseThrow(AdminPublishingService::routeNotFound);
         Domain domain = domainRepository.findById(route.getDomainId())
                 .orElseThrow(AdminPublishingService::routeNotFound);
-        requireScope(actor, domain);
+        if (!java.util.Set.of(DomainKind.CUSTOM, DomainKind.PLATFORM, DomainKind.AUTO).contains(domain.getKind())
+                || domain.getVmId() == null) { throw routeNotFound(); }
+        if (route.getStatus() == RouteStatus.REMOVED) {
+            if (!historicalRouteOperation(actor, domain)) { throw routeNotFound(); }
+        } else {
+            requireWork(actor, domain, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_OPERATE, false);
+        }
         if (route.getStatus() != RouteStatus.REMOVED
                 && domain.getStatus() != DomainStatus.ACTIVE) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
@@ -553,6 +596,13 @@ public class AdminPublishingService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ROUTE_APPLY,
                 "route", route.getPublicId(), Map.of("fqdn", domain.getFqdn()), ip);
         return new MessageResponse("라우트 재적용을 접수했습니다. 잠시 후 적용 상태가 갱신됩니다.");
+    }
+
+    /** A removal resend uses its known historical workspace without reopening an active route. */
+    private boolean historicalRouteOperation(AuthenticatedUser actor, Domain domain) {
+        return permissions.resource(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_OPERATE,
+                domain.getOrgId(), domain.getWorkspaceId(), true,
+                kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER, kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN);
     }
 
     /**
@@ -578,7 +628,7 @@ public class AdminPublishingService {
         Domain domain = domainRepository.findByPublicId(domainId)
                 .orElseThrow(AdminPublishingService::domainNotFound);
         if (domain.getStatus() == DomainStatus.REMOVED) { throw domainNotFound(); }
-        kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireRead(actor);
+        if (allowedDomainWorks(actor, domain).isEmpty()) { throw domainNotFound(); }
         return domain;
     }
 
@@ -613,22 +663,69 @@ public class AdminPublishingService {
      * operates. The single paths answer anything else with the same 404 as a
      * missing domain.
      */
-    public static boolean mayIntervene(AuthenticatedUser actor, Domain domain) {
-        return !actor.role().isOrgTier() || actor.operates(domain.getOrgId());
+    public boolean mayIntervene(AuthenticatedUser actor, Domain domain,
+            kr.ac.pusan.pickle.security.institution.InstitutionWork work) {
+        return permissions.resource(actor, work, domain.getOrgId(), domain.getWorkspaceId(), false,
+                kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER, kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN);
     }
 
-    private void requireScope(AuthenticatedUser actor, Domain domain, boolean forRead) {
-        if (!actor.role().isOrgTier()) {
-            return;
-        }
-        if (domain.getOrgId() == null) {
-            throw domainNotFound();
-        }
-        boolean allowed = forRead ? actor.reads(domain.getOrgId())
-                : actor.operates(domain.getOrgId());
-        if (!allowed) {
-            throw domainNotFound();
-        }
+    private void requireScope(AuthenticatedUser actor, Domain domain, boolean read) {
+        requireWork(actor, domain, domainWork(domain, read), read);
+    }
+
+    private void requireWork(AuthenticatedUser actor, Domain domain,
+            kr.ac.pusan.pickle.security.institution.InstitutionWork work, boolean read) {
+        boolean allowed = read ? permissions.resource(actor, work, domain.getOrgId(), domain.getWorkspaceId(), true,
+                kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER,
+                kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN) : mayIntervene(actor, domain, work);
+        if (!allowed) { throw domainNotFound(); }
+    }
+
+    private Domain findExistingDomain(UUID id) {
+        return domainRepository.findByPublicId(id).filter(domain -> domain.getStatus() != DomainStatus.REMOVED)
+                .orElseThrow(AdminPublishingService::domainNotFound);
+    }
+
+    private Domain requireDomainWork(AuthenticatedUser actor, UUID id,
+            kr.ac.pusan.pickle.security.institution.InstitutionWork work) {
+        Domain domain = findExistingDomain(id); requireWork(actor, domain, work, false); return domain;
+    }
+
+    private java.util.Set<String> allowedDomainWorks(AuthenticatedUser actor, Domain domain) {
+        if (!java.util.Set.of(DomainKind.EXTERNAL, DomainKind.CUSTOM, DomainKind.PLATFORM, DomainKind.AUTO).contains(domain.getKind())) { return java.util.Set.of(); }
+        var candidates = domain.getKind() == DomainKind.EXTERNAL
+                ? kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries.DOMAIN_REFERENCE_WORKS
+                : kr.ac.pusan.pickle.security.institution.InstitutionResourceQueries.PUBLICATION_REFERENCE_WORKS;
+        return candidates.stream().filter(work -> {
+            if (work == kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_CUSTOM_DOMAIN_VERIFY && domain.getKind() != DomainKind.CUSTOM) { return false; }
+            var sys = work == kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_ACL_SUPPORT_MANAGE
+                    ? new kr.ac.pusan.pickle.user.UserRole[]{kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN}
+                    : work.write() ? new kr.ac.pusan.pickle.user.UserRole[]{kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER, kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN}
+                    : new kr.ac.pusan.pickle.user.UserRole[]{kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER, kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN};
+            return permissions.resource(actor, work, domain.getOrgId(), domain.getWorkspaceId(),
+                    !work.write() || work == kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_ACL_SUPPORT_MANAGE, sys);
+        }).map(kr.ac.pusan.pickle.security.institution.InstitutionWork::id).collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    private boolean canReadMetadata(AuthenticatedUser actor, Domain domain) {
+        var direct = domain.getKind() == DomainKind.EXTERNAL
+                ? kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_METADATA_READ
+                : kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_READ;
+        var support = domain.getKind() == DomainKind.EXTERNAL
+                ? kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_METADATA_SUPPORT_READ
+                : kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_SUPPORT_READ;
+        return permissions.resource(actor, direct, domain.getOrgId(), domain.getWorkspaceId(), true,
+                kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER,
+                kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)
+                || permissions.resource(actor, support, domain.getOrgId(), domain.getWorkspaceId(), true);
+    }
+
+    private static kr.ac.pusan.pickle.security.institution.InstitutionWork domainWork(Domain domain, boolean read) {
+        return domain.getKind() == DomainKind.EXTERNAL
+                ? (read ? kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_OBSERVE
+                        : kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_RELEASE)
+                : (read ? kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_READ
+                        : kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_OPERATE);
     }
 
     private void runAfterCommit(String label, Runnable action) {
@@ -650,7 +747,7 @@ public class AdminPublishingService {
     private OrgScope scopedOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        return AdminOrgScope.read(actor, orgId, requested);
+        return orgId != null && requested == null ? OrgScope.nothing() : OrgScope.of(requested);
     }
 
     /** Null for an unrestricted scope, which is what the repositories expect. */

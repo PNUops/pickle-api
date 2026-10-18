@@ -46,6 +46,25 @@ public class VmNetworkPolicyAdvisoryLock {
         }
     }
 
+    /** Short database commands share the worker's lock key without taking a second pooled connection. */
+    public boolean tryInCurrentTransaction(long vmId) {
+        Object resource=org.springframework.transaction.support.TransactionSynchronizationManager.getResource(dataSource);
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()
+                || !(resource instanceof org.springframework.jdbc.datasource.ConnectionHolder holder)) {
+            throw new IllegalStateException("VM policy mutation requires the caller transaction on its own DataSource");
+        }
+        try {
+            Connection connection=holder.getConnection();
+            if (connection.getAutoCommit()) { throw new IllegalStateException("VM policy mutation requires a non-autocommit connection"); }
+            try (PreparedStatement statement=connection.prepareStatement("select pg_try_advisory_xact_lock(?)")) {
+                statement.setLong(1,NAMESPACE ^ vmId);
+                try (ResultSet result=statement.executeQuery()) { return result.next() && result.getBoolean(1); }
+            }
+        } catch (java.sql.SQLException failure) {
+            throw new IllegalStateException("VM policy transaction lock could not be checked",failure);
+        }
+    }
+
     /** Recovery callback uses this same session for every protected SQL statement. */
     public <T> T runOnConnection(long vmId, ConnectionAction<T> action) {
         long key = NAMESPACE ^ vmId;

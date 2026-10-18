@@ -47,6 +47,7 @@ public class WorkspaceService {
 
     private final WorkspaceTerminationImpactService terminationImpacts;
     private final LifecycleActors lifecycleActors;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
     private final jakarta.persistence.EntityManager entityManager;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -65,8 +66,9 @@ public class WorkspaceService {
             RequestRepository requestRepository, AuditService auditService, AuditIds auditIds,
             NotificationService notificationService, List<ResourceTypeAdapter> resourceAdapters,
             kr.ac.pusan.pickle.request.RequestRecipientService recipientService, WorkspaceTerminationImpactService terminationImpacts,
-            LifecycleActors lifecycleActors, jakarta.persistence.EntityManager entityManager) {
-        this.terminationImpacts = terminationImpacts; this.lifecycleActors = lifecycleActors; this.entityManager = entityManager;
+            LifecycleActors lifecycleActors, jakarta.persistence.EntityManager entityManager,
+            kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions) {
+        this.permissions = permissions; this.terminationImpacts = terminationImpacts; this.lifecycleActors = lifecycleActors; this.entityManager = entityManager;
         this.administrationLock = administrationLock; this.accessImpacts = accessImpacts;
         this.recipientService = recipientService;
         this.workspaceRepository = workspaceRepository;
@@ -128,9 +130,11 @@ public class WorkspaceService {
     public WorkspaceDetailResponse update(AuthenticatedUser actor, UUID publicWorkspaceId,
             UpdateWorkspaceRequest request, String ip, boolean support) {
         administrationLock.acquire();
+        if (support) { actor = permissions.currentAfterLock(actor); }
         requireActiveActor(actor);
-        if (support) { kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireWorkspaceAccessWrite(actor); }
+
         Workspace workspace = findWorkspace(publicWorkspaceId);
+        if (support) { requireSupportWork(actor, workspace, kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_INFO_UPDATE); }
         long workspaceId = workspace.getId();
         WorkspaceMember membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, actor.id()).orElse(null);
         if (!support && (membership == null || membership.getRole() != WorkspaceMemberRole.OWNER)) {
@@ -206,10 +210,12 @@ public class WorkspaceService {
     public WorkspaceMemberResponse updateMemberRole(AuthenticatedUser actor, UUID publicWorkspaceId,
             UUID publicUserId, UpdateWorkspaceMemberRequest request, String ip, boolean support) {
         administrationLock.acquire();
+        if (support) { actor = permissions.currentAfterLock(actor); }
         requireActiveActor(actor);
         Workspace workspace = findWorkspace(publicWorkspaceId);
         long workspaceId = workspace.getId();
         long targetUserId = memberUserId(publicUserId);
+        if (support) { requireMemberManagementReference(actor, workspace); }
         requireOwnerForMemberManagement(workspace, actor,
                 "워크스페이스 소유자(OWNER)만 역할을 변경할 수 있습니다.", "PERSONAL 워크스페이스의 구성원은 변경할 수 없습니다.", support);
         // Locked before the count below. With one owner per workspace the count could
@@ -223,6 +229,7 @@ public class WorkspaceService {
         // person doing it. What is protected is the last one — a workspace with no
         // owner has nobody who can add members or appoint a replacement.
         WorkspaceMemberRole previousRole = target.getRole();
+        if (support) { requireMemberWork(actor, workspace, previousRole == WorkspaceMemberRole.OWNER || request.role() == WorkspaceMemberRole.OWNER); }
         if (previousRole == WorkspaceMemberRole.OWNER && request.role() != WorkspaceMemberRole.OWNER
                 && workspaceMemberRepository.countByWorkspaceIdAndRole(workspaceId,
                         WorkspaceMemberRole.OWNER) <= 1) {
@@ -253,8 +260,9 @@ public class WorkspaceService {
     public void removeMember(AuthenticatedUser actor, UUID publicWorkspaceId, UUID publicUserId,
             String ip, boolean support) {
         administrationLock.acquire();
+        if (support) { actor = permissions.currentAfterLock(actor); }
         requireActiveActor(actor);
-        if (support) { kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireWorkspaceAccessWrite(actor); }
+
         Workspace workspace = findWorkspace(publicWorkspaceId);
         long workspaceId = workspace.getId();
         long targetUserId = memberUserId(publicUserId);
@@ -265,6 +273,7 @@ public class WorkspaceService {
         if (!support && actorMembership == null) {
             throw memberManageForbidden("구성원을 제거할 권한이 없습니다", "워크스페이스 소유자(OWNER)만 다른 구성원을 제거할 수 있습니다.");
         }
+        if (support) { requireMemberManagementReference(actor, workspace); }
         boolean selfLeave = targetUserId == actor.id();
         if (!support && !selfLeave && actorMembership.getRole() != WorkspaceMemberRole.OWNER) {
             throw memberManageForbidden("구성원을 제거할 권한이 없습니다", "워크스페이스 소유자(OWNER)만 다른 구성원을 제거할 수 있습니다.");
@@ -272,6 +281,7 @@ public class WorkspaceService {
 
         WorkspaceMember target = workspaceMemberRepository.findWithLockByWorkspaceIdAndUserId(workspaceId, targetUserId)
                 .orElseThrow(WorkspaceService::memberNotFound);
+        if (support) { requireMemberWork(actor, workspace, target.getRole() == WorkspaceMemberRole.OWNER); }
         if (target.getRole() == WorkspaceMemberRole.OWNER
                 && workspaceMemberRepository.countByWorkspaceIdAndRole(workspaceId, WorkspaceMemberRole.OWNER) <= 1) {
             throw soleOwnerRemoval("유일한 소유자는 나갈 수 없습니다");
@@ -329,11 +339,12 @@ public class WorkspaceService {
     public void delete(AuthenticatedUser actor, UUID publicWorkspaceId, String ip, boolean support,
             kr.ac.pusan.pickle.workspace.dto.@Nullable TerminationConfirmation confirmation) {
         administrationLock.acquire();
-        actor = lifecycleActors.current(actor);
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
         requireActiveActor(actor);
-        if (support) { kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireWorkspaceAccessWrite(actor); }
+
         Workspace workspace = workspaceRepository.findByPublicIdAndDeletedAtIsNull(publicWorkspaceId)
                 .orElseThrow(WorkspaceService::workspaceNotFound);
+        if (support) { requireSupportWork(actor, workspace, kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_TERMINATE); }
         long workspaceId = workspace.getId();
         WorkspaceMember membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, actor.id()).orElse(null);
         if (!support && membership == null) { throw workspaceNotFound(); }
@@ -413,6 +424,29 @@ public class WorkspaceService {
      * so {@link WorkspaceInvitationService} applies the same gate; it locks the
      * actor's membership row and so must run inside the caller's transaction.
      */
+    void requireSupportWork(AuthenticatedUser actor, Workspace workspace,
+            kr.ac.pusan.pickle.security.institution.InstitutionWork work) {
+        if (!permissions.workspace(actor, work, workspace.getId(), kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)) {
+            throw memberManageForbidden("접근 권한이 없습니다", "이 워크스페이스 업무를 수행할 권한이 없습니다.");
+        }
+    }
+
+    private void requireMemberManagementReference(AuthenticatedUser actor, Workspace workspace) {
+        if (!permissions.workspace(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_MEMBERS_MANAGE,
+                workspace.getId(), kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)
+                && !permissions.workspace(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_OWNERS_MANAGE,
+                        workspace.getId(), kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)) {
+            throw memberManageForbidden("접근 권한이 없습니다", "이 워크스페이스 업무를 수행할 권한이 없습니다.");
+        }
+    }
+
+    /** The actual existing/requested workspace ranks select one complete command work. */
+    private void requireMemberWork(AuthenticatedUser actor, Workspace workspace, boolean ownerChange) {
+        requireSupportWork(actor, workspace, ownerChange
+                ? kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_OWNERS_MANAGE
+                : kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_MEMBERS_MANAGE);
+    }
+
     WorkspaceMember requireOwnerForMemberManagement(Workspace workspace, AuthenticatedUser actor,
             String notOwnerDetail, String personalDetail) {
         return requireOwnerForMemberManagement(workspace, actor, notOwnerDetail, personalDetail, false);
@@ -423,7 +457,7 @@ public class WorkspaceService {
         if (workspace.getKind() == WorkspaceKind.PERSONAL) {
             throw memberManageForbidden("구성원을 관리할 권한이 없습니다", personalDetail);
         }
-        if (support) { kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireWorkspaceAccessWrite(actor); return null; }
+        if (support) { return null; }
         return workspaceMemberRepository.findWithLockByWorkspaceIdAndUserId(workspace.getId(), actor.id())
                 .filter(membership -> membership.getRole() == WorkspaceMemberRole.OWNER)
                 .orElseThrow(() -> memberManageForbidden("구성원을 관리할 권한이 없습니다", notOwnerDetail));
@@ -432,10 +466,13 @@ public class WorkspaceService {
     @Transactional(readOnly = true)
     public kr.ac.pusan.pickle.access.dto.ActorAccessImpact previewMemberRole(AuthenticatedUser actor,
             UUID workspaceId, UUID userId, UpdateWorkspaceMemberRequest request) {
-        kr.ac.pusan.pickle.admin.StudentSupportPolicy.requireWorkspaceAccessWrite(actor);
+
         Workspace workspace = findWorkspace(workspaceId);
         if (workspace.getKind() == WorkspaceKind.PERSONAL) { throw memberManageForbidden("구성원을 관리할 권한이 없습니다", "개인 워크스페이스의 구성원은 변경할 수 없습니다."); }
-        workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), memberUserId(userId)).orElseThrow(WorkspaceService::memberNotFound);
+        requireMemberManagementReference(actor, workspace);
+        WorkspaceMember existing = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(),
+                memberUserId(userId)).orElseThrow(WorkspaceService::memberNotFound);
+        requireMemberWork(actor, workspace, existing.getRole() == WorkspaceMemberRole.OWNER || request.role() == WorkspaceMemberRole.OWNER);
         return memberRoleImpact(actor, workspace, userId, request.role());
     }
 
@@ -445,7 +482,7 @@ public class WorkspaceService {
                 + workspaceMemberRepository.findByWorkspaceIdOrderByIdAsc(workspace.getId()).stream()
                         .map(m -> m.getUserId() + ":" + m.getRole()).toList();
         return actor.publicId().equals(targetId) ? accessImpacts.membership(actor, workspace, role, binding, List.of())
-                : accessImpacts.bind(binding, List.of(), List.of());
+                : accessImpacts.bind(actor, binding, List.of(), List.of());
     }
 
     private Map<String, Object> memberAudit(UUID targetId, WorkspaceMemberRole previous, WorkspaceMemberRole next,

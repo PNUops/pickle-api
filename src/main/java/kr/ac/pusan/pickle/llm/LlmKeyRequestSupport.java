@@ -290,6 +290,17 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                 detail.getGrantedPassthroughEndpoints(), ownerId);
     }
 
+    /** Effective initial monetary policy, including features inherited from the request. */
+    public boolean requiresBudget(Request request, ApproveRequestRequest form) {
+        ApproveLlmKeyRequestSpec spec = form.llmKey();
+        if (spec == null) { return false; }
+        return (spec.grantedCreditLimit() != null && spec.grantedCreditLimit().signum() > 0)
+                || spec.grantedCreditLimitReset() != null || spec.openrouterAccountId() != null
+                || (spec.grantedCreditAllowedModels() != null && !spec.grantedCreditAllowedModels().isEmpty())
+                || (spec.grantedCreditDeniedModels() != null && !spec.grantedCreditDeniedModels().isEmpty())
+                || grantedOrRequested(request, spec).stream().anyMatch(value -> !PassthroughEndpoints.CHAT.equals(value));
+    }
+
     /** What recording a grant settled, for the key that may follow it in the same transaction. */
     private record Recorded(@Nullable Long accountId, @Nullable UUID accountPublicId,
             Map<String, Object> allocationRecord, String creditAllowedModels,

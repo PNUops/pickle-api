@@ -9,11 +9,20 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import kr.ac.pusan.pickle.admin.AdminOrgOperationsQueryService;
+import kr.ac.pusan.pickle.admin.dto.GrantOrgRoleRequest;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
+import kr.ac.pusan.pickle.security.institution.InstitutionLegacyPresets;
+import kr.ac.pusan.pickle.security.institution.InstitutionWorkGroup;
+import kr.ac.pusan.pickle.security.institution.dto.InstitutionPermissionInput;
+import kr.ac.pusan.pickle.security.institution.dto.InstitutionPermissionView;
+import kr.ac.pusan.pickle.security.institution.dto.InstitutionWorkspaceScopeInput;
+import kr.ac.pusan.pickle.access.ResourceType;
+import kr.ac.pusan.pickle.orgs.OrgAdministrationLock;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
@@ -31,6 +40,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Mail to administrators (V133): who in an organisation is mailed about a new
@@ -67,8 +79,13 @@ class AdminMailBundlingTest {
     @Autowired
     private MockMailSender mockMailSender;
 
-    /** A requester id that matches no account, for the cases that are not about exclusion. */
-    private static final long NOBODY = -1L;
+    @Autowired private AdminOrgOperationsQueryService selections;
+    @Autowired private OrgAdministrationLock administrationLock;
+    @Autowired private PlatformTransactionManager transactions;
+    @Autowired private ObjectMapper mapper;
+
+    private User requester;
+    private long workspaceId;
 
     private Org org;
     private Org otherOrg;
@@ -80,12 +97,16 @@ class AdminMailBundlingTest {
     @BeforeEach
     void setUp() {
         mockMailSender.clear();
-        org = ensureOrg("메일 담당 기관");
-        otherOrg = ensureOrg("메일 담당 다른 기관");
+        org = ensureOrg("메일 담당 기관 " + UUID.randomUUID());
+        otherOrg = ensureOrg("메일 담당 다른 기관 " + UUID.randomUUID());
         adminA = ensureUser("amb.admin.a@pusan.ac.kr", "담당기관관리자A", UserRole.ORG_ADMIN);
         adminB = ensureUser("amb.admin.b@pusan.ac.kr", "담당기관관리자B", UserRole.ORG_ADMIN);
         manager = ensureUser("amb.manager@pusan.ac.kr", "담당기관운영자", UserRole.ORG_MANAGER);
         viewer = ensureUser("amb.viewer@pusan.ac.kr", "담당기관열람자", UserRole.ORG_VIEWER);
+        requester = ensureUser("amb.requester@pusan.ac.kr", "메일신청자", UserRole.USER);
+        workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces(kind,name) values ('PROJECT', ?) returning id",
+                Long.class, "메일 선택 " + UUID.randomUUID());
         for (User user : List.of(adminA, adminB, manager, viewer)) {
             jdbcTemplate.update("update users set status = 'ACTIVE' where id = ?", user.getId());
         }
@@ -107,7 +128,7 @@ class AdminMailBundlingTest {
 
     @Test
     void withNobodyChosenEveryOrgAdminIsMailed() {
-        assertThat(notificationService.requestMailRecipientIds(org.getId(), NOBODY))
+        assertThat(recipients(requester))
                 .containsExactlyInAnyOrder(adminA.getId(), adminB.getId());
     }
 
@@ -115,7 +136,7 @@ class AdminMailBundlingTest {
     void onceSomebodyIsChosenOnlyTheChosenAreMailed() {
         choose(manager);
 
-        assertThat(notificationService.requestMailRecipientIds(org.getId(), NOBODY))
+        assertThat(recipients(requester))
                 .containsExactly(manager.getId());
     }
 
@@ -124,7 +145,7 @@ class AdminMailBundlingTest {
         choose(manager);
         jdbcTemplate.update("update users set status = 'DISABLED' where id = ?", manager.getId());
 
-        assertThat(notificationService.requestMailRecipientIds(org.getId(), NOBODY))
+        assertThat(recipients(requester))
                 .containsExactlyInAnyOrder(adminA.getId(), adminB.getId());
     }
 
@@ -133,12 +154,12 @@ class AdminMailBundlingTest {
         choose(manager);
 
         // the only one chosen filed the request: the other admins hear of it
-        assertThat(notificationService.requestMailRecipientIds(org.getId(), manager.getId()))
+        assertThat(recipients(manager))
                 .containsExactlyInAnyOrder(adminA.getId(), adminB.getId());
         // an admin filing with nobody chosen is left out of the fallback
         jdbcTemplate.update("update user_org_roles set request_mail = false where org_id = ?",
                 org.getId());
-        assertThat(notificationService.requestMailRecipientIds(org.getId(), adminA.getId()))
+        assertThat(recipients(adminA))
                 .containsExactly(adminB.getId());
     }
 
@@ -147,8 +168,9 @@ class AdminMailBundlingTest {
         // a concurrent grant may change the role between our read and write;
         // the toggle must not carry the role it read back into the row
         putRequestMail(manager, org, token(adminA), true).andExpect(status().isOk());
-        jdbcTemplate.update("update user_org_roles set role = 'ORG_VIEWER', request_mail = false"
-                + " where user_id = ? and org_id = ?", manager.getId(), org.getId());
+        SeedFixtures.grantOrgRole(jdbcTemplate, manager.getId(), org.getId(), UserRole.ORG_VIEWER);
+        jdbcTemplate.update("update user_org_roles set request_mail = false where user_id = ? and org_id = ?",
+                manager.getId(), org.getId());
 
         putRequestMail(manager, org, token(adminA), true)
                 .andExpect(status().isUnprocessableEntity());
@@ -165,21 +187,20 @@ class AdminMailBundlingTest {
                 .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()))
                 .andExpect(jsonPath("$.role").value("ORG_ADMIN"))
                 .andExpect(jsonPath("$.requestMail").value(true));
-        assertThat(notificationService.requestMailRecipientIds(org.getId(), NOBODY))
+        assertThat(recipients(requester))
                 .containsExactly(adminA.getId());
 
         putRequestMail(adminA, org, token(adminA), false)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.requestMail").value(false));
-        assertThat(notificationService.requestMailRecipientIds(org.getId(), NOBODY))
-                .containsExactlyInAnyOrder(adminA.getId(), adminB.getId());
+        assertThat(recipients(requester)).isEmpty();
     }
 
     @Test
     void aRoleThatCannotApproveCannotBeChosen() throws Exception {
         putRequestMail(viewer, org, token(adminA), true)
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.errors[0].field").value("enabled"));
+                .andExpect(jsonPath("$.errors[0].field").value("recipientIds"));
         // turning it off is always allowed, and a no-op here
         putRequestMail(viewer, org, token(adminA), false)
                 .andExpect(status().isOk());
@@ -198,7 +219,7 @@ class AdminMailBundlingTest {
                 .andExpect(status().isNotFound());
         // a manager is not an admin of the org and cannot choose anyone
         putRequestMail(manager, org, token(manager), true)
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -211,13 +232,14 @@ class AdminMailBundlingTest {
                         + org.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"role\":\"ORG_VIEWER\",\"expectedRevision\":" + jdbcTemplate.queryForObject("select admin_revision from orgs where id = ?", Long.class, org.getId()) + "}"))
+                        .content(mapper.writeValueAsString(new GrantOrgRoleRequest(permission(manager, UserRole.ORG_VIEWER),
+                                jdbcTemplate.queryForObject("select admin_revision from orgs where id = ?", Long.class, org.getId())))))
                 .andExpect(status().isOk());
 
         assertThat(jdbcTemplate.queryForObject(
                 "select request_mail from user_org_roles where user_id = ? and org_id = ?",
                 Boolean.class, manager.getId(), org.getId())).isFalse();
-        assertThat(notificationService.requestMailRecipientIds(org.getId(), NOBODY))
+        assertThat(recipients(requester))
                 .containsExactlyInAnyOrder(adminA.getId(), adminB.getId());
     }
 
@@ -364,6 +386,28 @@ class AdminMailBundlingTest {
     }
 
     // ── helpers ───────────────────────────────────────────────────────────
+
+    private List<Long> recipients(User actualRequester) {
+        return new TransactionTemplate(transactions).execute(tx -> {
+            administrationLock.acquire();
+            return selections.forSelection(org.getPublicId(), actualRequester.getPublicId(), ResourceType.VM, workspaceId)
+                    .members().stream().filter(member -> Boolean.TRUE.equals(member.currentMailRecipient()))
+                    .map(member -> jdbcTemplate.queryForObject("select id from users where public_id = ?",
+                            Long.class, member.userId())).toList();
+        });
+    }
+
+    private InstitutionPermissionInput permission(User target, UserRole role) {
+        var view = InstitutionPermissionView.from(
+                InstitutionLegacyPresets.create(target.getPublicId(), org.getPublicId(), role));
+        Map<InstitutionWorkGroup, InstitutionWorkspaceScopeInput> scopes = new java.util.LinkedHashMap<>();
+        view.scopes().forEach((group, scope) -> scopes.put(group,
+                new InstitutionWorkspaceScopeInput(scope.mode(), scope.workspaceIds())));
+        Long revision = jdbcTemplate.queryForObject(
+                "select permission_revision from user_org_roles where user_id = ? and org_id = ?",
+                Long.class, target.getId(), org.getId());
+        return new InstitutionPermissionInput(view.mode(), view.work(), scopes, revision);
+    }
 
     private void submitted(User admin, String workspaceName) {
         notificationService.publishToAdmins(List.of(admin.getId()),

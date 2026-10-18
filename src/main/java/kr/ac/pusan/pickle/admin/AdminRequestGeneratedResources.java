@@ -26,6 +26,10 @@ class AdminRequestGeneratedResources {
     private final JdbcTemplate jdbc;
     private final DomainRepository domains;
     private final PublicationAssembler publication;
+    @org.springframework.beans.factory.annotation.Autowired
+    private StudentSupportPolicy supportPolicy;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
 
     AdminRequestGeneratedResources(JdbcTemplate jdbc, DomainRepository domains, PublicationAssembler publication) {
         this.jdbc = jdbc; this.domains = domains; this.publication = publication;
@@ -42,12 +46,12 @@ class AdminRequestGeneratedResources {
                 """, rs -> {
                     UserRole targetRole = UserRole.valueOf(rs.getString("role"));
                     flags.put(rs.getObject("public_id", UUID.class),
-                            StudentSupportPolicy.canReadUser(actor, targetRole));
+                            supportPolicy.canReadStudentSupport(actor) && (actor.role().isSysTier() || !targetRole.isSysTier()));
                 }, request.getId());
         return Map.copyOf(flags);
     }
 
-    List<AdminRequestGeneratedResourceResponse> of(Request request, Instant now) {
+    List<AdminRequestGeneratedResourceResponse> of(Request request, Instant now, AuthenticatedUser actor) {
         Map<Long, Domain> linkedDomains = request.getResourceType() == ResourceType.DOMAIN
                 ? domains.findByRequestId(request.getId()).stream().collect(Collectors.toMap(Domain::getId, Function.identity()))
                 : Map.of();
@@ -80,12 +84,31 @@ class AdminRequestGeneratedResources {
                 """, (rs, row) -> new AdminRequestGeneratedResourceResponse(rs.getObject("public_id", UUID.class),
                         ResourceType.valueOf(rs.getString("type")), rs.getString("name"), rs.getString("state"),
                         rs.getObject("org_public_id", UUID.class), rs.getObject("workspace_public_id", UUID.class),
-                        rs.getObject("recipient_public_id", UUID.class), rs.getObject("node_public_id", UUID.class), rs.getString("node_name"),
-                        !"DOMAIN".equals(rs.getString("type")) || !"REMOVED".equals(rs.getString("state")),
+                        rs.getObject("recipient_public_id", UUID.class),
+                        canReadDetail(actor, request.getResourceType(), rs.getObject("org_id", Long.class), rs.getObject("workspace_id", Long.class)) ? rs.getObject("node_public_id", UUID.class) : null,
+                        canReadDetail(actor, request.getResourceType(), rs.getObject("org_id", Long.class), rs.getObject("workspace_id", Long.class)) ? rs.getString("node_name") : null,
+                        canReadDetail(actor, request.getResourceType(), rs.getObject("org_id", Long.class),
+                                rs.getObject("workspace_id", Long.class)) && (!"DOMAIN".equals(rs.getString("type")) || !"REMOVED".equals(rs.getString("state"))),
                         AdminUserSupportQueryService.instant(rs, "released_at"), AdminUserSupportQueryService.instant(rs, "renew_due_at"),
                         linkedDomains.containsKey(rs.getLong("id")) ? publication.reservedUntil(linkedDomains.get(rs.getLong("id"))) : null,
                         rs.getTimestamp("created_at").toInstant(),
                         rs.getTimestamp("updated_at").toInstant()), request.getId(), OffsetDateTime.ofInstant(now, ZoneOffset.UTC),
                 request.getId(), request.getId(), request.getId(), request.getResourceType().name(), request.getOrgId());
+    }
+    private boolean canReadDetail(AuthenticatedUser actor, ResourceType type, Long org, Long workspace) {
+        var work = switch (type) {
+            case VM -> kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_READ;
+            case LLM_API_KEY -> kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_METADATA_READ;
+            case DOMAIN -> kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_METADATA_READ;
+            case GPU -> kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_METADATA_READ;
+        };
+        var support = switch (type) {
+            case VM -> kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_SUPPORT_READ;
+            case LLM_API_KEY -> kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_METADATA_SUPPORT_READ;
+            case DOMAIN -> kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_METADATA_SUPPORT_READ;
+            case GPU -> kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_METADATA_SUPPORT_READ;
+        };
+        return permissions.resource(actor, work, org, workspace, true, UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN)
+                || permissions.resource(actor, support, org, workspace, true, UserRole.SYS_VIEWER, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN);
     }
 }

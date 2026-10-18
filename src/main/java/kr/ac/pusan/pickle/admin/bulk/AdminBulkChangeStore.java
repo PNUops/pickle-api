@@ -25,6 +25,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Storage and atomic receipt identity, without a second execution path.
@@ -38,7 +40,8 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Component
 class AdminBulkChangeStore {
-    record Preview(AdminBulkChangeRequest request, AdminBulkChangePreviewResponse response) { }
+    record Preview(AdminBulkChangeRequest request, AdminBulkChangePreviewResponse response,
+            Map<UUID, Boolean> fingerprintVisibility) { }
     record Operation(UUID id, UUID previewId, String binding, @Nullable AdminBulkChangeApplyResponse result,
             @Nullable Instant committedAt) { }
     private final JdbcTemplate jdbc;
@@ -54,30 +57,53 @@ class AdminBulkChangeStore {
     }
 
     AdminBulkChangePreviewResponse savePreview(long actorId, AdminBulkChangeRequest request,
-            List<kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem> items) {
+            List<kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem> items, Map<UUID, Boolean> fingerprintVisibility) {
         Instant now = clock.instant();
         AdminBulkChangeRequest savedRequest = new AdminBulkChangeRequest(request.targetType(), request.targetIds(),
                 request.change(), null, null, null, null);
         AdminBulkChangePreviewResponse response = new AdminBulkChangePreviewResponse(UUID.randomUUID(), now,
                 now.plus(Duration.ofHours(24)), request.targetType(), request.change(), items, null);
+        ObjectNode storedPreview = mapper.valueToTree(response);
+        storedPreview.set("_fingerprintVisibility", mapper.valueToTree(fingerprintVisibility));
         jdbc.update("""
                 insert into admin_bulk_change_previews(id,actor_id,target_type,change_kind,request,preview,created_at,expires_at)
                 values(?,?,?,?,?::jsonb,?::jsonb,?,?)
                 """, response.previewId(), actorId, request.targetType().name(), request.change().kind().name(),
-                mapper.writeValueAsString(savedRequest), mapper.writeValueAsString(response), timestamp(now), timestamp(response.expiresAt()));
+                mapper.writeValueAsString(savedRequest), mapper.writeValueAsString(storedPreview), timestamp(now), timestamp(response.expiresAt()));
         return response;
     }
 
     Preview preview(long actorId, UUID id) {
         Preview saved = jdbc.query("select request::text,preview::text from admin_bulk_change_previews where id=? and actor_id=?",
-                (rs, row) -> new Preview(mapper.readValue(rs.getString(1), AdminBulkChangeRequest.class),
-                        mapper.readValue(rs.getString(2), AdminBulkChangePreviewResponse.class)), id, actorId)
+                (rs, row) -> decodePreview(rs.getString(1), rs.getString(2)), id, actorId)
                 .stream().findFirst().orElseThrow(AdminBulkChangeStore::notFound);
         UUID consumed = jdbc.query("select id from admin_bulk_change_operations where preview_id=? and actor_id=? and result is not null",
                 (rs, row) -> rs.getObject(1, UUID.class), id, actorId).stream().findFirst().orElse(null);
         AdminBulkChangePreviewResponse response = saved.response();
         return new Preview(saved.request(), new AdminBulkChangePreviewResponse(response.previewId(), response.createdAt(),
-                response.expiresAt(), response.targetType(), response.change(), response.items(), consumed));
+                response.expiresAt(), response.targetType(), response.change(), response.items(), consumed), saved.fingerprintVisibility());
+    }
+
+    private Preview decodePreview(String request, String preview) {
+        ObjectNode stored = (ObjectNode) mapper.readTree(preview);
+        JsonNode visibility = stored.remove("_fingerprintVisibility");
+        return new Preview(mapper.readValue(request, AdminBulkChangeRequest.class),
+                mapper.treeToValue(stored, AdminBulkChangePreviewResponse.class), decodeVisibility(visibility));
+    }
+
+    /** Unknown legacy metadata never proves that an old hash excluded financial values. */
+    private Map<UUID, Boolean> decodeVisibility(@Nullable JsonNode visibility) {
+        if (visibility == null || !visibility.isObject()) { return Map.of(); }
+        Map<UUID, Boolean> result = new java.util.LinkedHashMap<>();
+        try {
+            for (String name : visibility.propertyNames()) {
+                UUID id = UUID.fromString(name);
+                JsonNode value = visibility.get(name);
+                if (!id.toString().equals(name) || !value.isBoolean()) { return Map.of(); }
+                result.put(id, value.asBoolean());
+            }
+        } catch (IllegalArgumentException invalid) { return Map.of(); }
+        return Map.copyOf(result);
     }
 
     @Nullable Operation existing(long actorId, UUID id) {

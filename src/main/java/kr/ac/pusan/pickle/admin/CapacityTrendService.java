@@ -7,7 +7,6 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.CapacityTrendPointResponse;
 import kr.ac.pusan.pickle.admin.dto.CapacityTrendResponse;
 import kr.ac.pusan.pickle.config.ClockConfig;
-import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -71,6 +70,8 @@ public class CapacityTrendService {
     private final AdminSummaryService adminSummaryService;
     private final OrgHeadroomService orgHeadroomService;
     private final Clock clock;
+    @org.springframework.beans.factory.annotation.Autowired
+    private InstitutionDashboardQueries dashboard;
 
     public CapacityTrendService(JdbcTemplate jdbcTemplate, AdminSummaryService adminSummaryService,
             OrgHeadroomService orgHeadroomService, Clock clock) {
@@ -82,21 +83,25 @@ public class CapacityTrendService {
 
     @Transactional(readOnly = true)
     public CapacityTrendResponse trend(AuthenticatedUser actor, int days, UUID orgId) {
-        OrgScope scope = adminSummaryService.resolveOrgId(actor, orgId);
-        String orgs = scope.arrayParam();
+        adminSummaryService.requireExistingOrg(orgId);
+        var filter = dashboard.allocation(actor, orgId);
+        if (!filter.available()) { throw AdminSummaryService.dashboardDenied(orgId); }
         LocalDate to = ClockConfig.todayKst(clock);
         LocalDate from = to.minusDays(days - 1L);
         List<CapacityTrendPointResponse> points = jdbcTemplate.query(
-                TREND_SQL.formatted(scope.guard("v.org_id")),
+                TREND_SQL.formatted(filter.sql()),
                 (rs, rowNum) -> new CapacityTrendPointResponse(
                         rs.getObject("day", LocalDate.class),
                         rs.getLong("vm_count"),
                         rs.getLong("vcpu"),
                         rs.getLong("memory_mb"),
                         rs.getLong("disk_gb")),
-                from, to, orgs, orgs);
+                prependDates(from, to, filter));
         OrgHeadroomService.PlatformCapacity capacity = orgHeadroomService.capacity();
         return new CapacityTrendResponse(from, to, capacity.cpuThreads(), capacity.memoryMb(),
                 capacity.diskGb(), points);
+    }
+    private static Object[] prependDates(LocalDate from, LocalDate to, InstitutionDashboardQueries.Filter filter) {
+        var args = new java.util.ArrayList<Object>(); args.add(from); args.add(to); args.addAll(filter.args()); return args.toArray();
     }
 }

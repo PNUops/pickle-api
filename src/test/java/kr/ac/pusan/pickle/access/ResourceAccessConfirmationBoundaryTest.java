@@ -18,6 +18,7 @@ import kr.ac.pusan.pickle.access.dto.ResourceAccessChangePreviewRequest;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.security.JwtService;
+import kr.ac.pusan.pickle.security.institution.InstitutionActorProvider;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.RequestFixtures;
 import kr.ac.pusan.pickle.support.SeedFixtures;
@@ -55,6 +56,7 @@ class ResourceAccessConfirmationBoundaryTest {
     @Autowired private ResourceAccessGrantService service;
     @Autowired private MockMvc mvc;
     @Autowired private JwtService jwt;
+    @Autowired private InstitutionActorProvider actors;
 
     @ParameterizedTest
     @EnumSource(ResourceType.class)
@@ -245,7 +247,7 @@ class ResourceAccessConfirmationBoundaryTest {
     }
 
     private AuthenticatedUser actor(User user) {
-        return new AuthenticatedUser(user.getId(), user.getPublicId(), user.getEmail(), user.getRole(), Map.of());
+        return actors.authenticate(user.getPublicId(), user.getTokenVersion()).orElseThrow();
     }
 
     private Fixture fixture(ResourceType type) {

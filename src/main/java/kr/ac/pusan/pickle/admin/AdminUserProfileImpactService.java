@@ -38,14 +38,16 @@ public class AdminUserProfileImpactService {
     private final kr.ac.pusan.pickle.workspace.InvitationClaimService claims;
     private final kr.ac.pusan.pickle.access.ActorAccessImpacts accessImpacts;
     private final kr.ac.pusan.pickle.workspace.WorkspaceRepository workspaces;
+    private final StudentSupportPolicy studentPolicy;
 
     public AdminUserProfileImpactService(kr.ac.pusan.pickle.workspace.InvitationClaimService claims, kr.ac.pusan.pickle.access.ActorAccessImpacts accessImpacts, kr.ac.pusan.pickle.workspace.WorkspaceRepository workspaces, AdminUserSupportQueryService support, AdminUserProfileChanges profiles,
-            UserStatusChangeRepository statusChanges, JdbcTemplate jdbc, Clock clock) {
+            UserStatusChangeRepository statusChanges, JdbcTemplate jdbc, Clock clock, StudentSupportPolicy studentPolicy) {
         this.claims = claims; this.support = support; this.accessImpacts = accessImpacts; this.workspaces = workspaces;
         this.profiles = profiles;
         this.statusChanges = statusChanges;
         this.jdbc = jdbc;
         this.clock = clock;
+        this.studentPolicy = studentPolicy;
     }
 
     @Transactional(readOnly = true)
@@ -54,7 +56,7 @@ public class AdminUserProfileImpactService {
         User user = support.requireUser(actor, userId);
         boolean enabling = request.action() == AdminUserProfileImpactRequest.AdminUserProfileImpactAction.ENABLE;
         if (enabling) { StudentSupportPolicy.requireEnableImpact(actor); }
-        else { StudentSupportPolicy.requireProfileCorrection(actor, user.getRole()); }
+        else { studentPolicy.requireStudentProfileCorrection(actor, user.getRole()); }
         String studentNo = user.getStudentNo();
         UserStatus status = user.getStatus();
         if (enabling) {
@@ -106,7 +108,7 @@ public class AdminUserProfileImpactService {
                 }
             }
         }
-        return accessImpacts.bind(binding, gains, pending);
+        return accessImpacts.bind(actor, binding, gains, pending);
     }
 
     private List<AdminUserProfileImpactResponse.AdminUserProfileInvitationImpact> invitations(User user, @Nullable String email,

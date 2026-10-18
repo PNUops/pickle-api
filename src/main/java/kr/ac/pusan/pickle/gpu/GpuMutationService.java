@@ -46,13 +46,15 @@ public class GpuMutationService {
     private final Clock clock;
     private final JobScheduler jobs;
     private final GpuOperationJob operations;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
 
     public GpuMutationService(GpuStore store, GpuQueryService query, VmAccessService vmAccess,
             VmRepository vms, NodeRepository nodes, ResourceAccessResolver access, GpuAttachmentReadiness readiness,
-            GpuNotices notices, AuditService audit, Clock clock, JobScheduler jobs, GpuOperationJob operations) {
+            GpuNotices notices, AuditService audit, Clock clock, JobScheduler jobs, GpuOperationJob operations,
+            kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions) {
         this.store = store; this.query = query; this.vmAccess = vmAccess; this.vms = vms; this.nodes = nodes;
         this.access = access; this.readiness = readiness; this.notices = notices; this.audit = audit;
-        this.clock = clock; this.jobs = jobs; this.operations = operations;
+        this.clock = clock; this.jobs = jobs; this.operations = operations; this.permissions = permissions;
     }
 
     @Transactional(readOnly = true)
@@ -109,12 +111,13 @@ public class GpuMutationService {
 
     @Transactional
     public GpuAllocationView reclaim(AuthenticatedUser actor, UUID id, String reason, String ip) {
+        actor = permissions.currentForWrite(actor);
         GpuAllocation a = store.allocation(id).orElseThrow(GpuErrors::notFound);
-        requireAdminWrite(actor, a);
+        requireAdminWrite(actor, a, kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_RECALL);
         a = store.lock(a.id());
         releaseLocked(a, GpuReleaseReason.ADMIN_RECLAIM, actor.id(), true);
         record(actor, a, "gpu.reclaim", Map.of("reason", reason), ip);
-        return currentView(actor, a, true);
+        return query.commandReference(actor, store.allocation(a.id()).orElseThrow());
     }
 
     @Transactional
@@ -147,8 +150,9 @@ public class GpuMutationService {
 
     @Transactional
     public GpuAllocationView extend(AuthenticatedUser actor, UUID id, int hours, String reason, String ip, boolean admin) {
+        if (admin) { actor = permissions.currentForWrite(actor); }
         GpuAllocation a = admin ? store.allocation(id).orElseThrow(GpuErrors::notFound) : requireEditor(actor, id);
-        if (admin) { requireAdminWrite(actor, a); if (reason == null || reason.isBlank()) { throw GpuErrors.invalid("reason", "연장 사유를 입력해 주세요."); } }
+        if (admin) { requireAdminWrite(actor, a, kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_PERIOD); if (reason == null || reason.isBlank()) { throw GpuErrors.invalid("reason", "연장 사유를 입력해 주세요."); } }
         a = store.lock(a.id());
         if (a.status() != GpuAllocationStatus.ALLOCATED || !a.leaseEndsAt().isAfter(clock.instant())) { throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "진행 중인 임대만 연장할 수 있습니다."); }
         if (!admin && Boolean.TRUE.equals(store.jdbc().queryForObject("select exists(select 1 from gpu_allocations where status = 'QUEUED')", Boolean.class))) {
@@ -162,7 +166,7 @@ public class GpuMutationService {
         try { total = Math.addExact(a.grantedLeaseHours(), hours); } catch (ArithmeticException e) { throw GpuErrors.invalid("hours", "입력한 시간이 너무 큽니다."); }
         store.jdbc().update("update gpu_allocations set granted_lease_hours = ?, lease_ends_at = ?, updated_at = ? where id = ?", total, Timestamp.from(until), Timestamp.from(clock.instant()), a.id());
         record(actor, a, "gpu.extend", Map.of("hours", hours, "reason", reason == null ? "" : reason, "adminException", admin), ip);
-        return currentView(actor, a, admin);
+        return admin ? query.commandReference(actor, store.allocation(a.id()).orElseThrow()) : currentView(actor, a, false);
     }
 
     @Transactional
@@ -249,9 +253,11 @@ public class GpuMutationService {
     static void requireSystemOperator(AuthenticatedUser actor) {
         if (actor.role() != UserRole.SYS_MANAGER && actor.role() != UserRole.SYS_ADMIN) { throw GpuErrors.forbidden(); }
     }
-    static void requireAdminWrite(AuthenticatedUser actor, GpuAllocation a) {
-        if (actor.role() == UserRole.SYS_MANAGER || actor.role() == UserRole.SYS_ADMIN || actor.administers(a.orgId())) { return; }
-        if (!actor.role().isSysTier() && !actor.reads(a.orgId())) { throw GpuErrors.notFound(); }
-        throw GpuErrors.forbidden();
+    private void requireAdminWrite(AuthenticatedUser actor, GpuAllocation allocation,
+            kr.ac.pusan.pickle.security.institution.InstitutionWork work) {
+        if (permissions.resource(actor, work, allocation.orgId(), allocation.workspaceId(), false,
+                UserRole.SYS_MANAGER, UserRole.SYS_ADMIN)) { return; }
+        if (query.canReadMetadata(actor, allocation) || query.canObserve(actor, allocation)) { throw GpuErrors.forbidden(); }
+        throw GpuErrors.notFound();
     }
 }

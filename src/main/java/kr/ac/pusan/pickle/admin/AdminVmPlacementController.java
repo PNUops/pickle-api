@@ -25,14 +25,18 @@ import org.springframework.web.bind.annotation.RestController;
 /** Purpose-bound placement support does not open general host inventory to the institution tier. */
 @RestController
 @RequestMapping("/api/v1/admin/vm-placement")
-@PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
+@PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
 public class AdminVmPlacementController {
     private final OrgRepository orgs;
     private final VmCloneReservationService reservations;
     private final Clock clock;
+    private final kr.ac.pusan.pickle.security.institution.InstitutionAuthorization authorization;
+    private final kr.ac.pusan.pickle.workspace.WorkspaceRepository workspaces;
 
-    public AdminVmPlacementController(OrgRepository orgs, VmCloneReservationService reservations, Clock clock) {
-        this.orgs = orgs; this.reservations = reservations; this.clock = clock;
+    public AdminVmPlacementController(OrgRepository orgs, VmCloneReservationService reservations, Clock clock,
+            kr.ac.pusan.pickle.security.institution.InstitutionAuthorization authorization,
+            kr.ac.pusan.pickle.workspace.WorkspaceRepository workspaces) {
+        this.orgs = orgs; this.reservations = reservations; this.clock = clock; this.authorization = authorization; this.workspaces = workspaces;
     }
 
     @PostMapping("/preview")
@@ -44,7 +48,7 @@ public class AdminVmPlacementController {
     public AdminVmPlacementPreviewResponse previewAdminVmPlacement(@AuthenticationPrincipal AuthenticatedUser actor,
             @Valid @RequestBody AdminVmPlacementPreviewRequest request) {
         var org = orgs.findByPublicId(request.orgId())
-                .filter(value -> actor.role() == UserRole.SYS_ADMIN || actor.operates(value.getId()))
+                .filter(value -> placementAllowed(actor, value.getId(), request.workspaceId()))
                 .orElseThrow(() -> ApiException.validationFailed(java.util.List.of(
                         new FieldValidationError("orgId", "신청을 승인할 수 있는 기관을 선택해 주세요."))));
         var observedAt = clock.instant();
@@ -62,4 +66,22 @@ public class AdminVmPlacementController {
                 new AdminApprovalImageReference(image.getPublicId(), image.getDisplayName(), image.getVersion(), observation.selectableNow()),
                 candidates, candidates.stream().anyMatch(AdminVmPlacementCandidate::fitsOneNow));
     }
+    private boolean placementAllowed(AuthenticatedUser actor, long orgId, java.util.UUID workspaceId) {
+        if (actor.role().isSysTier()) { return actor.role() == UserRole.SYS_ADMIN; }
+        if (workspaceId != null) {
+            return workspaces.findByPublicId(workspaceId).flatMap(workspace -> authorization.resourceTarget(
+                    kr.ac.pusan.pickle.security.institution.InstitutionWorkGroup.VM, orgId, workspace.getId()))
+                    .map(target -> authorization.decision(actor,
+                            kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_REQUEST_DECIDE, target).allowed()
+                            || authorization.decision(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_ROSTER_ISSUE, target).allowed()).orElse(false);
+        }
+        return authorization.institutionTarget(orgId).map(target -> java.util.stream.Stream.of(
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_REQUEST_DECIDE,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_ROSTER_ISSUE)
+                .flatMap(work -> authorization.sources(actor, work).stream())
+                .anyMatch(source -> target.institutionId().equals(source.requiredInstitutionId())
+                        && source.workspaceScope().mode() == kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope.Mode.ALL))
+                .orElse(false);
+    }
+
 }

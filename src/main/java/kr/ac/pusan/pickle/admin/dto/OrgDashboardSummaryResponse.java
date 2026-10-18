@@ -8,14 +8,14 @@ import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code OrgDashboardSummary} (ORG_ADMIN home / SYS_ADMIN org drill-in). */
 public record OrgDashboardSummaryResponse(
-        long pendingRequestCount,
-        RecentDecisions recentDecisions14d,
-        Map<String, Long> vmCountsByStatus,
-        Resource resource,
-        List<TopWorkspace> topWorkspacesByVmCount,
-        long publishedServiceCount,
-        long expiringVmCount30d,
-        Attention attention) {
+        @Nullable Long pendingRequestCount,
+        @Nullable RecentDecisions recentDecisions14d,
+        @Nullable Map<String, Long> vmCountsByStatus,
+        @Nullable Resource resource,
+        @Nullable List<TopWorkspace> topWorkspacesByVmCount,
+        @Nullable Long publishedServiceCount,
+        @Nullable Long expiringVmCount30d,
+        @Nullable Attention attention) {
 
     public record RecentDecisions(long approvedCount, long rejectedCount) {
     }

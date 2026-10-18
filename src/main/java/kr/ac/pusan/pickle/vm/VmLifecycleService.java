@@ -169,7 +169,8 @@ public class VmLifecycleService {
 
     private MessageResponse adminIntent(AuthenticatedUser actor, UUID vmId, VmPowerAction action,
             String ip) {
-        Vm vm = adminVmAccess.requireWritableVm(actor, vmId);
+        actor = adminVmAccess.currentForWrite(actor);
+        Vm vm = adminVmAccess.requireWritableVm(actor, vmId, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_POWER);
         ApiException refusal = adminPower(actor, vm, action, null, ip);
         if (refusal != null) {
             throw refusal;
@@ -191,6 +192,7 @@ public class VmLifecycleService {
      */
     public @Nullable ApiException adminPower(AuthenticatedUser actor, Vm vm, VmPowerAction action,
             @Nullable UUID batchId, String ip) {
+        if (!adminVmAccess.canWrite(actor, vm, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_POWER)) { return AdminVmAccess.vmNotFound(); }
         long id = vm.getId();
         long actorId = actor.id();
         switch (action) {

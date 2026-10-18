@@ -55,7 +55,7 @@ public class ActorAccessImpacts {
                         before == null ? null : before.name(), after.name())) : List.of();
         String binding = actor.id() + ":" + type + ":" + resource.publicId() + ":" + action + ":"
                 + grantId + ":" + granteeType + ":" + userId + ":" + role + ":" + member + ":" + snapshot(existing);
-        return bind(binding, gains, List.of());
+        return bind(actor, binding, gains, List.of());
     }
 
     public ActorAccessImpact membership(AuthenticatedUser actor, Workspace workspace,
@@ -82,15 +82,21 @@ public class ActorAccessImpacts {
                 }
             }
         }
-        return bind(state.toString(), gains, pending);
+        return bind(actor, state.toString(), gains, pending);
     }
 
-    public ActorAccessImpact bind(String binding, List<AccessIncrease> gains, List<PendingResourceOwner> pending) {
+    public ActorAccessImpact bind(AuthenticatedUser actor, String binding, List<AccessIncrease> gains, List<PendingResourceOwner> pending) {
         try {
-            String token = binding + ':' + gains + ':' + pending;
+            String token = authorityContext(actor) + ':' + binding + ':' + gains + ':' + pending;
             return new ActorAccessImpact(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(token.getBytes(StandardCharsets.UTF_8))), List.copyOf(gains), List.copyOf(pending));
         } catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+    }
+
+    public static String authorityContext(AuthenticatedUser actor) {
+        return actor.publicId() + ":" + actor.role() + ":" + actor.institutionContext().state() + ":"
+                + actor.institutionContext().authority().map(kr.ac.pusan.pickle.security.institution.InstitutionAuthority::fingerprint)
+                    .orElseGet(() -> actor.institutionContext().failure().map(Enum::name).orElse("INVALID"));
     }
 
     public static void requireConfirmed(ActorAccessImpact impact, @Nullable AccessConfirmation confirmation) {

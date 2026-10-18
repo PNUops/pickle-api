@@ -172,7 +172,10 @@ class AdminLlmKeyTest {
                         .header("Authorization", "Bearer " + requesterToken))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        assertThat(byReviewer).isEqualTo(byHolder);
+        var reviewerJson = objectMapper.readTree(byReviewer);
+        assertThat(reviewerJson.get("financeVisible").asBoolean()).isTrue();
+        ((tools.jackson.databind.node.ObjectNode) reviewerJson).remove("financeVisible");
+        assertThat(reviewerJson).isEqualTo(objectMapper.readTree(byHolder));
     }
 
     /**
@@ -293,7 +296,7 @@ class AdminLlmKeyTest {
         long generation = generation();
 
         putLimits(active.publicId(), orgViewerToken, limits(90, "1.00"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         putLimits(active.publicId(), sysManagerToken, limits(90, "1.00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rpm").value(90));
@@ -523,34 +526,27 @@ class AdminLlmKeyTest {
     }
 
     @Test
-    void fullReplacementRequiresEveryLimitProperty() throws Exception {
-        Key key = key(orgA.getId(), workspaceA, "완전 교체 키", "ACTIVE", null);
+    void omittedLimitPropertiesRetainTheirLockedCurrentValues() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "부분 변경 키", "ACTIVE", null);
         putLimits(key.publicId(), sysAdminToken, Map.of("rpm", 10))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("creditLimit"));
-        putLimits(key.publicId(), sysAdminToken, Map.of("rpm", 10, "creditLimit", 0))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.rpm").value(10))
+                .andExpect(jsonPath("$.creditLimit").value(1.00)).andExpect(jsonPath("$.tpm").value(1000));
+        putLimits(key.publicId(), sysAdminToken, Map.of())
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.errors[0].field").value("limits"));
     }
 
-    // Both money-axis lists join the full replacement, so a request that omits
-    // either replaces nothing — the same rule the other six already follow.
-    // Without the deny half in isComplete() a body missing it saves quietly with
-    // the list emptied, which is the direction that opens a blocked model.
     @Test
-    void creditModelListsArePartOfTheFullReplacement() throws Exception {
+    void omittedCreditModelListsRetainTheirCurrentValues() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "허용 목록 키", "ACTIVE", null);
         Map<String, Object> withoutList = limits(60, "5.00");
         withoutList.remove("creditAllowedModels");
         putLimits(key.publicId(), sysAdminToken, withoutList)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.creditAllowedModels.length()").value(0));
 
         Map<String, Object> withoutDenyList = limits(60, "5.00");
         withoutDenyList.remove("creditDeniedModels");
         putLimits(key.publicId(), sysAdminToken, withoutDenyList)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.creditDeniedModels.length()").value(0));
 
         // Stored normalized: lower-cased, trimmed, duplicates gone, order kept.
         Map<String, Object> messy = limits(60, "5.00");
@@ -949,7 +945,7 @@ class AdminLlmKeyTest {
      * means the opposite of theirs.
      */
     @Test
-    void passthroughEndpointsAreRequiredAndDefaultToNone() throws Exception {
+    void omittedPassthroughEndpointsRetainTheirCurrentValue() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "기능 권한 키", "ACTIVE", null);
 
         // A key that nobody granted anything reaches no passthrough path. The
@@ -959,8 +955,7 @@ class AdminLlmKeyTest {
         Map<String, Object> without = limits(60, "5.00");
         without.remove("passthroughEndpoints");
         putLimits(key.publicId(), sysAdminToken, without)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.passthroughEndpoints.length()").value(0));
 
         // null and the empty array are the same value here, as they are for the
         // two model lists, and all three spell it as an empty stored array. What

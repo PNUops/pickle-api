@@ -131,6 +131,7 @@ class OrgRoleGrantTest {
         grant(ensureUser("ogr.backup.admin.b@pusan.ac.kr", "B기관 별도 관리자", UserRole.ORG_ADMIN),
                 orgB, UserRole.ORG_ADMIN);
         mockMvc.perform(delete(orgRolePath(target, orgB)).param("expectedRevision", String.valueOf(revision(orgB)))
+                        .param("expectedPermissionRevision", String.valueOf(Math.max(1, permissionRevision(target, orgB))))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("ORG_MANAGER"));
@@ -139,21 +140,24 @@ class OrgRoleGrantTest {
     }
 
     @Test
-    void revokingTheLastOrgDropsTheAccountToUserAndKillsItsTokens() throws Exception {
+    void revokingTheLastOrgKeepsPersonalTokenAndDropsTheAccountToUser() throws Exception {
         putRole(target, orgA, sysAdminToken, UserRole.ORG_ADMIN).andExpect(status().isOk());
         User promoted = userRepository.findById(target.getId()).orElseThrow();
         String promotedToken = jwtService.createAccessToken(promoted);
 
         mockMvc.perform(delete(orgRolePath(target, orgA)).param("expectedRevision", String.valueOf(revision(orgA)))
+                        .param("expectedPermissionRevision", String.valueOf(Math.max(1, permissionRevision(target, orgA))))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("USER"));
         assertThat(SeedFixtures.managedOrgIds(jdbcTemplate, target.getId())).isEmpty();
 
-        // the role change invalidated the outstanding access token
+        // Institution grant removal preserves the session and reads the actual USER role.
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .get("/api/v1/me").header("Authorization", "Bearer " + promotedToken))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isOk()).andExpect(jsonPath("$.role").value("USER"));
+        assertThat(userRepository.findById(target.getId()).orElseThrow().getTokenVersion())
+                .isEqualTo(promoted.getTokenVersion());
     }
 
     @Test
@@ -166,6 +170,7 @@ class OrgRoleGrantTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         mockMvc.perform(delete(orgRolePath(target, orgB)).param("expectedRevision", String.valueOf(revision(orgB)))
+                        .param("expectedPermissionRevision", String.valueOf(Math.max(1, permissionRevision(target, orgB))))
                         .header("Authorization", "Bearer " + adminOfAToken))
                 .andExpect(status().isNotFound());
     }
@@ -216,12 +221,11 @@ class OrgRoleGrantTest {
         // an admin of another org only is refused the same way
         scheduleDelete(vmInB, adminOfAToken).andExpect(status().isNotFound());
 
-        // and an ORG_MANAGER never reaches the handler at all — the controller
-        // gate admits ORG_ADMIN and SYS_ADMIN only
-        scheduleDelete(vmInA, managerOfBToken).andExpect(status().isForbidden());
+        // The finite legacy manager assignment has no deletion work, even after coarse admission.
+        scheduleDelete(vmInA, managerOfBToken).andExpect(status().isNotFound());
         mockMvc.perform(post("/api/v1/admin/vms/{id}/cancel-scheduled-delete", pub("vms", vmInA))
                         .header("Authorization", "Bearer " + managerOfBToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
 
         // ...and the same account may do it in the org it does administer
         scheduleDelete(vmInA, bothOrgsToken).andExpect(status().isAccepted());
@@ -292,13 +296,7 @@ class OrgRoleGrantTest {
                 .content(objectMapper.writeValueAsString(body)));
     }
 
-    /**
-     * The viewer role reads its organisation and changes nothing in it. The
-     * gates admit it to the read surfaces by name, so what stops a write is the
-     * gate itself rather than a service-layer check, and the two questions the
-     * principal answers — may this account see this organisation, may it act in
-     * it — have to disagree for exactly this account.
-     */
+    /** The explicit finite viewer reads its allowed surfaces and has no mutation work. */
     @Test
     void aViewerReadsItsOrganisationAndChangesNothing() throws Exception {
         assertThat(userRepository.findById(viewerOfA.getId()).orElseThrow().getRole())
@@ -315,7 +313,7 @@ class OrgRoleGrantTest {
                         .header("Authorization", "Bearer " + viewerOfAToken))
                 .andExpect(status().isOk());
 
-        // the audit log stays with the roles that may act
+        // The finite viewer preset excludes sensitive institution audit work.
         mockMvc.perform(get("/api/v1/admin/audit")
                         .header("Authorization", "Bearer " + viewerOfAToken))
                 .andExpect(status().isForbidden());
@@ -324,14 +322,9 @@ class OrgRoleGrantTest {
         Fixture inA = createVmIn(orgA);
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", inA.vmId()) + "/shutdown")
                         .header("Authorization", "Bearer " + viewerOfAToken))
-                .andExpect(status().isForbidden());
-        mockMvc.perform(put("/api/v1/admin/users/" + target.getPublicId()
-                        + "/org-roles/" + orgA.getPublicId())
-                        .header("Authorization", "Bearer " + viewerOfAToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(
-                                Map.of("role", UserRole.ORG_VIEWER.name(), "expectedRevision", revision(orgA)))))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
+        putRole(target, orgA, viewerOfAToken, UserRole.ORG_VIEWER)
+                .andExpect(status().isNotFound());
     }
 
     /** An organisation's administrator may hand out the viewer role in it. */
@@ -349,7 +342,24 @@ class OrgRoleGrantTest {
         return mockMvc.perform(put(orgRolePath(user, org))
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("role", role.name(), "expectedRevision", revision(org)))));
+                .content(objectMapper.writeValueAsString(grantBody(user, org, role))));
+    }
+
+    private Map<String, Object> grantBody(User user, Org org, UserRole role) throws Exception {
+        if (!role.isOrgTier()) return Map.of("role", role.name(), "expectedRevision", revision(org));
+        var assignment = kr.ac.pusan.pickle.security.institution.InstitutionLegacyPresets.create(
+                user.getPublicId(), org.getPublicId(), role);
+        var encoded = new kr.ac.pusan.pickle.security.institution.InstitutionAssignmentCodec().encode(assignment);
+        var payload = objectMapper.readTree(encoded.payload());
+        return Map.of("permission", Map.of("mode", encoded.mode(), "work", payload.get("work"),
+                "scopes", payload.get("scopes"), "expectedRevision", permissionRevision(user, org)),
+                "expectedRevision", revision(org));
+    }
+
+    private long permissionRevision(User user, Org org) {
+        var values = jdbcTemplate.queryForList("select permission_revision from user_org_roles where user_id=? and org_id=?",
+                Long.class, user.getId(), org.getId());
+        return values.isEmpty() ? 0 : values.getFirst();
     }
 
     private String orgRolePath(User user, Org org) {

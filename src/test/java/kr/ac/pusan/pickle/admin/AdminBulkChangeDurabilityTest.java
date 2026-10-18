@@ -632,7 +632,7 @@ class AdminBulkChangeDurabilityTest {
         long actorId = actor.getId();
         new TransactionTemplate(transactions).executeWithoutResult(tx -> {
             User managed = users.findById(actorId).orElseThrow();
-            orgRoles.replaceWithSingle(managed, institution, role);
+            SeedFixtures.replaceOrgRole(jdbc, managed.getId(), institution, role);
         });
         actor = users.findById(actorId).orElseThrow();
         token = jwt.createAccessToken(actor);

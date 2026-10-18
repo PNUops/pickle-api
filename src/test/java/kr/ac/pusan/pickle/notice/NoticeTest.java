@@ -22,6 +22,11 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
+import kr.ac.pusan.pickle.support.RequestFixtures;
+import kr.ac.pusan.pickle.security.institution.InstitutionAssignment;
+import kr.ac.pusan.pickle.security.institution.InstitutionAssignmentCodec;
+import kr.ac.pusan.pickle.security.institution.InstitutionAssignmentStore;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -96,6 +101,8 @@ class NoticeTest {
     private OrgRepository orgRepository;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private org.springframework.transaction.support.TransactionTemplate transactions;
 
     private Org org;
     private Org otherOrg;
@@ -432,17 +439,47 @@ class NoticeTest {
                 .andExpect(status().isCreated());
         deleteNotice(otherOrgAdminToken, popupNotice).andExpect(status().isNoContent());
 
-        // An org-tier account granted no organisation at all reaches both the
-        // management list and the writes. Refusing it used to be the one place
-        // an unattached account was told no, and that refusal was exactly an
-        // organisation gating a feature.
-        String unattachedToken = jwtService.createAccessToken(ensureUnattachedUser(
-                "notice.unattached@pusan.ac.kr", "무소속관리자", UserRole.ORG_ADMIN));
+        User otherOrgManager = ensureOrgUser("notice.other.manager@pusan.ac.kr", "공지타기관운영자",
+                otherOrg.getId(), UserRole.ORG_MANAGER);
+        String selectedWriterToken = jwtService.createAccessToken(otherOrgManager);
+        adminList(selectedWriterToken).andExpect(status().isOk());
+        patchNotice(selectedWriterToken, orgAdminNotice, Map.of("title", "기존 운영자 수정 시도"))
+                .andExpect(status().isForbidden());
+        grantNoticeManagement(otherOrgManager, otherOrg);
+        patchNotice(selectedWriterToken, orgAdminNotice, Map.of("title", "타기관 운영자 수정"))
+                .andExpect(status().isOk());
+
+        // A display role without an assignment cannot reconstruct global work.
+        User unattached = ensureUnattachedUser("notice.unattached@pusan.ac.kr", "무소속관리자", UserRole.ORG_ADMIN);
+        String unattachedToken = jwtService.createAccessToken(unattached);
+        long personalWorkspace = jdbcTemplate.queryForObject(
+                "insert into workspaces(kind,name) values('PROJECT',?) returning id", Long.class,
+                "공지 개인 공간 " + UUID.randomUUID());
+        jdbcTemplate.update("insert into workspace_members(workspace_id,user_id,role) values(?,?,'OWNER')",
+                personalWorkspace, unattached.getId());
+        assertThat(orgRoleRows(unattached.getId())).isZero();
+        UUID personalWorkspaceId = SeedFixtures.publicId(jdbcTemplate, "workspaces", personalWorkspace);
+        mockMvc.perform(get("/api/v1/workspaces/" + personalWorkspaceId)
+                .header("Authorization", "Bearer " + unattachedToken)).andExpect(status().isOk());
+        jdbcTemplate.update("update workspace_members set role='MEMBER' where workspace_id=? and user_id=?",
+                personalWorkspace, unattached.getId());
+        UUID personalVmId = personalVm(personalWorkspace, unattached.getId());
+        mockMvc.perform(get("/api/v1/vms/" + personalVmId).header("Authorization", "Bearer " + unattachedToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(personalVmId.toString()));
         adminList(unattachedToken)
-                .andExpect(status().isOk())
-                .andExpect(listHas(orgAdminNotice));
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         create(unattachedToken, body(Map.of("title", "무소속 등록")))
-                .andExpect(status().isCreated());
+                .andExpect(status().isForbidden());
+        patchNotice(unattachedToken, orgAdminNotice, Map.of("title", "무소속 수정 시도"))
+                .andExpect(status().isForbidden());
+        upload(unattachedToken, orgAdminNotice, "denied.png", "image/png", PNG_BYTES)
+                .andExpect(status().isForbidden());
+        deleteNotice(unattachedToken, orgAdminNotice).andExpect(status().isForbidden());
+        adminList(sysAdminToken).andExpect(status().isOk())
+                .andExpect(jsonPath(rowWhere(orgAdminNotice, "@.title=='타기관 운영자 수정'")).exists());
+        // Invalid institution authority does not remove independent personal ownership.
+        mockMvc.perform(get("/api/v1/vms/" + personalVmId)
+                .header("Authorization", "Bearer " + unattachedToken)).andExpect(status().isOk());
 
         // A notice that does not exist is still 404 — a fact now, not a mask.
         patchNotice(sysAdminToken, SeedFixtures.UNKNOWN_ID, Map.of("title", "없는 공지"))
@@ -721,15 +758,19 @@ class NoticeTest {
                 .andReturn();
         assertThat(served.getResponse().getContentAsByteArray()).isEqualTo(PNG_BYTES);
 
-        // Every role on the management surface gets the preview, an org-tier
-        // account granted no organisation included — it reads the same list.
+        // Complete global read sources may preview another author's scheduled image.
         mockMvc.perform(get(url).header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        String foreignViewerToken = jwtService.createAccessToken(ensureOrgUser(
+                "notice.preview.foreign.viewer@pusan.ac.kr", "타기관 공지열람자", otherOrg.getId(), UserRole.ORG_VIEWER));
+        adminList(foreignViewerToken).andExpect(status().isOk()).andExpect(listHas(scheduled));
+        mockMvc.perform(get(url).header("Authorization", "Bearer " + foreignViewerToken))
                 .andExpect(status().isOk());
         String unattachedToken = jwtService.createAccessToken(ensureUnattachedUser(
                 "notice.preview.unattached@pusan.ac.kr", "무소속관리자", UserRole.ORG_ADMIN));
-        adminList(unattachedToken).andExpect(status().isOk());
+        adminList(unattachedToken).andExpect(status().isForbidden());
         mockMvc.perform(get(url).header("Authorization", "Bearer " + unattachedToken))
-                .andExpect(status().isOk());
+                .andExpect(status().isNotFound());
 
         // Nobody below that surface does, and the refusal stays a 404.
         mockMvc.perform(get(url)).andExpect(status().isNotFound());
@@ -741,6 +782,32 @@ class NoticeTest {
     }
 
     // ── helpers ────────────────────────────────────────────────────────────
+
+    private void grantNoticeManagement(User user, Org sourceInstitution) {
+        long revision = jdbcTemplate.queryForObject(
+                "select permission_revision from user_org_roles where user_id=? and org_id=?",
+                Long.class, user.getId(), sourceInstitution.getId());
+        var assignment = InstitutionAssignment.selected(user.getPublicId(), sourceInstitution.getPublicId(),
+                java.util.Set.of(InstitutionWork.NOTICE_MANAGE), Map.of(), 0);
+        transactions.executeWithoutResult(status -> new InstitutionAssignmentStore(jdbcTemplate,
+                new InstitutionAssignmentCodec()).save(assignment, revision));
+    }
+
+    private UUID personalVm(long workspaceId, long ownerId) {
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, org.getId(), ownerId,
+                "개인 ACL 공지 경계", imageId, 1, 1024, 20);
+        String name = "notice-personal-" + UUID.randomUUID();
+        long vmId = jdbcTemplate.queryForObject("""
+                insert into vms(node_id,workspace_id,org_id,request_id,name,hostname,image_id,vcpu,memory_mb,disk_gb,status)
+                values((select min(id) from nodes),?,?,?,?,?,?,1,1024,20,'STOPPED') returning id
+                """, Long.class, workspaceId, org.getId(), requestId, name, name, imageId);
+        jdbcTemplate.update("""
+                insert into resource_access_grants(resource_type,resource_id,grantee_type,user_id,role)
+                values('VM',?,'USER',?,'OWNER')
+                """, vmId, ownerId);
+        return SeedFixtures.publicId(jdbcTemplate, "vms", vmId);
+    }
 
     private ResultActions publicList(String token) throws Exception {
         return mockMvc.perform(authorize(get("/api/v1/notices?size=100"), token));
@@ -834,8 +901,8 @@ class NoticeTest {
      * organisation is a {@code user_org_roles} row rather than a column on the
      * account, and {@code users.role} is the effective role the
      * {@code @PreAuthorize} gate reads — here the two agree, because the fixture
-     * grants exactly one organisation. Notices no longer ask the question, but
-     * the grant is still what makes these accounts realistic.
+     * grants exactly one explicit FULL or finite SELECTED assignment. Global
+     * notice work is evaluated from that assignment independently of its source institution.
      */
     private User ensureOrgUser(String email, String name, Long orgId, UserRole role) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
@@ -861,16 +928,17 @@ class NoticeTest {
     /**
      * An account holding {@code role} and granted no organisation. Correct for
      * the sys tier, which is never org-scoped and whose roles the table's CHECK
-     * would refuse anyway, and it is also how the org-tier account that holds no
-     * row is built — the account the notice surface used to refuse and now
-     * admits.
+     * would refuse anyway. An org-tier account without a row deliberately has
+     * invalid institution authority and must not gain notice work from its role.
      */
     private User ensureUnattachedUser(String email, String name, UserRole role) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
                 userRepository.save(new User(email, "{noop}unused", name)));
         user.setRole(role);
         user.setStatus(UserStatus.ACTIVE);
-        return userRepository.save(user);
+        User saved = userRepository.saveAndFlush(user);
+        jdbcTemplate.update("delete from user_org_roles where user_id = ?", saved.getId());
+        return saved;
     }
 
     private long orgRoleRows(long userId) {

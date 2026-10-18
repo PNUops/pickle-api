@@ -169,7 +169,14 @@ class DomainBulkChanges extends BulkChangeHandler<Domain> {
     @Override
     @Nullable AdminBulkChangeReason accessRefusal(AuthenticatedUser actor, Domain domain,
             AdminBulkChangeSpec change) {
-        return AdminPublishingService.mayIntervene(actor, domain) ? null
+        return publishingService.mayIntervene(actor, domain, switch (change.kind()) {
+            case DOMAIN_RENEWAL -> kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_RENEWAL;
+            case DOMAIN_VERIFY -> kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_CUSTOM_DOMAIN_VERIFY;
+            case DOMAIN_FORCE_RELEASE -> domain.getKind() == kr.ac.pusan.pickle.publishing.DomainKind.EXTERNAL
+                    ? kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_RELEASE
+                    : kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_OPERATE;
+            default -> throw new IllegalStateException("Unsupported domain command");
+        }) ? null
                 : AdminBulkChangeReason.NOT_FOUND;
     }
 

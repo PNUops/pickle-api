@@ -51,6 +51,7 @@ class AdminResourceDeadlineTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
     @Autowired MutableClock clock;
+    @Autowired kr.ac.pusan.pickle.security.institution.InstitutionActorProvider actors;
     private long org;
     private long workspace;
     private long owner;
@@ -248,6 +249,46 @@ class AdminResourceDeadlineTest {
         assertThat(list(admin, Map.of("expired", "true")).path("totalElements").asLong()).isZero();
     }
 
+    @Test
+    void selectedDeadlineUnionScopesEachKindAndSourceBeforeItsCountAndPage() throws Exception {
+        UUID visible=vm("STOPPED",TODAY); key("ACTIVE",NOW.plusSeconds(1)); domain("ACTIVE",NOW.plusSeconds(1),null,workspace,org);
+        gpu("QUEUED",TODAY,null);
+        long otherWorkspace=jdbc.queryForObject("insert into workspaces(kind,name) values('PROJECT',?) returning id",Long.class,"다른 기한 범위 "+UUID.randomUUID());
+        UUID outside=vm("STOPPED",TODAY);jdbc.update("update vms set workspace_id=? where public_id=?",otherWorkspace,outside);
+        AuthenticatedUser principal=actor(UserRole.ORG_VIEWER);jdbc.update("delete from user_org_roles where user_id=?",principal.id());
+        putMetadataAssignment(principal,org,kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope.listed(java.util.Set.of(workspaceId)));
+        putMetadataAssignment(principal,SeedFixtures.seedOrgId(jdbc),kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_METADATA_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope.all());
+        var fresh=actors.authenticate(principal.publicId(),0).orElseThrow();
+        JsonNode result=listWithoutWorkspace(fresh,Map.of("size","1"));
+        assertThat(result.path("totalElements").asLong()).isEqualTo(1);
+        assertThat(result.path("content").get(0).path("id").asString()).isEqualTo(visible.toString());
+        assertThat(listWithoutWorkspace(fresh,Map.of("type","LLM_API_KEY")).path("totalElements").asLong()).isZero();
+        assertThat(listWithoutWorkspace(fresh,Map.of("page","4")).path("totalElements").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void emptyListedMetadataCannotOpenTheDeadlineUnion() throws Exception {
+        vm("STOPPED",TODAY);AuthenticatedUser principal=actor(UserRole.ORG_VIEWER);
+        jdbc.update("delete from user_org_roles where user_id=?",principal.id());
+        putMetadataAssignment(principal,org,kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_METADATA_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope.listed(java.util.Set.of()));
+        var fresh=actors.authenticate(principal.publicId(),0).orElseThrow();
+        mvc.perform(get(PATH).with(authentication(auth(fresh)))).andExpect(status().isForbidden());
+    }
+
+    private void putMetadataAssignment(AuthenticatedUser actor,long institution,
+            kr.ac.pusan.pickle.security.institution.InstitutionWork work,
+            kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope scope) {
+        var assignment=kr.ac.pusan.pickle.security.institution.InstitutionAssignment.selected(actor.publicId(),pub("orgs",institution),
+                java.util.Set.of(work),Map.of(work.group(),scope),0);
+        var encoded=new kr.ac.pusan.pickle.security.institution.InstitutionAssignmentCodec().encode(assignment);
+        jdbc.update("insert into user_org_roles(user_id,org_id,role,permission_mode,permission_payload,permission_revision)"
+                + " values(?,?,?::user_role,?,?::jsonb,nextval('institution_permission_revision_seq'))",actor.id(),institution,
+                assignment.displayRole().name(),encoded.mode(),encoded.payload());
+    }
+
     private JsonNode row(JsonNode response, UUID id) {
         for (JsonNode item : response.path("content")) if (id.toString().equals(item.path("id").asString())) return item;
         throw new AssertionError("missing resource " + id);
@@ -262,7 +303,10 @@ class AdminResourceDeadlineTest {
         return mapper.readTree(mvc.perform(request).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
     }
     private AuthenticatedUser actor(UserRole role) {
-        return new AuthenticatedUser(owner, pub("users", owner), "deadline@example.invalid", role, Map.of());
+        long user=jdbc.queryForObject("insert into users(email,password_hash,name,role,status) values(?,?,?,?::user_role,'ACTIVE') returning id",
+                Long.class,"deadline.actor."+UUID.randomUUID()+"@example.invalid","{test-no-login}","기한 조회 담당자",role.name());
+        if (role.isOrgTier()) { SeedFixtures.grantOrgRole(jdbc,user,SeedFixtures.seedOrgId(jdbc),role); }
+        return actors.authenticate(pub("users",user),0).orElseThrow();
     }
     private UsernamePasswordAuthenticationToken auth(AuthenticatedUser actor) {
         return UsernamePasswordAuthenticationToken.authenticated(actor, "test", List.of(new SimpleGrantedAuthority("ROLE_" + actor.role().name())));

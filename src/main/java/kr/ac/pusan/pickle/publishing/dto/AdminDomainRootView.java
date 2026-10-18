@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.publishing.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code AdminDomainRootView}: a root this platform issues
@@ -18,5 +19,7 @@ public record AdminDomainRootView(
                 + "가상머신 서브도메인 공개는 아직 아닙니다.**")
         boolean autoApprove,
         @Schema(description = "이 루트 아래 지금 서 있는 외부 도메인 수")
-        long issuedNames) {
+        @Nullable Long issuedNames,
+        boolean metadataVisible,
+        java.util.Set<String> allowedWorkIds) {
 }

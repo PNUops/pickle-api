@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
-import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -14,9 +13,9 @@ import kr.ac.pusan.pickle.request.RequestStatus;
 import kr.ac.pusan.pickle.request.dto.CreateRequestRequest;
 import kr.ac.pusan.pickle.request.dto.RequestDetailResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.institution.InstitutionActorProvider;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
-import kr.ac.pusan.pickle.user.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +49,8 @@ class DomainRequestKindTest {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private PlatformTransactionManager transactions;
+    @Autowired
+    private InstitutionActorProvider actors;
 
     private long orgId;
     private UUID orgPublicId;
@@ -75,10 +76,9 @@ class DomainRequestKindTest {
         jdbcTemplate.update(
                 "insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'OWNER')",
                 workspaceId, userId);
-        applicant = new AuthenticatedUser(userId,
-                jdbcTemplate.queryForObject("select public_id from users where id = ?", UUID.class,
-                        userId),
-                slug + "@pusan.ac.kr", UserRole.USER, Map.of());
+        UUID publicId = jdbcTemplate.queryForObject("select public_id from users where id = ?", UUID.class, userId);
+        int tokenVersion = jdbcTemplate.queryForObject("select token_version from users where id = ?", Integer.class, userId);
+        applicant = actors.authenticate(publicId, tokenVersion).orElseThrow();
         jdbcTemplate.update("delete from domain_roots");
     }
 

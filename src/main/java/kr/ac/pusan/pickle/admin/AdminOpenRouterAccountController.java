@@ -40,7 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminOpenRouterAccountController {
 
     private static final String WRITERS =
-            "hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')";
+            "hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')";
 
     private final AdminOpenRouterAccountService service;
 

@@ -23,36 +23,36 @@ import org.jspecify.annotations.Nullable;
 public record VmDetailResponse(
         UUID id,
         String name,
-        String hostname,
+        @Nullable String hostname,
         VmStatus status,
-        int vcpu,
-        int memoryMb,
-        int diskGb,
-        @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
+        @Nullable Integer vcpu,
+        @Nullable Integer memoryMb,
+        @Nullable Integer diskGb,
+        @Schema(description = "소유 워크스페이스. 행이 사라졌거나 해당 조회 업무 없이 명령 결과만 확인하는 경우 null입니다.")
         @Nullable UUID workspaceId,
-        String workspaceName,
+        @Nullable String workspaceName,
         @Nullable String orgName,
         @Nullable String displayName,
-        @Schema(description = "이 VM을 만든 신청. 행이 사라진 경우에만 null입니다.")
+        @Schema(description = "이 VM을 만든 신청. 행이 사라졌거나 해당 조회 업무 없이 명령 결과만 확인하는 경우 null입니다.")
         @Nullable UUID requestId,
         @Nullable String statusDetail,
-        boolean sshGatewayBlocked,
-        Instant createdAt,
-        @Schema(description = "소속 기관. 행이 사라진 경우에만 null입니다.")
+        @Nullable Boolean sshGatewayBlocked,
+        @Nullable Instant createdAt,
+        @Schema(description = "소속 기관. 행이 사라졌거나 해당 조회 업무 없이 명령 결과만 확인하는 경우 null입니다.")
         @Nullable UUID orgId,
-        @Schema(description = "생성에 쓰인 OS 이미지. 행이 사라진 경우에만 null입니다.")
+        @Schema(description = "생성에 쓰인 OS 이미지. 행이 사라졌거나 해당 조회 업무 없이 명령 결과만 확인하는 경우 null입니다.")
         @Nullable UUID imageId,
         @Nullable String ipAddress,
-        String sshUsername,
-        String sshHost,
+        @Nullable String sshUsername,
+        @Nullable String sshHost,
         @Nullable ResourceRole myResourceRole,
         @Nullable LocalDate startDate,
         @Nullable LocalDate endDate,
         @Nullable Instant expiryStoppedAt,
         @Nullable ProvisioningTaskResponse provisioning,
         @Nullable VmDeletionResponse deletion,
-        List<PublicationView> publications,
-        boolean passwordAvailable,
+        @Nullable List<PublicationView> publications,
+        @Nullable Boolean passwordAvailable,
         boolean passwordRevealAllowed,
         @Schema(description = "SSH·웹 터미널로 이 VM에 접속할 수 있는지")
         boolean accessAllowed,
@@ -65,14 +65,42 @@ public record VmDetailResponse(
         @Schema(description = "삭제를 접수할 수 있는지")
         boolean deleteAllowed,
         @Nullable GpuVmSummary gpu,
-        Instant updatedAt) {
+        Instant updatedAt,
+        boolean metadataVisible,
+        java.util.Set<String> allowedWorkIds) {
+
+    public VmDetailResponse withInstitutionWorks(java.util.Set<String> work) {
+        return new VmDetailResponse(id, name, hostname, status, vcpu, memoryMb, diskGb, workspaceId, workspaceName, orgName, displayName, requestId, statusDetail, sshGatewayBlocked, createdAt, orgId, imageId, ipAddress, sshUsername, sshHost, myResourceRole, startDate, endDate, expiryStoppedAt, provisioning, deletion, publications, passwordAvailable, passwordRevealAllowed, accessAllowed, powerControlAllowed, settingsEditAllowed, accessManageAllowed, deleteAllowed, gpu, updatedAt, metadataVisible, java.util.Set.copyOf(work));
+    }
+
+    public VmDetailResponse withResourceProjections(@Nullable List<PublicationView> publicationProjection,
+            @Nullable GpuVmSummary gpuProjection) {
+        return new VmDetailResponse(id, name, hostname, status, vcpu, memoryMb, diskGb, workspaceId, workspaceName, orgName, displayName, requestId, statusDetail, sshGatewayBlocked, createdAt, orgId, imageId, ipAddress, sshUsername, sshHost, myResourceRole, startDate, endDate, expiryStoppedAt, provisioning, deletion, publicationProjection, passwordAvailable, passwordRevealAllowed, accessAllowed, powerControlAllowed, settingsEditAllowed, accessManageAllowed, deleteAllowed, gpuProjection, updatedAt, metadataVisible, allowedWorkIds);
+    }
+
+    /** A command reference carries only the target and its own editable current state. */
+    public static VmDetailResponse commandReference(Vm vm, VmReferences refs, String workspaceName,
+            String orgName, java.util.Set<String> work) {
+        boolean period = work.contains("vm.period");
+        boolean deletion = work.contains("vm.deletion.schedule");
+        return new VmDetailResponse(vm.getPublicId(), vm.getName(), null, vm.getStatus(),
+                null, null, null, refs.workspaceId(),
+                workspaceName, orgName, null, null,
+                null, null, null, refs.orgId(),
+                null, null, null, null,
+                null, period ? vm.getStartDate() : null, period ? vm.getEndDate() : null, period ? vm.getExpiryStoppedAt() : null,
+                null, deletion ? VmDeletionResponse.from(vm, null) : null, null, null,
+                false, false, false, false,
+                false, false, null, vm.getUpdatedAt(),
+                false, java.util.Set.copyOf(work));
+    }
 
     /**
      * The five booleans are the console's gate. They exist because the answer is
      * no longer a comparison the client can make: it depends on the access list
      * and on a workspace owner's standing rights, which the client cannot see.
      * Admin surfaces pass {@code myResourceRole} null and get them all false —
-     * their own authorization is org-scoped and lives elsewhere.
+     * their own authorization uses separately evaluated institution work.
      */
     public static VmDetailResponse from(Vm vm, VmReferences refs, String workspaceName,
             String orgName, String displayName,
@@ -92,6 +120,6 @@ public record VmDetailResponse(
                 VmDeletionResponse.from(vm, refs.deleteRequestedById()), publications,
                 vm.getPasswordEnc() != null, passwordRevealAllowed,
                 atLeastMember, atLeastMember, atLeastEditor, accessManageAllowed,
-                accessManageAllowed, gpu, vm.getUpdatedAt());
+                accessManageAllowed, gpu, vm.getUpdatedAt(), true, java.util.Set.of());
     }
 }

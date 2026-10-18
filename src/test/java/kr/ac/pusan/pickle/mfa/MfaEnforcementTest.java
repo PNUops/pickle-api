@@ -39,6 +39,8 @@ class MfaEnforcementTest {
     @Autowired
     private MfaService mfaService;
     @Autowired
+    private kr.ac.pusan.pickle.security.institution.InstitutionActorProvider actors;
+    @Autowired
     private TotpService totpService;
     @Autowired
     private kr.ac.pusan.pickle.request.RequestRecipientCancellationService recipientCancellations;
@@ -175,7 +177,7 @@ class MfaEnforcementTest {
     @Test
     void currentSystemRoleRechecksEnrollmentAfterTheHttpPrincipalWasCaptured() {
         User user = createUser("mfa.enforce.promoted.recipient@pusan.ac.kr", UserRole.USER);
-        var captured = new kr.ac.pusan.pickle.security.AuthenticatedUser(user.getId(), user.getPublicId(), user.getEmail(), UserRole.USER, java.util.Map.of());
+        var captured = actors.authenticate(user.getPublicId(), user.getTokenVersion()).orElseThrow();
         user.setRole(UserRole.SYS_ADMIN);
         userRepository.saveAndFlush(user);
         for (boolean support : java.util.List.of(false, true)) {
@@ -232,7 +234,7 @@ class MfaEnforcementTest {
     }
 
     @Test
-    void aPromotionWhileHttpRetryWaitsForTheAdministrationLockRequiresCurrentMfaEnrollment() throws Exception {
+    void aGlobalPromotionWhileHttpRetryWaitsInvalidatesTheCapturedToken() throws Exception {
         String suffix = java.util.UUID.randomUUID().toString();
         User actor = createUser("mfa.waiting.retry." + suffix + "@pusan.ac.kr", UserRole.ORG_MANAGER);
         User administrator = createUser("mfa.retry.operator." + suffix + "@pusan.ac.kr", UserRole.SYS_ADMIN);
@@ -248,8 +250,8 @@ class MfaEnforcementTest {
         String path = "/api/v1/admin/requests/" + kr.ac.pusan.pickle.support.SeedFixtures.publicId(jdbc, "requests", requestId) + "/recipients/" + recipientId + "/retry";
         String token = jwtService.createAccessToken(actor);
         long materializerJobs = jdbc.queryForObject("select count(*) from jobrunr_jobs where jobsignature like '%RequestRecipientMaterializer.run(%'", Long.class);
-        var operator = new kr.ac.pusan.pickle.security.AuthenticatedUser(administrator.getId(), administrator.getPublicId(),
-                administrator.getEmail(), UserRole.SYS_ADMIN, java.util.Map.of());
+        enroll(administrator.getId());
+        var operator = actors.authenticate(administrator.getPublicId(), administrator.getTokenVersion()).orElseThrow();
         var pool = java.util.concurrent.Executors.newSingleThreadExecutor();
         try {
             java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<?>> response = new java.util.concurrent.atomic.AtomicReference<>();
@@ -258,7 +260,7 @@ class MfaEnforcementTest {
                 response.set(pool.submit(() -> {
                     mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path)
                             .header("Authorization", "Bearer " + token))
-                            .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
+                            .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("AUTH_TOKEN_INVALID"));
                     return null;
                 }));
                 long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
@@ -268,7 +270,7 @@ class MfaEnforcementTest {
                     catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }
                 }
                 long revision = jdbc.queryForObject("select admin_revision from orgs where id=?", Long.class, orgId);
-                administration.revokeOrgRole(operator, actor.getPublicId(), kr.ac.pusan.pickle.support.SeedFixtures.publicId(jdbc, "orgs", orgId), revision, "127.0.0.1");
+                administration.revokeOrgRole(operator, actor.getPublicId(), kr.ac.pusan.pickle.support.SeedFixtures.publicId(jdbc, "orgs", orgId), revision, jdbc.queryForObject("select permission_revision from user_org_roles where user_id=? and org_id=?", Long.class, actor.getId(), orgId), "127.0.0.1");
                 administration.updateUser(operator, actor.getPublicId(),
                         new kr.ac.pusan.pickle.admin.dto.UpdateUserAdminRequest(kr.ac.pusan.pickle.admin.dto.AdminGlobalRole.SYS_ADMIN), "127.0.0.1");
             });

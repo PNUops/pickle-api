@@ -23,7 +23,6 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmDeleteKind;
 import kr.ac.pusan.pickle.vm.VmDeletionService;
@@ -53,16 +52,17 @@ class VmBulkChanges extends BulkChangeHandler<Vm> {
     private final VmDeletionService deletionService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final kr.ac.pusan.pickle.vm.AdminVmAccess permissionAccess;
 
     VmBulkChanges(VmRepository vmRepository, VmPeriodService periodService,
             VmLifecycleService lifecycleService, VmDeletionService deletionService,
-            ObjectMapper objectMapper, Clock clock) {
+            ObjectMapper objectMapper, Clock clock, kr.ac.pusan.pickle.vm.AdminVmAccess permissionAccess) {
         this.vmRepository = vmRepository;
         this.periodService = periodService;
         this.lifecycleService = lifecycleService;
         this.deletionService = deletionService;
         this.objectMapper = objectMapper;
-        this.clock = clock;
+        this.clock = clock; this.permissionAccess = permissionAccess;
     }
 
     @Override
@@ -141,21 +141,14 @@ class VmBulkChanges extends BulkChangeHandler<Vm> {
     @Override
     @Nullable AdminBulkChangeReason accessRefusal(AuthenticatedUser actor, Vm vm,
             AdminBulkChangeSpec change) {
-        Long orgId = vm.getOrgId();
-        boolean deletion = change.kind() == AdminBulkChangeKind.VM_DELETION;
-        if (actor.role().isOrgTier()) {
-            if (!actor.reads(orgId)) {
-                return AdminBulkChangeReason.NOT_FOUND;
-            }
-            if (deletion) {
-                return actor.administers(orgId) ? null : AdminBulkChangeReason.FORBIDDEN;
-            }
-            return actor.operates(orgId) ? null : AdminBulkChangeReason.NOT_FOUND;
-        }
-        if (deletion && actor.role() != UserRole.SYS_ADMIN) {
-            return AdminBulkChangeReason.FORBIDDEN;
-        }
-        return null;
+        boolean allowed = switch (change.kind()) {
+            case VM_PERIOD -> permissionAccess.canWrite(actor, vm, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PERIOD);
+            case VM_POWER -> permissionAccess.canWrite(actor, vm, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_POWER);
+            case VM_DELETION -> permissionAccess.canDelete(actor, vm);
+            default -> false;
+        };
+        return allowed ? null : permissionAccess.canReadMetadata(actor, vm)
+                ? AdminBulkChangeReason.FORBIDDEN : AdminBulkChangeReason.NOT_FOUND;
     }
 
     @Override
@@ -186,6 +179,18 @@ class VmBulkChanges extends BulkChangeHandler<Vm> {
     @Override
     Map<String, Object> observationValues(Vm vm, AdminBulkChangeSpec change) {
         return publicValues(fingerprintValues(vm, change), Set.of("status", "startDate", "endDate", "deleteKind", "deleteScheduledFor", "deleteRequestedAt", "pendingPowerAction"));
+    }
+
+    @Override
+    Map<String, Object> observationValues(AuthenticatedUser actor, Vm vm, AdminBulkChangeSpec change) {
+        if (permissionAccess.canReadMetadata(actor, vm)) { return observationValues(vm, change); }
+        Map<String, Object> values = new LinkedHashMap<>(observationValues(vm, change));
+        if (change.kind() == AdminBulkChangeKind.VM_PERIOD) {
+            values.remove("deleteRequestedAt"); values.remove("deleteScheduledFor");
+        } else if (change.kind() == AdminBulkChangeKind.VM_POWER) {
+            values.remove("endDate"); values.put("expired", lifecycleService.isExpired(vm));
+        }
+        return values;
     }
 
     @Override

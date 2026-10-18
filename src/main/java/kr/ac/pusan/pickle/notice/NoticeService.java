@@ -18,6 +18,12 @@ import kr.ac.pusan.pickle.notice.dto.NoticeCreateRequest;
 import kr.ac.pusan.pickle.notice.dto.NoticeImageView;
 import kr.ac.pusan.pickle.notice.dto.NoticeUpdateRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.institution.InstitutionAuthorization;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
+import kr.ac.pusan.pickle.security.institution.InstitutionWorkTarget;
+import kr.ac.pusan.pickle.orgs.OrgAdministrationLock;
+import kr.ac.pusan.pickle.user.UserRole;
+import kr.ac.pusan.pickle.workspace.LifecycleActors;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -28,10 +34,10 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * The notice writes (contract {@code createAdminNotice} and friends).
  *
- * <p>Method security has already narrowed these to ORG_ADMIN and SYS_ADMIN, and
- * since V95 that is very nearly the whole rule. A notice belongs to no
- * organisation, so the two roles write the same thing: an organisation
- * administrator publishes to every user of the platform, and to anonymous
+ * <p>Method security supplies coarse admission; each mutation independently
+ * requires current global notice-management work or the existing SYS_ADMIN role.
+ * A notice belongs to no organisation. An authorized writer publishes to every
+ * user of the platform, and to anonymous
  * visitors too when it sets {@code popup}. An organisation names who supplies a
  * node or a resource; it is not a mechanism for deciding who may use a feature,
  * which is what the old scope axis had made it.</p>
@@ -71,17 +77,25 @@ public class NoticeService {
     private final NoticeImageStore noticeImageStore;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final InstitutionAuthorization authorization;
+    private final OrgAdministrationLock administrationLock;
+    private final LifecycleActors actors;
 
     public NoticeService(NoticeRepository noticeRepository, NoticeImageStore noticeImageStore,
-            UserRepository userRepository, AuditService auditService) {
+            UserRepository userRepository, AuditService auditService, InstitutionAuthorization authorization,
+            OrgAdministrationLock administrationLock, LifecycleActors actors) {
         this.noticeRepository = noticeRepository;
         this.noticeImageStore = noticeImageStore;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.authorization = authorization;
+        this.administrationLock = administrationLock;
+        this.actors = actors;
     }
 
     @Transactional
     public AdminNoticeView create(AuthenticatedUser actor, NoticeCreateRequest request, String ip) {
+        actor = currentWriter(actor);
         List<FieldValidationError> errors = new ArrayList<>();
         Instant startsAt = request.startsAt() == null ? Instant.now() : request.startsAt();
         if (request.endsAt() != null && !request.endsAt().isAfter(startsAt)) {
@@ -104,6 +118,7 @@ public class NoticeService {
     @Transactional
     public AdminNoticeView update(AuthenticatedUser actor, UUID noticeId,
             NoticeUpdateRequest request, String ip) {
+        actor = currentWriter(actor);
         Notice notice = writable(noticeId);
         if (request.isEmpty()) {
             throw ApiException.validationFailed(List.of(
@@ -168,6 +183,7 @@ public class NoticeService {
 
     @Transactional
     public void delete(AuthenticatedUser actor, UUID noticeId, String ip) {
+        actor = currentWriter(actor);
         Notice notice = writable(noticeId);
         UUID publicId = notice.getPublicId();
         String title = notice.getTitle();
@@ -180,6 +196,7 @@ public class NoticeService {
     @Transactional
     public NoticeImageView addImage(AuthenticatedUser actor, UUID noticeId, MultipartFile file,
             String ip) {
+        actor = currentWriter(actor);
         Notice notice = writable(noticeId);
         if (file == null || file.isEmpty()) {
             throw ApiException.validationFailed(List.of(
@@ -211,6 +228,7 @@ public class NoticeService {
 
     @Transactional
     public void deleteImage(AuthenticatedUser actor, UUID noticeId, UUID imageId, String ip) {
+        actor = currentWriter(actor);
         Notice notice = writable(noticeId);
         if (!noticeImageStore.delete(notice.getId(), imageId)) {
             throw notFound("해당 이미지가 존재하지 않습니다.");
@@ -222,7 +240,7 @@ public class NoticeService {
 
     /**
      * The notice a write may touch — since V95, any of them. Everyone the
-     * controller's gate admits administers every notice, so this resolves the
+     * service's global work guard admits administers every notice, so this resolves the
      * identifier and nothing more.
      *
      * <p>The 404 is therefore a fact and not a mask. It used to be one: an
@@ -232,6 +250,18 @@ public class NoticeService {
      * something. There is no such scope left to hide, and the masking that
      * remains is on the public read path in {@link NoticeQueryService}.
      */
+    private AuthenticatedUser currentWriter(AuthenticatedUser original) {
+        administrationLock.acquire();
+        AuthenticatedUser current = actors.currentAfterAdministrationLock(original);
+        if (current.role() != UserRole.SYS_ADMIN
+                && !authorization.decision(current, InstitutionWork.NOTICE_MANAGE,
+                        InstitutionWorkTarget.global()).allowed()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "공지를 관리할 권한이 없습니다.");
+        }
+        return current;
+    }
+
     private Notice writable(UUID noticeId) {
         return noticeRepository.findByPublicId(noticeId)
                 .orElseThrow(() -> notFound("해당 공지가 존재하지 않습니다."));

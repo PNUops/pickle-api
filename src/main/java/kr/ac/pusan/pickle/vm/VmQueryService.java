@@ -82,6 +82,7 @@ public class VmQueryService {
     private final PublicationAssembler publicationAssembler;
     private final VmSettingsService vmSettingsService;
     private final String sshHost;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions institutionPermissions;
 
     public VmQueryService(kr.ac.pusan.pickle.gpu.GpuVmQueryService gpuQuery, VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
             VmAccessService vmAccessService,
@@ -94,6 +95,7 @@ public class VmQueryService {
             VmEventRepository vmEventRepository,
             DomainRepository domainRepository, PublicationAssembler publicationAssembler,
             VmSettingsService vmSettingsService,
+            kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions institutionPermissions,
             @Value("${pickle.ssh.advertised-host:}") String sshHost) {
         this.gpuQuery = gpuQuery;
         this.vmRepository = vmRepository;
@@ -110,7 +112,7 @@ public class VmQueryService {
         this.vmEventRepository = vmEventRepository;
         this.domainRepository = domainRepository;
         this.publicationAssembler = publicationAssembler;
-        this.vmSettingsService = vmSettingsService;
+        this.vmSettingsService = vmSettingsService; this.institutionPermissions = institutionPermissions;
         this.sshHost = sshHost == null || sshHost.isBlank() ? null : sshHost;
     }
 
@@ -260,6 +262,28 @@ public class VmQueryService {
     /** Cross-institution support reads retain status metadata without domain-control proof values. */
     public VmDetailResponse supportDetailOf(Vm vm, boolean includeDomainVerification) {
         return detailOf(vm, null, false, null, includeDomainVerification);
+    }
+
+    /** Every linked resource keeps its own actual ownership and typed workspace projection. */
+    public VmDetailResponse supportDetailOf(Vm vm, AuthenticatedUser actor) {
+        VmDetailResponse metadata = supportDetailOf(vm, false);
+        Map<UUID, Domain> domains = domainRepository.findByVmId(vm.getId()).stream()
+                .collect(Collectors.toMap(Domain::getPublicId, java.util.function.Function.identity()));
+        List<PublicationView> publications = new java.util.ArrayList<>();
+        for (PublicationView publication : metadata.publications()) {
+            Domain domain = domains.get(publication.domain().id());
+            boolean raw = domain != null && publicationWork(actor,
+                    kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PUBLICATION_READ, domain.getOrgId(), domain.getWorkspaceId());
+            publications.add(raw ? publicationAssembler.toPublication(domain, vm.getPublicId()) : publication);
+        }
+        return metadata.withResourceProjections(List.copyOf(publications), gpuQuery.adminSummary(vm.getId(), actor));
+    }
+
+    private boolean publicationWork(AuthenticatedUser actor, kr.ac.pusan.pickle.security.institution.InstitutionWork work,
+            Long institution, Long workspace) {
+        return institutionPermissions.resource(actor, work, institution, workspace, true,
+                kr.ac.pusan.pickle.user.UserRole.SYS_VIEWER, kr.ac.pusan.pickle.user.UserRole.SYS_MANAGER,
+                kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN);
     }
 
     private VmDetailResponse detailOf(Vm vm, ResourceRole myResourceRole, boolean accessManageAllowed, Long actorId) {

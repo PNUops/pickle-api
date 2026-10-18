@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.request.dto;
 
+import kr.ac.pusan.pickle.access.ResourceType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -15,7 +16,11 @@ public record ResolveRosterRequest(
         @Size(min = 1, max = 500, message = "한 번에 1건에서 500건까지 확인할 수 있습니다.")
         List<@Size(max = 64, message = "학번은 64자 이하여야 합니다.") String> studentNos,
 
-        @Schema(description = "신청을 낼 기관. 워크스페이스 소유자가 아니라 이 기관의 신청을 승인할 수 있는 관리자로서 "
+        @Schema(description = "신청을 낼 기관. 워크스페이스 소유자가 아니라 이 기관의 명단 발급 업무를 가진 담당자로서 "
                 + "확인할 때 보냅니다.")
-        @Nullable UUID orgId) {
+        @Nullable UUID orgId,
+
+        @Schema(description = "기관 권한으로 명단을 확인할 신청 종류. VM 또는 LLM_API_KEY만 지원합니다. 워크스페이스 소유자는 생략할 수 있습니다.")
+        @Nullable ResourceType type) {
+    public ResolveRosterRequest(List<String> studentNos, UUID orgId) { this(studentNos, orgId, null); }
 }
