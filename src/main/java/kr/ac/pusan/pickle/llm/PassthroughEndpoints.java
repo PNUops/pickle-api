@@ -102,7 +102,7 @@ public final class PassthroughEndpoints {
      * permission neither side can exercise.
      */
     public static final List<String> GRANTABLE = List.of(CHAT, WEB_SEARCH, PDF_OCR,
-            IMAGES, EMBEDDINGS);
+            IMAGES, EMBEDDINGS, RERANK);
 
     /** Capabilities that are features of a chat request and mean nothing without it. */
     private static final Set<String> UNDER_CHAT = Set.of(WEB_SEARCH, PDF_OCR, CONTAINERS);

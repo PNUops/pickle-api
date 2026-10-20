@@ -73,7 +73,8 @@ public class AdminLlmUsageService {
     private static final Map<String, String> ROUTES_BY_CAPABILITY = Map.of(
             PassthroughEndpoints.CHAT, "{chat,messages,responses,completions}",
             PassthroughEndpoints.IMAGES, "{images,images_models}",
-            PassthroughEndpoints.EMBEDDINGS, "{embeddings}");
+            PassthroughEndpoints.EMBEDDINGS, "{embeddings}",
+            PassthroughEndpoints.RERANK, "{rerank}");
     private static final List<String> PRESSURE_REASONS = List.of(
             "quota_exhausted", "credit_exhausted", "rate_limit_requests",
             "rate_limit_tokens", "rate_limit_concurrency");

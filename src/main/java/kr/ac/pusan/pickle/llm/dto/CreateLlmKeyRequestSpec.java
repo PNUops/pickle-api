@@ -70,7 +70,7 @@ public record CreateLlmKeyRequestSpec(
                 arraySchema = @Schema(description = "신청자가 고른 기능 권한. 필수이며 빈 배열도 받습니다. "
                                 + "승인 화면의 초깃값이 되고, 무엇을 부여할지는 승인자가 정합니다. "
                                 + "지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, images, "
-                                + "embeddings이고 나머지는 422로 거절합니다. web_search와 pdf_ocr은 "
+                                + "embeddings, rerank이고 나머지는 422로 거절합니다. web_search와 pdf_ocr은 "
                                 + "chat과 함께 골라야 합니다."))
         @NotNull(message = "필요한 기능을 골라 주세요. 아무 기능도 쓰지 않으려면 빈 배열을 보내 주세요.")
         @Size(max = 20, message = "기능은 최대 20개까지 고를 수 있습니다.")
