@@ -283,22 +283,41 @@ class AdminLlmUsageBreakdownTest {
         event(keyOne.id(), paidModel, "images_models", null, 0, 0, hoursAgo(3));
         // A rerank answer may carry an amount and no tokens at all.
         event(keyOne.id(), "cohere/rerank-v3.5", "rerank", "0.00100000", 0, 0, hoursAgo(2));
+        // Speech output is metered by the vendor without tokens; transcription
+        // may carry tokens or only an amount.
+        event(keyOne.id(), "hexgrad/kokoro-82m", "audio_speech", "0.00002914", 0, 0, hoursAgo(2));
+        event(keyOne.id(), "openai/whisper-large-v3-turbo", "audio_transcriptions",
+                "0.00000516", 0, 0, hoursAgo(2));
+        event(keyTwo.id(), "openai/gpt-4o-mini-transcribe", "audio_transcriptions",
+                "0.00011625", 37, 14, hoursAgo(2));
         rollupService.refresh();
 
         platformUsage(sysToken, "orgId=" + orgA.getPublicId())
                 .andExpect(status().isOk())
-                // chat, images, embeddings, rerank: the grantable capabilities whose
-                // use a route can show. web_search and pdf_ocr are judged from the
+                // chat, images, embeddings, rerank, speech, transcriptions: the
+                // grantable capabilities whose use a route can show. web_search and pdf_ocr are judged from the
                 // body and have no row, and names nobody may hold yet have none either.
                 .andExpect(jsonPath("$.breakdown.passthroughGrants[*].capability")
                         .value(org.hamcrest.Matchers.contains(
-                                "chat", "images", "embeddings", "rerank")))
+                                "chat", "images", "embeddings", "rerank", "speech",
+                                "transcriptions")))
                 .andExpect(jsonPath(
                         "$.breakdown.passthroughGrants[?(@.capability == 'rerank')].usedKeys")
                         .value(org.hamcrest.Matchers.contains(1)))
                 .andExpect(jsonPath(
                         "$.breakdown.passthroughGrants[?(@.capability == 'rerank')].requests")
                         .value(org.hamcrest.Matchers.contains(1)))
+                .andExpect(jsonPath(
+                        "$.breakdown.passthroughGrants[?(@.capability == 'speech')].requests")
+                        .value(org.hamcrest.Matchers.contains(1)))
+                .andExpect(jsonPath(
+                        "$.breakdown.passthroughGrants[?(@.capability == 'transcriptions')]"
+                        + ".usedKeys")
+                        .value(org.hamcrest.Matchers.contains(2)))
+                .andExpect(jsonPath(
+                        "$.breakdown.passthroughGrants[?(@.capability == 'transcriptions')]"
+                        + ".requests")
+                        .value(org.hamcrest.Matchers.contains(2)))
                 // orgB도 이 기능을 가진 키를 하나 갖고 있다. 스코프가 빠지면 이 수가
                 // 곧바로 달라지므로, 이 단언이 스코프를 실제로 지킨다.
                 .andExpect(jsonPath(
