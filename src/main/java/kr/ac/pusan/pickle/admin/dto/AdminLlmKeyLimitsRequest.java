@@ -184,7 +184,7 @@ public class AdminLlmKeyLimitsRequest {
                     description = "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 "
                             + "하나도 쓸 수 없습니다(chat 포함). 모델 목록 둘과 반대로 이 목록은 "
                             + "채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, "
-                            + "pdf_ocr, images, embeddings, rerank이고, web_search와 pdf_ocr은 chat과 "
+                            + "pdf_ocr, images, embeddings, rerank, speech, transcriptions이고, web_search와 pdf_ocr은 chat과 "
                             + "함께 부여해야 합니다. 모델 조회는 이 값에 영향을 받지 않습니다."))
     public @Nullable List<String> getPassthroughEndpoints() {
         return passthroughEndpoints;

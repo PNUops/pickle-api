@@ -76,7 +76,7 @@ public record ApproveLlmKeyRequestSpec(
                         + "신청자가 고른 목록(reqPassthroughEndpoints)으로 승인하고, 빈 배열이면 기능을 "
                         + "하나도 쓸 수 없습니다(chat도 포함). 모델 목록과 반대로 이 목록은 "
                         + "채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, "
-                        + "images, embeddings, rerank이고, web_search와 pdf_ocr은 chat과 함께 "
+                        + "images, embeddings, rerank, speech, transcriptions이고, web_search와 pdf_ocr은 chat과 함께 "
                         + "부여해야 합니다. 모델 조회는 이 목록과 무관합니다."))
         @Size(max = 20, message = "기능은 최대 20개까지 허용할 수 있습니다.")
         @Nullable List<String> grantedPassthroughEndpoints,
