@@ -1122,7 +1122,7 @@ class AdminLlmKeyTest {
                 .andExpect(jsonPath("$.errors[0].field").value("llmKey.reqPassthroughEndpoints"));
 
         Map<String, Object> notYet = new java.util.LinkedHashMap<>(base);
-        notYet.put("llmKey", Map.of("reqPassthroughEndpoints", java.util.List.of("rerank")));
+        notYet.put("llmKey", Map.of("reqPassthroughEndpoints", java.util.List.of("speech")));
         postJson("/api/v1/requests", requesterToken, notYet)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field")

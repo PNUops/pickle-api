@@ -62,10 +62,10 @@ public class AdminLlmUsageService {
      * paid generation route and the free catalogue lookup is the whole reason
      * the two vocabularies are kept apart.
      *
-     * <p>{@code chat} lists the chat-protocol routes the gateway will open
-     * under it as well as {@code chat} itself; a route not served yet simply
-     * counts nothing. A capability judged from the request body rather than
-     * the route ({@code web_search}, {@code pdf_ocr}) has no entry, because a
+     * <p>{@code chat} lists every chat-protocol route the gateway serves under
+     * it: chat completions, messages, responses and legacy completions.
+     * {@code rerank} opens one route of the same name. A capability judged
+     * from the request body rather than the route ({@code web_search}, {@code pdf_ocr}) has no entry, because a
      * usage event does not record which plugin or engine a request used, and
      * a row built from the chat routes would count every chat request as a
      * use of it.
@@ -73,7 +73,8 @@ public class AdminLlmUsageService {
     private static final Map<String, String> ROUTES_BY_CAPABILITY = Map.of(
             PassthroughEndpoints.CHAT, "{chat,messages,responses,completions}",
             PassthroughEndpoints.IMAGES, "{images,images_models}",
-            PassthroughEndpoints.EMBEDDINGS, "{embeddings}");
+            PassthroughEndpoints.EMBEDDINGS, "{embeddings}",
+            PassthroughEndpoints.RERANK, "{rerank}");
     private static final List<String> PRESSURE_REASONS = List.of(
             "quota_exhausted", "credit_exhausted", "rate_limit_requests",
             "rate_limit_tokens", "rate_limit_concurrency");
