@@ -26,8 +26,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * single infra-bridge peer). Checks, in order:
  *
  * <ol>
- *   <li><b>Sub-path</b> — only the three known calls (sync/usage/bodies)
- *       exist on this surface; anything else answers a generic 403.</li>
+ *   <li><b>Sub-path</b> — only the known calls (sync/usage/bodies and the
+ *       four async-object ownership calls) exist on this surface; anything
+ *       else answers a generic 403.</li>
  *   <li><b>Source pin</b> — the TCP peer ({@code getRemoteAddr()}, never a
  *       spoofable X-Forwarded-For; the endpoint is called directly on :8080)
  *       must be the LLM gateway LXC.</li>
@@ -39,7 +40,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *   <li><b>Per-sub-path rate bucket</b> — {@code llm_sync} / {@code llm_usage}
  *       / {@code llm_bodies}, three buckets on purpose: the three calls have
  *       rates an order of magnitude apart, and one shared bucket would let
- *       the loud two throttle the one that carries authorization.</li>
+ *       the loud two throttle the one that carries authorization. The
+ *       ownership calls are counted in memory instead ({@link LlmObjectRateLimiter})
+ *       because lookup sits on a client's request path, and bind is not
+ *       counted at all: it only follows a counted intent, and a 429 there
+ *       would strand an object the vendor already accepted.</li>
  *   <li><b>Per-sub-path body cap</b> — a declared Content-Length over the cap
  *       answers 413, and the input stream is wrapped so a chunked body is
  *       hard-capped at the same byte count.</li>
@@ -50,6 +55,9 @@ public class LlmGatewayAuthFilter extends OncePerRequestFilter {
     static final String SYNC_RATE_LIMIT_SCOPE = "llm_sync";
     static final String USAGE_RATE_LIMIT_SCOPE = "llm_usage";
     static final String BODIES_RATE_LIMIT_SCOPE = "llm_bodies";
+    static final String OBJECT_INTENTS_RATE_LIMIT_SCOPE = "llm_objects_intents";
+    static final String OBJECT_LOOKUP_RATE_LIMIT_SCOPE = "llm_objects_lookup";
+    static final String OBJECT_RELEASE_RATE_LIMIT_SCOPE = "llm_objects_release";
 
     /** One peer, one subject: the source pin already narrows the caller. */
     private static final String RATE_LIMIT_SUBJECT = "gateway";
@@ -58,12 +66,19 @@ public class LlmGatewayAuthFilter extends OncePerRequestFilter {
     private final LlmGatewayProperties properties;
     private final RateLimitService rateLimitService;
     private final ProblemJsonWriter problemJsonWriter;
+    private final LlmObjectRateLimiter objectRateLimiter;
 
     public LlmGatewayAuthFilter(LlmGatewayProperties properties,
             RateLimitService rateLimitService, ProblemJsonWriter problemJsonWriter) {
+        this(properties, rateLimitService, problemJsonWriter, new LlmObjectRateLimiter());
+    }
+
+    LlmGatewayAuthFilter(LlmGatewayProperties properties, RateLimitService rateLimitService,
+            ProblemJsonWriter problemJsonWriter, LlmObjectRateLimiter objectRateLimiter) {
         this.properties = properties;
         this.rateLimitService = rateLimitService;
         this.problemJsonWriter = problemJsonWriter;
+        this.objectRateLimiter = objectRateLimiter;
     }
 
     @Override
@@ -83,8 +98,14 @@ public class LlmGatewayAuthFilter extends OncePerRequestFilter {
             return;
         }
         try {
-            rateLimitService.hit(subPath.rateLimitScope, RATE_LIMIT_SUBJECT,
-                    subPath.limitPerMinute(properties));
+            switch (subPath.counter) {
+                case DATABASE -> rateLimitService.hit(subPath.rateLimitScope, RATE_LIMIT_SUBJECT,
+                        subPath.limitPerMinute(properties));
+                case MEMORY -> objectRateLimiter.hit(subPath.rateLimitScope,
+                        subPath.limitPerMinute(properties));
+                case NONE -> {
+                }
+            }
         } catch (ApiException e) {
             rateLimited(request, response, e);
             return;
@@ -151,18 +172,29 @@ public class LlmGatewayAuthFilter extends OncePerRequestFilter {
                 "요청 본문이 너무 큽니다", "요청 본문이 허용 크기를 초과했습니다.");
     }
 
-    /** The three calls this surface serves, each with its own bucket and cap. */
+    /** Where a sub-path's calls are counted. */
+    private enum Counter { DATABASE, MEMORY, NONE }
+
+    /** The calls this surface serves, each with its own bucket and cap. */
     private enum SubPath {
-        SYNC("/internal/llm/sync", SYNC_RATE_LIMIT_SCOPE),
-        USAGE("/internal/llm/usage", USAGE_RATE_LIMIT_SCOPE),
-        BODIES("/internal/llm/bodies", BODIES_RATE_LIMIT_SCOPE);
+        SYNC("/internal/llm/sync", SYNC_RATE_LIMIT_SCOPE, Counter.DATABASE),
+        USAGE("/internal/llm/usage", USAGE_RATE_LIMIT_SCOPE, Counter.DATABASE),
+        BODIES("/internal/llm/bodies", BODIES_RATE_LIMIT_SCOPE, Counter.DATABASE),
+        OBJECT_INTENTS("/internal/llm/objects/intents", OBJECT_INTENTS_RATE_LIMIT_SCOPE, Counter.MEMORY),
+        // No scope: Counter.NONE never reads it. Bind only follows a counted
+        // intent, and a 429 here would strand an object the vendor accepted.
+        OBJECT_BIND("/internal/llm/objects/bind", null, Counter.NONE),
+        OBJECT_LOOKUP("/internal/llm/objects/lookup", OBJECT_LOOKUP_RATE_LIMIT_SCOPE, Counter.MEMORY),
+        OBJECT_RELEASE("/internal/llm/objects/release", OBJECT_RELEASE_RATE_LIMIT_SCOPE, Counter.MEMORY);
 
         private final String uri;
         private final String rateLimitScope;
+        private final Counter counter;
 
-        SubPath(String uri, String rateLimitScope) {
+        SubPath(String uri, String rateLimitScope, Counter counter) {
             this.uri = uri;
             this.rateLimitScope = rateLimitScope;
+            this.counter = counter;
         }
 
         static SubPath of(String requestUri) {
@@ -179,6 +211,10 @@ public class LlmGatewayAuthFilter extends OncePerRequestFilter {
                 case SYNC -> properties.syncRateLimitPerMinute();
                 case USAGE -> properties.usageRateLimitPerMinute();
                 case BODIES -> properties.bodiesRateLimitPerMinute();
+                case OBJECT_INTENTS -> properties.objectIntentsRateLimitPerMinute();
+                case OBJECT_LOOKUP -> properties.objectLookupRateLimitPerMinute();
+                case OBJECT_RELEASE -> properties.objectReleaseRateLimitPerMinute();
+                case OBJECT_BIND -> Integer.MAX_VALUE;
             };
         }
 
@@ -187,6 +223,8 @@ public class LlmGatewayAuthFilter extends OncePerRequestFilter {
                 case SYNC -> properties.maxSyncBodyBytes();
                 case USAGE -> properties.maxUsageBodyBytes();
                 case BODIES -> properties.maxBodiesBodyBytes();
+                case OBJECT_INTENTS, OBJECT_BIND, OBJECT_RELEASE -> properties.maxObjectBodyBytes();
+                case OBJECT_LOOKUP -> properties.maxObjectLookupBodyBytes();
             };
         }
     }
