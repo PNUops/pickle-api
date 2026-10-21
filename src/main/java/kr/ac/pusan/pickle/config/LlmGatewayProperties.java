@@ -41,6 +41,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param maxSyncBodyBytes   sync body cap (default 64 KiB)
  * @param maxUsageBodyBytes  usage body cap (default 4 MiB)
  * @param maxBodiesBodyBytes bodies body cap (default 8 MiB)
+ * @param objectIntentsRateLimitPerMinute async-object intent budget (default
+ *                          600/min). The object buckets are counted in
+ *                          memory, not in {@code auth_rate_limits}: lookup sits
+ *                          on a client's request path, and a row upsert per
+ *                          call would serialise it on one lock. Bind has no
+ *                          bucket — it can only follow a counted intent, and a
+ *                          429 there would strand an object the vendor accepted.
+ * @param objectLookupRateLimitPerMinute async-object lookup budget (default 6,000/min)
+ * @param objectReleaseRateLimitPerMinute async-object release budget (default 600/min)
+ * @param maxObjectBodyBytes intent, bind and release body cap (default 16 KiB)
+ * @param maxObjectLookupBodyBytes lookup body cap (default 64 KiB, up to 100 ids)
  */
 @ConfigurationProperties(prefix = "pickle.llm-gateway")
 public record LlmGatewayProperties(
@@ -52,7 +63,12 @@ public record LlmGatewayProperties(
         Integer bodiesRateLimitPerMinute,
         Long maxSyncBodyBytes,
         Long maxUsageBodyBytes,
-        Long maxBodiesBodyBytes) {
+        Long maxBodiesBodyBytes,
+        Integer objectIntentsRateLimitPerMinute,
+        Integer objectLookupRateLimitPerMinute,
+        Integer objectReleaseRateLimitPerMinute,
+        Long maxObjectBodyBytes,
+        Long maxObjectLookupBodyBytes) {
 
     public LlmGatewayProperties {
         allowedSourceIp = (allowedSourceIp != null && !allowedSourceIp.isBlank())
@@ -69,6 +85,16 @@ public record LlmGatewayProperties(
                 ? maxUsageBodyBytes : 4_194_304L;
         maxBodiesBodyBytes = (maxBodiesBodyBytes != null && maxBodiesBodyBytes > 0)
                 ? maxBodiesBodyBytes : 8_388_608L;
+        objectIntentsRateLimitPerMinute = (objectIntentsRateLimitPerMinute != null
+                && objectIntentsRateLimitPerMinute > 0) ? objectIntentsRateLimitPerMinute : 600;
+        objectLookupRateLimitPerMinute = (objectLookupRateLimitPerMinute != null
+                && objectLookupRateLimitPerMinute > 0) ? objectLookupRateLimitPerMinute : 6_000;
+        objectReleaseRateLimitPerMinute = (objectReleaseRateLimitPerMinute != null
+                && objectReleaseRateLimitPerMinute > 0) ? objectReleaseRateLimitPerMinute : 600;
+        maxObjectBodyBytes = (maxObjectBodyBytes != null && maxObjectBodyBytes > 0)
+                ? maxObjectBodyBytes : 16_384L;
+        maxObjectLookupBodyBytes = (maxObjectLookupBodyBytes != null && maxObjectLookupBodyBytes > 0)
+                ? maxObjectLookupBodyBytes : 65_536L;
     }
 
     /** True when no bearer secret is configured — the filter must fail closed. */

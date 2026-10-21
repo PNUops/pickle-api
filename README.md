@@ -971,6 +971,8 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_LLM_GATEWAY_SOURCE_IP` | `/internal/llm` 허용 출발지 | `172.30.1.40` |
 | `PICKLE_LLM_{SYNC,USAGE,BODIES}_RATE_LIMIT` | `/internal/llm` 하위 경로별 분당 한도(버킷 분리) | `60` / `120` / `120` |
 | `PICKLE_LLM_MAX_{SYNC,USAGE,BODIES}_BODY_BYTES` | `/internal/llm` 하위 경로별 요청 본문 상한 | `65536` / `4194304` / `8388608` |
+| `PICKLE_LLM_OBJECT_{INTENTS,LOOKUP,RELEASE}_RATE_LIMIT` | 비동기 객체 소유 기록 `/internal/llm/objects/*`의 분당 한도. DB가 아니라 프로세스 메모리에서 세며, `bind`에는 한도가 없습니다 | `600` / `6000` / `600` |
+| `PICKLE_LLM_MAX_OBJECT_BODY_BYTES` / `PICKLE_LLM_MAX_OBJECT_LOOKUP_BODY_BYTES` | 소유 기록 요청 본문 상한(`intents`, `bind`, `release` / `lookup`) | `16384` / `65536` |
 | `PICKLE_OPENROUTER_URL` | OpenRouter 관리 API 주소 | `https://openrouter.ai/api/v1` |
 | `PICKLE_OPENROUTER_DIRECT_POLLING_ENABLED` | 후보 전용 GET polling 경로. 켜면 일반 JobRunr worker가 꺼져 있어야 합니다 | `false` |
 | `PICKLE_OPENROUTER_DIRECT_POLLING_ACCOUNT_PUBLIC_IDS` | 직접 polling할 account public UUID allowlist. 쉼표로 구분하며 활성화할 때 비어 있으면 기동을 거부합니다 | 없음 |
