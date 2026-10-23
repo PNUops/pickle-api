@@ -126,6 +126,76 @@ class AdminLlmObservabilityTest {
     }
 
     @Test
+    void modelRoutesReuseVisibleUpstreamIdentitiesWithoutExposingInternalNames() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String direct = "route-direct-" + suffix;
+        String reverse = "route-reverse-" + suffix;
+        String foreign = "route-foreign-" + suffix;
+        String restricted = "route-restricted-" + suffix;
+        String disabled = "route-disabled-" + suffix;
+        String credit = "route-credit-" + suffix;
+        String unresolved = "route-unresolved-" + suffix;
+        model(direct, ownedRef.toUpperCase(java.util.Locale.ROOT), "openrouter", "PUBLIC", true, "TOKEN");
+        model(reverse, otherRef, ownedRef, "PUBLIC", true, "TOKEN");
+        model(foreign, otherRef, unknownRef, "PUBLIC", true, "TOKEN");
+        model(restricted, ownedRef, null, "RESTRICTED", true, "TOKEN");
+        model(disabled, ownedRef, null, "PUBLIC", false, "TOKEN");
+        model(credit, ownedRef, null, "PUBLIC", true, "CREDIT");
+        model(unresolved, unknownRef, "not-registered-" + suffix, "PUBLIC", true, "TOKEN");
+
+        JsonNode org = statusResponse(orgViewerToken, null);
+        JsonNode directRoute = findRoute(org, direct);
+        assertVisibleEdge(directRoute.get("primary"), findUpstream(org, ownedName));
+        assertVisibleEdge(directRoute.get("fallback"), findUpstream(org, "OpenRouter"));
+        JsonNode reverseRoute = findRoute(org, reverse);
+        assertUnavailableEdge(reverseRoute.get("primary"), "NOT_PROVIDED");
+        assertVisibleEdge(reverseRoute.get("fallback"), findUpstream(org, ownedName));
+        assertThat(findRoute(org, foreign)).isNull();
+        assertThat(findRoute(org, restricted)).isNull();
+        assertThat(findRoute(org, disabled)).isNull();
+        assertThat(findRoute(org, credit)).isNull();
+        assertThat(findRoute(org, unresolved)).isNull();
+        assertThat(org.get("modelRoutes").toString()).doesNotContain(ownedRef, otherRef, unknownRef,
+                "route-origin-model", restricted, disabled, credit, unresolved, otherName);
+
+        JsonNode system = statusResponse(sysViewerToken, null);
+        assertVisibleEdge(findRoute(system, reverse).get("primary"), findUpstream(system, otherName));
+        assertThat(findRoute(system, unresolved)).isNull();
+        assertThat(findRoute(system, restricted)).isNull();
+        assertThat(findRoute(system, disabled)).isNull();
+        assertThat(findRoute(system, credit)).isNull();
+        assertThat(system.get("modelRoutes").toString()).doesNotContain(ownedRef, otherRef, unknownRef,
+                "route-origin-model", "not-registered-" + suffix);
+
+        JsonNode scoped = statusResponse(sysViewerToken, orgA.getPublicId());
+        assertThat(findRoute(scoped, foreign)).isNull();
+        assertUnavailableEdge(findRoute(scoped, reverse).get("primary"), "NOT_PROVIDED");
+        assertThat(statusResponse(sysViewerToken, SeedFixtures.UNKNOWN_ID).get("modelRoutes").size()).isZero();
+    }
+
+    @Test
+    void modelRoutesConcealFallbackPresenceFromInstitutionReaders() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String absent = "route-absent-" + suffix;
+        String hidden = "route-hidden-" + suffix;
+        String missing = "route-missing-" + suffix;
+        model(absent, ownedRef, null, "PUBLIC", true, "TOKEN");
+        model(hidden, ownedRef, otherRef, "PUBLIC", true, "TOKEN");
+        model(missing, ownedRef, unknownRef, "PUBLIC", true, "TOKEN");
+
+        JsonNode org = statusResponse(orgViewerToken, null);
+        JsonNode absentEdge = findRoute(org, absent).get("fallback");
+        assertUnavailableEdge(absentEdge, "NOT_PROVIDED");
+        assertThat(findRoute(org, hidden).get("fallback")).isEqualTo(absentEdge);
+        assertThat(findRoute(org, missing).get("fallback")).isEqualTo(absentEdge);
+
+        JsonNode system = statusResponse(sysViewerToken, null);
+        assertUnavailableEdge(findRoute(system, absent).get("fallback"), "NOT_CONFIGURED");
+        assertUnavailableEdge(findRoute(system, missing).get("fallback"), "NOT_PROVIDED");
+        assertVisibleEdge(findRoute(system, hidden).get("fallback"), findUpstream(system, otherName));
+    }
+
+    @Test
     void upstreamRefsAreCaseInsensitiveUnique() {
         assertThatThrownBy(() -> jdbcTemplate.update("""
                 insert into llm_upstreams (ref, kind, display_name, dedicated, enabled,
@@ -327,6 +397,46 @@ class AdminLlmObservabilityTest {
         mockMvc.perform(get("/api/v1/admin/llm/metrics?orgId=" + orgB.getPublicId())
                         .header("Authorization", "Bearer " + orgViewerToken))
                 .andExpect(status().isNotFound());
+    }
+
+    private void model(String name, String primary, String fallback, String visibility,
+            boolean enabled, String budgetAxis) {
+        jdbcTemplate.update("""
+                insert into llm_models(public_name, upstream_ref, upstream_model, fallback_ref,
+                                       visibility, enabled, budget_axis)
+                values (?, ?, 'route-origin-model', ?, ?, ?, ?)
+                """, name, primary, fallback, visibility, enabled, budgetAxis);
+    }
+
+    private JsonNode statusResponse(String token, UUID orgId) throws Exception {
+        String path = "/api/v1/admin/llm/status" + (orgId == null ? "" : "?orgId=" + orgId);
+        String body = mockMvc.perform(get(path).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        JsonNode response = objectMapper.readTree(body);
+        assertThat(response.get("modelRoutes")).isNotNull();
+        assertThat(response.get("modelRoutes").isArray()).isTrue();
+        return response;
+    }
+
+    private JsonNode findRoute(JsonNode response, String publicName) {
+        for (JsonNode route : response.get("modelRoutes")) {
+            if (publicName.equals(route.get("publicName").asString())) { return route; }
+        }
+        return null;
+    }
+
+    private void assertVisibleEdge(JsonNode edge, JsonNode upstream) {
+        assertThat(edge.get("state").asString()).isEqualTo("VISIBLE");
+        assertThat(edge.get("upstreamId")).isEqualTo(upstream.get("id"));
+        assertThat(edge.get("upstreamName")).isEqualTo(upstream.get("name"));
+        assertThat(edge.size()).isEqualTo(3);
+    }
+
+    private void assertUnavailableEdge(JsonNode edge, String state) {
+        assertThat(edge.get("state").asString()).isEqualTo(state);
+        assertThat(edge.get("upstreamId").isNull()).isTrue();
+        assertThat(edge.get("upstreamName").isNull()).isTrue();
+        assertThat(edge.size()).isEqualTo(3);
     }
 
     private void reportGatewayAndUpstreams() {

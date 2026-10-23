@@ -47,6 +47,8 @@ public class AdminLlmObservabilityController {
     @GetMapping("/status")
     @Operation(operationId = "getAdminLlmStatus", summary = "관리자 LLM 서비스 상태",
             description = "게이트웨이 자기보고와 upstream별 passive·active·catalog 현재 상태를 조회합니다. "
+                    + "현재 범위에서 읽을 수 있는 공급원에 연결된 공개 TOKEN 모델의 주·대체 구성 관계도 제공하며 "
+                    + "전체 모델 목록이나 실제 처리 경로를 뜻하지 않습니다. "
                     + "조회 과정에서 gateway나 upstream을 직접 호출하지 않으며 변경 작업도 제공하지 않습니다.")
     public LlmStatusResponse status(
             @AuthenticationPrincipal AuthenticatedUser principal,

@@ -239,6 +239,35 @@ class InstitutionLlmAuthorizationTest {
     }
 
     @Test
+    void modelRoutesRequireCurrentObservationWorkAndAnActualServiceRelation() throws Exception {
+        String ref = "policy-route-" + UUID.randomUUID();
+        String model = "policy-model-" + UUID.randomUUID();
+        jdbc.update("insert into llm_upstreams(ref,kind,display_name,org_id,dedicated,enabled) values(?,'ON_PREM','Visible route',?,true,true)",
+                ref, first.getId());
+        jdbc.update("insert into llm_models(public_name,upstream_ref,upstream_model,visibility,enabled,budget_axis) values(?,?,'private-origin','PUBLIC',true,'TOKEN')",
+                model, ref);
+        User reader = selected(first, Set.of(InstitutionWork.LLM_OBSERVE), one);
+        String path = "/api/v1/admin/llm/status?orgId=" + first.getPublicId();
+        request(reader, path).andExpect(status().isForbidden());
+        requestRow(first, one, "route service relation");
+        request(reader, path).andExpect(status().isOk())
+                .andExpect(jsonPath("$.modelRoutes[?(@.publicName == '%s')].primary.state".formatted(model)).value("VISIBLE"));
+
+        replace(reader, first, InstitutionAssignment.selected(reader.getPublicId(), first.getPublicId(),
+                Set.of(InstitutionWork.LLM_MODEL_CATALOGUE_READ, InstitutionWork.LLM_METADATA_READ),
+                Map.of(InstitutionWorkGroup.LLM, InstitutionWorkspaceScope.listed(Set.of(one.getPublicId()))), 0));
+        request(reader, path).andExpect(status().isForbidden());
+        replace(reader, first, InstitutionAssignment.selected(reader.getPublicId(), first.getPublicId(),
+                Set.of(InstitutionWork.LLM_OBSERVE),
+                Map.of(InstitutionWorkGroup.LLM, InstitutionWorkspaceScope.listed(Set.of(one.getPublicId()))), 0));
+        request(reader, path).andExpect(status().isOk())
+                .andExpect(jsonPath("$.modelRoutes[?(@.publicName == '%s')].primary.state".formatted(model)).value("VISIBLE"));
+        request(reader, "/api/v1/admin/llm/status?orgId=" + second.getPublicId()).andExpect(status().isNotFound());
+        jdbc.update("update workspaces set deleted_at=now(),deleted_by=? where id=?", owner.getId(), one.getId());
+        request(reader, path).andExpect(status().isForbidden());
+    }
+
+    @Test
     void listedCurrentServiceReferencesNeedALiveActualLlmRelationWhileAllAllowsZeroResources() throws Exception {
         User listed = selected(first, Set.of(InstitutionWork.LLM_OBSERVE), one);
         request(listed, "/api/v1/admin/llm/status?orgId=" + first.getPublicId()).andExpect(status().isForbidden());
