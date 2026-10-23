@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.config.ClockConfig;
+import kr.ac.pusan.pickle.llm.LlmQuotaService;
 import kr.ac.pusan.pickle.llm.LlmSyncService;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncRequest;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncResponse;
@@ -45,6 +46,8 @@ import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -92,6 +95,8 @@ class AdminBulkChangeTest {
     private WorkspaceRepository workspaceRepository;
     @Autowired
     private LlmSyncService llmSyncService;
+    @Autowired
+    private LlmQuotaService quotaService;
     @Autowired
     private LlmOpenRouterProvisioner provisioner;
     @Autowired
@@ -1338,6 +1343,50 @@ class AdminBulkChangeTest {
     }
 
     // ── request helpers ────────────────────────────────────────────────────
+
+    @ParameterizedTest
+    @ValueSource(longs = {0, 10_000})
+    void bulkRemovingAnExhaustedDailyLimitReleasesTheGatewayRefusal(long initialLimit)
+            throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "unlimited-quota-bulk", "ACTIVE", null);
+        jdbcTemplate.update("update llm_api_keys set daily_tokens = ? where id = ?",
+                initialLimit, key.id());
+        jdbcTemplate.update("""
+                insert into llm_usage_events (event_id, key_id, public_model_name, budget_axis,
+                        status, input_tokens, output_tokens, requested_at)
+                values (?, ?, 'quota-test', 'TOKEN', 'OK', 11000, 0, now())
+                """, UUID.randomUUID().toString(), key.id());
+        quotaService.refresh();
+        assertThat(jdbcTemplate.queryForObject(
+                "select quota_exhausted from llm_api_keys where id = ?",
+                Boolean.class, key.id())).isTrue();
+        Map<String, Object> unlimited = new LinkedHashMap<>();
+        unlimited.put("dailyTokens", null);
+        JsonNode applied = applyJson(sysAdminToken,
+                request("LLM_KEY", List.of(key.publicId()), limits(unlimited)));
+        assertThat(item(applied, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(keyRow(key).get("daily_tokens")).isNull();
+
+        long beforeSweep = generation();
+        int changed = quotaService.refresh();
+        var document = (LlmSyncResponse.Document) llmSyncService.sync(objectMapper.convertValue(
+                Map.of("appliedGeneration", 0, "supportedFormat", 1, "inFlight", 0),
+                LlmSyncRequest.class));
+        var synced = document.keys().stream()
+                .filter(entry -> entry.keyId().equals(key.publicId().toString()))
+                .findFirst().orElseThrow();
+        org.assertj.core.api.SoftAssertions.assertSoftly(soft -> {
+            soft.assertThat(changed).as("bulk clear is reconciled by the sweep").isEqualTo(1);
+            soft.assertThat(jdbcTemplate.queryForObject(
+                    "select quota_exhausted from llm_api_keys where id = ?",
+                    Boolean.class, key.id())).as("stored unlimited key").isFalse();
+            soft.assertThat(synced.quotaExhausted()).as("gateway unlimited key").isFalse();
+            soft.assertThat(document.generation()).as("one changed quota generation")
+                    .isEqualTo(beforeSweep + 1);
+        });
+        assertThat(quotaService.refresh()).isZero();
+        assertThat(generation()).isEqualTo(document.generation());
+    }
 
     private void refused(Map<String, Object> body, String field) throws Exception {
         mockMvc.perform(post(PREVIEW).header("Authorization", "Bearer " + sysAdminToken)
