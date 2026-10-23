@@ -7328,6 +7328,53 @@ components:
       - "totalEvents"
       - "upstreams"
       type: "object"
+    LlmModelRouteReference:
+      description: "같은 상태 응답에 포함된 등록 공급원의 공개 참조. VISIBLE일 때만 ID·이름을 반환하고 나머지 상태에서는\
+        \ 둘 다 null입니다."
+      properties:
+        state:
+          $ref: "#/components/schemas/LlmModelRouteState"
+        upstreamId:
+          description: "현재 응답에서 읽을 수 있는 등록 공급원 공개 ID"
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        upstreamName:
+          description: "현재 응답에서 읽을 수 있는 등록 공급원 표시 이름"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "state"
+      type: "object"
+    LlmModelRouteResponse:
+      description: "공개·활성 TOKEN 모델의 주·대체 공급원 구성 관계. 현재 응답에서 읽을 수 있는 공급원 연결이 하나 이상인\
+        \ 모델만 포함하며 전체 모델 목록이나 실제 처리 경로가 아닙니다."
+      properties:
+        fallback:
+          $ref: "#/components/schemas/LlmModelRouteReference"
+          description: "대체 공급원 구성의 공개 참조"
+        primary:
+          $ref: "#/components/schemas/LlmModelRouteReference"
+          description: "주 공급원 구성의 공개 참조"
+        publicName:
+          description: "요청의 model 필드에 사용하는 공개 모델명"
+          type: "string"
+      required:
+      - "fallback"
+      - "primary"
+      - "publicName"
+      type: "object"
+    LlmModelRouteState:
+      description: "VISIBLE은 현재 응답에서 확인할 수 있는 등록 공급원입니다. NOT_CONFIGURED는 SYS 응답에서만\
+        \ 구성이 없음을 뜻합니다. NOT_PROVIDED는 참조를 제공하지 않는 상태이며 ORG에서는 미설정·범위 밖·미등록을 구별하지 않\
+        습니다."
+      enum:
+      - "VISIBLE"
+      - "NOT_CONFIGURED"
+      - "NOT_PROVIDED"
+      type: "string"
     LlmPassiveObservationResponse:
       description: "실제 사용자 요청에서 얻은 passive 관측. lastAttemptAt은 표시용이며, 가용성 판정은 최근 15분\
         \ 안의 lastSuccessAt·lastFailureAt만 사용합니다."
@@ -7386,6 +7433,12 @@ components:
       properties:
         gateway:
           $ref: "#/components/schemas/LlmGatewayStatusResponse"
+        modelRoutes:
+          description: "공개·활성 TOKEN 모델 중 현재 응답의 읽을 수 있는 공급원과 연결된 구성 관계. 전체 모델 목록이\
+            \ 아니며 빈 배열은 현재 범위에서 연결을 확인할 수 없음을 뜻합니다. 실제 처리·사용량·영향 키를 나타내지 않습니다."
+          items:
+            $ref: "#/components/schemas/LlmModelRouteResponse"
+          type: "array"
         observedAt:
           format: "date-time"
           type: "string"
@@ -7395,6 +7448,7 @@ components:
           type: "array"
       required:
       - "gateway"
+      - "modelRoutes"
       - "observedAt"
       - "upstreams"
       type: "object"
@@ -14251,7 +14305,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.109.0"
+  version: "0.110.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -16266,8 +16320,9 @@ paths:
       - "admin"
   /admin/llm/status:
     get:
-      description: "게이트웨이 자기보고와 upstream별 passive·active·catalog 현재 상태를 조회합니다. 조회\
-        \ 과정에서 gateway나 upstream을 직접 호출하지 않으며 변경 작업도 제공하지 않습니다."
+      description: "게이트웨이 자기보고와 upstream별 passive·active·catalog 현재 상태를 조회합니다. 현재\
+        \ 범위에서 읽을 수 있는 공급원에 연결된 공개 TOKEN 모델의 주·대체 구성 관계도 제공하며 전체 모델 목록이나 실제 처리 경로를\
+        \ 뜻하지 않습니다. 조회 과정에서 gateway나 upstream을 직접 호출하지 않으며 변경 작업도 제공하지 않습니다."
       operationId: "getAdminLlmStatus"
       parameters:
       - description: "조회할 기관. 기관 계층은 맡은 기관만 지정할 수 있습니다."

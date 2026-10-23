@@ -6,9 +6,11 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.LlmActiveObservationResponse;
@@ -19,6 +21,9 @@ import kr.ac.pusan.pickle.admin.dto.LlmGatewayReportState;
 import kr.ac.pusan.pickle.admin.dto.LlmGatewayStatusResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmLocalRejectionMetricResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmMetricsResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmModelRouteResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmModelRouteResponse.LlmModelRouteReference;
+import kr.ac.pusan.pickle.admin.dto.LlmModelRouteResponse.LlmModelRouteState;
 import kr.ac.pusan.pickle.admin.dto.LlmPassiveObservationResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmStatusResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUpstreamAvailability;
@@ -99,6 +104,7 @@ public class AdminLlmObservabilityService {
         Set<String> allowedRefs = allowedRefs(actor, scope);
 
         List<LlmUpstreamStatusResponse> upstreams = new ArrayList<>();
+        Map<String, LlmUpstreamStatusResponse> visibleUpstreams = new HashMap<>();
         jdbcTemplate.query("""
                 select u.public_id, u.ref as registry_ref, u.kind, u.display_name,
                        o.public_id as org_public_id, u.dedicated, u.enabled, u.passthrough,
@@ -130,12 +136,40 @@ public class AdminLlmObservabilityService {
                     gatewayReportState, now);
             LlmUpstreamAvailability availability = availability(row, reportState,
                     gateway, gatewayReportState, now);
-            upstreams.add(toStatus(row, reportState, availability, sysDiagnostics, now));
+            LlmUpstreamStatusResponse response = toStatus(row, reportState, availability, sysDiagnostics, now);
+            upstreams.add(response);
+            if (response.id() != null) { visibleUpstreams.put(actualRef, response); }
         });
 
         return new LlmStatusResponse(now,
                 gatewayResponse(gateway, gatewayReportState, sysDiagnostics, now),
-                List.copyOf(upstreams));
+                List.copyOf(upstreams), modelRoutes(visibleUpstreams, sysDiagnostics));
+    }
+
+    /** Every visible edge must resolve to an identity already admitted to this response. */
+    private List<LlmModelRouteResponse> modelRoutes(
+            Map<String, LlmUpstreamStatusResponse> visibleUpstreams, boolean sysDiagnostics) {
+        return jdbcTemplate.query("""
+                select public_name, upstream_ref, fallback_ref
+                  from llm_models
+                 where enabled and visibility = 'PUBLIC' and budget_axis = 'TOKEN'
+                 order by public_name
+                """, (rs, n) -> new LlmModelRouteResponse(rs.getString("public_name"),
+                        routeReference(rs.getString("upstream_ref"), visibleUpstreams, sysDiagnostics),
+                        routeReference(rs.getString("fallback_ref"), visibleUpstreams, sysDiagnostics)))
+                .stream().filter(route -> route.primary().state() == LlmModelRouteState.VISIBLE
+                        || route.fallback().state() == LlmModelRouteState.VISIBLE).toList();
+    }
+
+    private static LlmModelRouteReference routeReference(@Nullable String ref,
+            Map<String, LlmUpstreamStatusResponse> visibleUpstreams, boolean sysDiagnostics) {
+        if (ref == null) {
+            return new LlmModelRouteReference(sysDiagnostics
+                    ? LlmModelRouteState.NOT_CONFIGURED : LlmModelRouteState.NOT_PROVIDED, null, null);
+        }
+        LlmUpstreamStatusResponse upstream = visibleUpstreams.get(ref.toLowerCase(Locale.ROOT));
+        if (upstream == null) { return new LlmModelRouteReference(LlmModelRouteState.NOT_PROVIDED, null, null); }
+        return new LlmModelRouteReference(LlmModelRouteState.VISIBLE, upstream.id(), upstream.name());
     }
 
     /** Shared global gateway read with the same SYS diagnostics redaction as the status API. */
