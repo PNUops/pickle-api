@@ -19,11 +19,8 @@ import org.jspecify.annotations.Nullable;
  * Contract schema {@code ApproveLlmKeyRequestSpec}: what the reviewer grants an
  * LLM API key request.
  *
- * <p>All four are optional, and that is the ordinary approval: a key with no
- * limits of its own runs on the gateway's defaults, which is what the service
- * is tuned for. Granting a number here is the exception a reviewer makes
- * deliberately, so leaving the form untouched must mean "the usual", not "no
- * limit at all".
+ * <p>RPM, TPM and concurrency use the gateway's defaults when absent. A null
+ * daily token allowance is unlimited; zero closes the token budget axis.
  */
 public record ApproveLlmKeyRequestSpec(
         @Schema(description = "부여 분당 요청 수. 비우면 서비스 기본값이 적용됩니다.")

@@ -827,6 +827,10 @@ JobRunr 작업 실패로 드러납니다. 기본 보존 설정은 0으로, 원�
 
 ### 공유 워커를 끈 LLM 일일 한도 갱신
 
+일일 토큰 한도는 `null`이면 무제한이고 `0`이면 토큰 축을 차단합니다. 한도 변경에 따른
+차단 상태는 다음 갱신에서 다시 계산합니다. 유한 한도를 해제하면 이전 소진 상태도
+해제하며, 실제 차단 상태가 바뀐 경우에만 게이트웨이 generation을 갱신합니다.
+
 기존 LLM 키의 일일 토큰 한도를 유지하면서 공유 JobRunr 작업을 실행하지 않아야 하는
 후보 API에서 `PICKLE_LLM_QUOTA_DIRECT_ENABLED=true`와
 `--jobrunr.background-job-server.enabled=false`를 함께 설정합니다. 한쪽만 설정하면

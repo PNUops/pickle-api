@@ -199,6 +199,53 @@ class LlmDailyQuotaTest {
     }
 
     @Test
+    void aPreviouslyExhaustedKeyIsReleasedWhenItsDailyLimitIsRemoved() {
+        recordUsage(keyId, 1_200, 0, NOON_KST);
+        quotaService.refresh();
+        assertThat(exhausted(keyId)).isTrue();
+        jdbcTemplate.update("update llm_api_keys set daily_tokens = null where id = ?", keyId);
+        long before = generation();
+
+        int changed = quotaService.refresh();
+
+        org.assertj.core.api.SoftAssertions.assertSoftly(soft -> {
+            soft.assertThat(changed).as("a stale finite-limit refusal is a changed state").isEqualTo(1);
+            soft.assertThat(exhausted(keyId)).as("null daily limit has no token refusal").isFalse();
+            soft.assertThat(generation()).as("the gateway receives the released key").isGreaterThan(before);
+        });
+        long after = generation();
+        assertThat(quotaService.refresh()).isZero();
+        assertThat(generation()).isEqualTo(after);
+    }
+
+    @Test
+    void switchingFiniteAndZeroDailyLimitsRecalculatesTheSameRawUsage() {
+        recordUsage(keyId, 400, 300, NOON_KST);
+        assertThat(quotaService.refresh()).isZero();
+        assertThat(exhausted(keyId)).isFalse();
+
+        jdbcTemplate.update("update llm_api_keys set daily_tokens = 0 where id = ?", keyId);
+        assertThat(quotaService.refresh()).isEqualTo(1);
+        assertThat(exhausted(keyId)).isTrue();
+
+        jdbcTemplate.update("update llm_api_keys set daily_tokens = 1000 where id = ?", keyId);
+        assertThat(quotaService.refresh()).isEqualTo(1);
+        assertThat(exhausted(keyId)).isFalse();
+
+        jdbcTemplate.update("update llm_api_keys set daily_tokens = 500 where id = ?", keyId);
+        assertThat(quotaService.refresh()).isEqualTo(1);
+        assertThat(exhausted(keyId)).isTrue();
+
+        jdbcTemplate.update("update llm_api_keys set daily_tokens = null where id = ?", keyId);
+        assertThat(quotaService.refresh()).isEqualTo(1);
+        assertThat(exhausted(keyId)).isFalse();
+
+        jdbcTemplate.update("update llm_api_keys set daily_tokens = 0 where id = ?", keyId);
+        assertThat(quotaService.refresh()).isEqualTo(1);
+        assertThat(exhausted(keyId)).isTrue();
+    }
+
+    @Test
     void creditAxisUsageNeverDrainsTheTokenAllowance() {
         // Commercial usage answers to the key's money limit; summing it here
         // would let paid traffic exhaust the self-serve budget — the exact
