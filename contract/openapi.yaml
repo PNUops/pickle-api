@@ -1079,6 +1079,59 @@ components:
       - "requests"
       - "to"
       type: "object"
+    AdminLlmCapacityResponse:
+      description: "요청 시각 기준의 관측된 수요. 최종 upstream 소비는 중간 재시도 부하나 개인별 GPU 점유율을 뜻하지\
+        \ 않습니다."
+      properties:
+        bucketSeconds:
+          format: "int32"
+          type: "integer"
+        consumers:
+          $ref: "#/components/schemas/CapacityConsumers"
+        from:
+          format: "date-time"
+          type: "string"
+        generatedAt:
+          format: "date-time"
+          type: "string"
+        quality:
+          $ref: "#/components/schemas/CapacityQuality"
+        reasons:
+          items:
+            $ref: "#/components/schemas/CapacityReason"
+          type: "array"
+        selectors:
+          $ref: "#/components/schemas/CapacitySelectors"
+        series:
+          items:
+            $ref: "#/components/schemas/CapacitySeriesPoint"
+          type: "array"
+        summary:
+          $ref: "#/components/schemas/CapacityCounts"
+        telemetry:
+          $ref: "#/components/schemas/CapacityTelemetry"
+        telemetryVisible:
+          type: "boolean"
+        timezone:
+          type: "string"
+        to:
+          format: "date-time"
+          type: "string"
+      required:
+      - "bucketSeconds"
+      - "consumers"
+      - "from"
+      - "generatedAt"
+      - "quality"
+      - "reasons"
+      - "selectors"
+      - "series"
+      - "summary"
+      - "telemetry"
+      - "telemetryVisible"
+      - "timezone"
+      - "to"
+      type: "object"
     AdminLlmKeyDetailResponse:
       properties:
         accountReferences:
@@ -3777,6 +3830,356 @@ components:
       - "cpuThreads"
       - "memoryMb"
       type: "object"
+    CapacityConsumer:
+      properties:
+        counts:
+          $ref: "#/components/schemas/CapacityCounts"
+        currentLimits:
+          anyOf:
+          - $ref: "#/components/schemas/CapacityCurrentLimits"
+          - type: "null"
+        keyId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        keyName:
+          type:
+          - "string"
+          - "null"
+        orgId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          type:
+          - "string"
+          - "null"
+        workspaceId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        workspaceName:
+          type:
+          - "string"
+          - "null"
+      required:
+      - "counts"
+      type: "object"
+    CapacityConsumers:
+      properties:
+        group:
+          $ref: "#/components/schemas/CapacityGroup"
+        items:
+          items:
+            $ref: "#/components/schemas/CapacityConsumer"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "group"
+      - "items"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
+    CapacityCounts:
+      description: "보존된 raw event의 관측 수. 요청 기간 전체가 삭제 경계 밖이면 수치는 null입니다. 부분 삭제 기간\
+        은 quality를 함께 확인해야 합니다."
+      properties:
+        canceled:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        costUsd:
+          description: "공급자가 보고한 요청 금액의 합. TOKEN/CREDIT 축과 독립이며 사용자·플랫폼 부담이나 원가를 확\
+            정하지 않습니다. 권한 없음 또는 가격 표본 없음은 null입니다."
+          type:
+          - "number"
+          - "null"
+        creditAxisRequests:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        estimatedRequests:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        failed:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        financeVisible:
+          type: "boolean"
+        inputTokens:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        outputTokens:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        pricedRequests:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        rateLimited:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        requests:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        succeeded:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        tokenAxisRequests:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        unknownAxisRequests:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        unknownFinalUpstreamRequests:
+          description: "최종 upstream 미기록 요청 수. 모델 판정 전 거절과 과거 미귀속도 포함하며 특정 장비 수요로 귀\
+            속하지 않습니다."
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        unknownKeyRequests:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        unknownModelRequests:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "financeVisible"
+      type: "object"
+    CapacityCurrentLimits:
+      description: "조회 시점에 저장된 키별 override. 과거 요청 당시 적용값이나 gateway 반영 완료가 아닙니다. null\
+        \ RPM/TPM/동시성의 실제 서비스 기본값은 보고되지 않았습니다."
+      properties:
+        concurrency:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        configurationObservedAt:
+          format: "date-time"
+          type: "string"
+        dailyTokens:
+          description: "저장된 일일 TOKEN 한도. null은 무제한, 0은 TOKEN 축 사용 불가입니다."
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        quotaExhausted:
+          type: "boolean"
+        rpm:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        serviceDefaultsReported:
+          type: "boolean"
+        tpm:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "configurationObservedAt"
+      - "quotaExhausted"
+      - "serviceDefaultsReported"
+      type: "object"
+    CapacityGroup:
+      enum:
+      - "ORG"
+      - "WORKSPACE"
+      - "KEY"
+      type: "string"
+    CapacityQuality:
+      description: "보존과 전달 품질. latestUsageReceivedAt은 API 수신 시각이며 completeness watermark가\
+        \ 아닙니다. 집계가 비어도 미수집·전송 손실이 없다는 뜻은 아닙니다."
+      properties:
+        completeness:
+          type: "string"
+        configuredRetentionDays:
+          format: "int32"
+          type: "integer"
+        gateway:
+          $ref: "#/components/schemas/LlmGatewayStatusResponse"
+        latestUsageReceivedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        rawHistoryState:
+          $ref: "#/components/schemas/CapacityRawHistoryState"
+        rawRetainedFrom:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        rollupLastSuccessAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "completeness"
+      - "configuredRetentionDays"
+      - "gateway"
+      - "rawHistoryState"
+      type: "object"
+    CapacityRawHistoryState:
+      enum:
+      - "NOT_SWEPT"
+      - "WITHIN_RETAINED_RANGE"
+      - "PARTIALLY_SWEPT"
+      - "FULLY_SWEPT"
+      type: "string"
+    CapacityReason:
+      description: "정상 응답을 제외한 원문 오류 유형과 분류의 조합. GLOBAL_ADMISSION은 실제 attempts=0 근\
+        거가 있을 때만 분류하며 과거 시도 횟수 미기록은 미분류로 보존합니다. PROVIDER는 공급 경로 결과이며 공급자 과실이나 중간 처\
+        리 경로를 확정하지 않습니다."
+      properties:
+        category:
+          $ref: "#/components/schemas/CapacityReasonCategory"
+        errorType:
+          type:
+          - "string"
+          - "null"
+        knownKeys:
+          format: "int64"
+          type: "integer"
+        requests:
+          format: "int64"
+          type: "integer"
+      required:
+      - "category"
+      - "knownKeys"
+      - "requests"
+      type: "object"
+    CapacityReasonCategory:
+      enum:
+      - "USER_QUOTA"
+      - "ENDPOINT_POLICY"
+      - "MODEL_POLICY"
+      - "LARGE_REQUEST"
+      - "GLOBAL_ADMISSION"
+      - "PROVIDER"
+      - "INPUT"
+      - "AUTHENTICATION"
+      - "SERVICE"
+      - "CANCELED"
+      - "UNCLASSIFIED"
+      type: "string"
+    CapacityReference:
+      properties:
+        id:
+          format: "uuid"
+          type: "string"
+        name:
+          type: "string"
+      required:
+      - "id"
+      - "name"
+      type: "object"
+    CapacityReferenceCollection:
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/CapacityReference"
+          type: "array"
+        totalItems:
+          format: "int64"
+          type: "integer"
+        truncated:
+          type: "boolean"
+      required:
+      - "items"
+      - "totalItems"
+      - "truncated"
+      type: "object"
+    CapacitySelectors:
+      description: "현재 관측 업무가 허용한 실제 키 관계와 보이는 등록 공급원의 최소 참조. 워크스페이스 관리나 전역 장비 권한이\
+        \ 아닙니다."
+      properties:
+        institutions:
+          $ref: "#/components/schemas/CapacityReferenceCollection"
+        upstreams:
+          $ref: "#/components/schemas/CapacityReferenceCollection"
+        workspaces:
+          $ref: "#/components/schemas/CapacityReferenceCollection"
+      required:
+      - "institutions"
+      - "upstreams"
+      - "workspaces"
+      type: "object"
+    CapacitySeriesPoint:
+      properties:
+        counts:
+          $ref: "#/components/schemas/CapacityCounts"
+        from:
+          format: "date-time"
+          type: "string"
+        rawHistoryState:
+          $ref: "#/components/schemas/CapacityRawHistoryState"
+        to:
+          format: "date-time"
+          type: "string"
+      required:
+      - "counts"
+      - "from"
+      - "rawHistoryState"
+      - "to"
+      type: "object"
+    CapacityTelemetry:
+      properties:
+        status:
+          $ref: "#/components/schemas/CapacityTelemetryStatus"
+      required:
+      - "status"
+      type: "object"
+    CapacityTelemetryStatus:
+      enum:
+      - "NOT_CONFIGURED"
+      - "NOT_PROVIDED"
+      type: "string"
     CapacityTrendPointResponse:
       properties:
         day:
@@ -14305,7 +14708,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.110.0"
+  version: "0.111.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -15917,6 +16320,117 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "OpenRouter 사업 계정 사용량"
+      tags:
+      - "admin"
+  /admin/llm/capacity:
+    get:
+      description: "같은 절대 기간의 보존된 raw event에서 수요·거절 사유·소비처를 조회합니다. 기관·워크스페이스와 관측 업\
+        무 범위를 집계 전에 적용합니다. 실제 장비 지표는 아직 제공하지 않으며 외부 호출이나 변경을 실행하지 않습니다."
+      operationId: "getAdminLlmCapacity"
+      parameters:
+      - description: "포함하는 시작 시각(UTC Instant)"
+        in: "query"
+        name: "from"
+        required: true
+        schema:
+          format: "date-time"
+          type: "string"
+      - description: "제외하는 종료 시각(UTC Instant). 미래 불가, 최대 기간 90일"
+        in: "query"
+        name: "to"
+        required: true
+        schema:
+          format: "date-time"
+          type: "string"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "현재 범위에서 보이는 등록 공급원의 공개 ID. 최종 처리 경로를 필터합니다."
+        in: "query"
+        name: "upstreamId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "요청 당시 공개 모델 이름의 정확한 값"
+        in: "query"
+        name: "publicModelName"
+        required: false
+        schema:
+          type: "string"
+      - description: "정상 응답을 제외하고 기록된 errorType의 정확한 값"
+        in: "query"
+        name: "errorType"
+        required: false
+        schema:
+          type: "string"
+      - description: "정상 응답을 제외하고 errorType이 기록되지 않은 요청만 조회. errorType과 동시 지정할 수 없\
+          습니다."
+        in: "query"
+        name: "errorTypeMissing"
+        required: false
+        schema:
+          default: false
+          type: "boolean"
+      - description: "거절·오류 분류. 오류 유형 또는 미기록 필터와 함께 같은 사유 행의 소비처를 조회합니다."
+        in: "query"
+        name: "reasonCategory"
+        required: false
+        schema:
+          $ref: "#/components/schemas/CapacityReasonCategory"
+      - in: "query"
+        name: "group"
+        required: false
+        schema:
+          $ref: "#/components/schemas/CapacityGroup"
+          default: "WORKSPACE"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      - description: "버킷 초. 생략하면 기간에 맞추며 최대 1440개 버킷을 반환합니다."
+        in: "query"
+        name: "bucketSeconds"
+        required: false
+        schema:
+          format: "int32"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminLlmCapacityResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 LLM 수요와 한도 판단 자료"
       tags:
       - "admin"
   /admin/llm/keys:

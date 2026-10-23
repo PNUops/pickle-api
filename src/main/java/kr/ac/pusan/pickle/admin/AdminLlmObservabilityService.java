@@ -277,7 +277,7 @@ public class AdminLlmObservabilityService {
     }
 
     /** Null means unrestricted; an empty set is a real scope matching nothing. */
-    private @Nullable Set<String> allowedRefs(AuthenticatedUser actor, OrgScope scope) {
+    @Nullable Set<String> allowedRefs(AuthenticatedUser actor, OrgScope scope) {
         if (scope.isUnrestricted() && InstitutionLlmAccess.systemRead(actor)) { return null; }
         var references = institutionQueries.serviceReferences(actor);
         if (!InstitutionLlmAccess.systemRead(actor) && references.isEmpty()) { return Set.of(); }
