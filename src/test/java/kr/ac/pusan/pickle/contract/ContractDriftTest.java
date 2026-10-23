@@ -188,6 +188,7 @@ class ContractDriftTest {
             "GET /admin/llm/status",
             "GET /admin/llm/metrics",
             "GET /admin/llm/usage",
+            "GET /admin/llm/capacity",
             "GET /admin/llm/openrouter-models",
             "GET /admin/llm/accounts",
             "POST /admin/llm/accounts",
@@ -418,6 +419,22 @@ class ContractDriftTest {
         assertThat(Files.readString(PUBLISHED))
                 .as("contract/openapi.yaml is stale — regenerate with -Dcontract.update=true")
                 .isEqualTo(canonical);
+    }
+
+    @Test
+    void capacityWindowBoundsRemainRequiredDateTimeQueryParameters() throws Exception {
+        JsonNode parameters = fetchRuntimeSpec().path("paths").path("/api/v1/admin/llm/capacity")
+                .path("get").path("parameters");
+        Map<String, JsonNode> byName = new TreeMap<>();
+        parameters.forEach(parameter -> byName.put(parameter.path("name").asText(), parameter));
+        assertThat(byName).containsKeys("from", "to");
+        for (String name : List.of("from", "to")) {
+            JsonNode parameter = byName.get(name);
+            assertThat(parameter.path("in").asText()).isEqualTo("query");
+            assertThat(parameter.path("required").asBoolean()).isTrue();
+            assertThat(parameter.path("schema").path("type").asText()).isEqualTo("string");
+            assertThat(parameter.path("schema").path("format").asText()).isEqualTo("date-time");
+        }
     }
 
     @Test

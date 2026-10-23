@@ -37,8 +37,9 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 - **usage event의 금액은 귀속이지 청구가 아닙니다**: `llm_usage_events.cost_usd`는 요청마다
   upstream이 알려 준 값이고, 한도를 견주거나 잔액을 말하는 자리는 언제나 vendor meter입니다.
   둘은 창이 다르고 이쪽에는 가격이 붙지 않은 요청이 빠져 있으므로 서로 빼거나 한 숫자로
-  합치지 않습니다. **값이 없는 것은 0이 아닙니다** — 자체 서빙 요청에는 금액이라는 것이
-  없어서, 모든 금액은 가격이 붙은 요청 수와 함께 다닙니다.
+  합치지 않습니다. **값이 없는 것은 0이 아닙니다.** 보고 금액은 가격이 붙은 요청 수와
+  함께 제공합니다. TOKEN/CREDIT 예산 축과 실제 공급 경로는 별개이며 보고 금액만으로
+  사용자나 플랫폼의 부담을 확정하지 않습니다.
 - **기관별 OpenRouter 사업 account**: 한 기관이 사업별 account를 여러 개 등록하고,
   검증된 management credential을 staged overlap으로 교체합니다. 금액 축 key는 승인 시 한
   account에 불변 binding되며, 그 account의 credential 말고 쓸 수 있는 관리 자격증명은
@@ -110,6 +111,30 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   vhost보다 먼저, 내릴 때는 vhost 뒤에). SDK 대신 얇은 HTTPS 클라이언트를 쓰고, 서비스
   계정 인증은 이미 쓰고 있는 jjwt로 RS256 JWT를 서명해 토큰으로 바꿉니다. 제공자가 설정되지
   않았으면 기동은 되고 플랫폼 서브도메인 공개만 거부됩니다.
+
+## LLM 수요와 현재 한도
+
+`GET /api/v1/admin/llm/capacity`는 `from`을 포함하고 `to`를 제외하는 UTC 시각 구간으로
+보존된 요청 수요를 조회합니다. 최대 기간은 90일이며 응답의 실제 기간과 `generatedAt`,
+`timezone`, `bucketSeconds`를 함께 제공합니다. 기관과 workspace, 보이는 등록 upstream의
+공개 ID, 요청 당시 공개 모델 이름과 오류 유형으로 좁힐 수 있습니다. `errorTypeMissing=true`는
+정상 응답을 제외한 오류 유형 미기록 요청이며, `errorType`과 함께 지정할 수 없습니다.
+`reasonCategory`를 함께 지정하면 같은 오류 유형의 공급 경로 결과와 전역 중계 포화도
+해당 사유 행의 정확한 소비처로 나누어 조회합니다. 시도 횟수 미기록을 실제 0으로
+간주하지 않으며, 근거가 부족한 과거 거절은 미분류로 보존합니다.
+
+요약과 시계열, 거절 사유, 기관·workspace·키 소비처 페이지는 같은 서버 조건을 적용합니다.
+소비처는 `group=ORG|WORKSPACE|KEY`, `page`, `size`로 탐색합니다. 키 행의 현재 한도는
+조회 시점의 저장된 override이며 과거 적용값이나 gateway 반영 완료를 뜻하지 않습니다.
+실제 서비스 기본값은 미보고로 표시합니다. 최소 기관·workspace 선택 참조는 관측 업무가
+허용한 키 관계만 제공하며 별도 workspace 관리 권한을 열지 않습니다.
+
+`quality`는 실제 raw 삭제 경계와 전달 상태를 제공합니다. 삭제된 전체 구간과 버킷의
+수치는 null이며 부분 삭제 구간의 숫자는 남아 있는 관측분입니다. 마지막 event 수신 시각은
+완전한 수집을 보장하는 시각이 아닙니다. 최종 upstream 소비와 TOKEN/CREDIT 예산 축,
+보고 금액은 서로 다른 정보이며 중간 재시도 부하나 개인별 GPU 점유율로 환산하지 않습니다.
+실제 장비 시계열은 아직 제공하지 않습니다. 전역 장비 상태를 읽을 수 있는 SYS 응답은
+`telemetry.status=NOT_CONFIGURED`, ORG 응답은 `telemetryVisible=false`와 `NOT_PROVIDED`입니다.
 
 ## 유료 모델 허용·차단
 
