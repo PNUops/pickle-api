@@ -4169,7 +4169,13 @@ components:
       - "to"
       type: "object"
     CapacityTelemetry:
+      description: "SYS 전역 장비 관측과 기관 수요는 서로 다른 모집단입니다. 기관에는 상태 외 전역 source·장비·엔진 값\
+        을 제공하지 않습니다."
       properties:
+        device:
+          anyOf:
+          - $ref: "#/components/schemas/InferenceObservationView"
+          - type: "null"
         status:
           $ref: "#/components/schemas/CapacityTelemetryStatus"
       required:
@@ -4179,6 +4185,8 @@ components:
       enum:
       - "NOT_CONFIGURED"
       - "NOT_PROVIDED"
+      - "NOT_REPORTED"
+      - "REPORTED"
       type: "string"
     CapacityTrendPointResponse:
       properties:
@@ -5768,6 +5776,274 @@ components:
       enum:
       - "GOOGLE"
       type: "string"
+    InferenceObservationEngine:
+      description: "원래 물리 모델·엔진과 수집 epoch·프로세스·구성 identity를 유지합니다. identity 누락·변화·\
+        reset·gap에서는 연속 비율을 계산하지 않습니다."
+      properties:
+        baselineIntervals:
+          format: "int64"
+          type: "integer"
+        bootId:
+          type:
+          - "string"
+          - "null"
+        configId:
+          type:
+          - "string"
+          - "null"
+        engineId:
+          type: "string"
+        epoch:
+          format: "uuid"
+          type: "string"
+        gapIntervals:
+          format: "int64"
+          type: "integer"
+        gauges:
+          additionalProperties:
+            $ref: "#/components/schemas/InferenceObservationMetric"
+          type: "object"
+        histogramMeans:
+          additionalProperties:
+            $ref: "#/components/schemas/InferenceObservationMetric"
+          type: "object"
+        intervalState:
+          $ref: "#/components/schemas/InferenceObservationIntervalState"
+        modelName:
+          type: "string"
+        processId:
+          type:
+          - "string"
+          - "null"
+        rates:
+          additionalProperties:
+            $ref: "#/components/schemas/InferenceObservationMetric"
+          type: "object"
+        resetIntervals:
+          format: "int64"
+          type: "integer"
+        validIntervals:
+          format: "int64"
+          type: "integer"
+      required:
+      - "baselineIntervals"
+      - "engineId"
+      - "epoch"
+      - "gapIntervals"
+      - "gauges"
+      - "histogramMeans"
+      - "intervalState"
+      - "modelName"
+      - "rates"
+      - "resetIntervals"
+      - "validIntervals"
+      type: "object"
+    InferenceObservationEvidence:
+      description: "최신 원천 보고 시각과 요청 기간의 표본 품질을 구분합니다. OUTSIDE의 기간 수치는 null이며 PARTIAL은\
+        \ 보존된 부분만 셉니다. truncated이면 읽은 표본 수는 하한입니다. 설치·무손실·기간 전체 수집 완료를 보장하지 않습니다."
+      properties:
+        baselineIntervals:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        expectedSamples:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        failedSamples:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        freshness:
+          $ref: "#/components/schemas/InferenceObservationFreshness"
+        gapIntervals:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        latestObservedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        latestReceivedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        resetIntervals:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        retainedFrom:
+          format: "date-time"
+          type: "string"
+        retentionState:
+          $ref: "#/components/schemas/InferenceObservationRetentionState"
+        samplesInWindow:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        truncated:
+          type: "boolean"
+      required:
+      - "freshness"
+      - "retainedFrom"
+      - "retentionState"
+      - "truncated"
+      type: "object"
+    InferenceObservationFreshness:
+      enum:
+      - "NOT_REPORTED"
+      - "FRESH"
+      - "STALE"
+      type: "string"
+    InferenceObservationIntervalState:
+      enum:
+      - "VALID"
+      - "PARTIAL"
+      - "BASELINE"
+      - "UNAVAILABLE"
+      type: "string"
+    InferenceObservationMetric:
+      description: "gauge mean은 실제 측정 시각의 표본 평균입니다. 명시 sampleAt이 요청 기간·보존 범위 밖이면 UNKNOWN/null이\
+        며 현재 시각으로 옮기지 않습니다. rate mean은 누적 차분 합/실제 시간 합, histogram mean은 sum 차분 합/count\
+        \ 차분 합입니다. 양끝이 요청 기간과 보존 범위 안인 완전 구간만 종료 시각의 버킷에 귀속하며 부분 구간을 분할 추정하지 않습니다\
+        . min/max는 gauge 표본값 또는 완전 구간 평균의 범위이며 분위수가 아닙니다. intervalSeconds는 해당 버킷에서\
+        \ 끝나는 완전 관측 구간의 실제 초 합으로 버킷 길이를 넘을 수 있고 gauge는 0입니다. 버킷 안의 정확한 요청 시각 분포나 연\
+        속 센싱·시간 점유율을 뜻하지 않습니다. null과 실제 0은 다릅니다."
+      properties:
+        intervalSeconds:
+          format: "double"
+          type: "number"
+        max:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        mean:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        min:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        observedSamples:
+          format: "int64"
+          type: "integer"
+        state:
+          $ref: "#/components/schemas/InferenceObservationValueState"
+      required:
+      - "intervalSeconds"
+      - "observedSamples"
+      - "state"
+      type: "object"
+    InferenceObservationPoint:
+      description: "요청한 시작 포함·종료 제외 버킷입니다. samples는 원천 observedAt에 따른 snapshot 행수이\
+        며 gauge의 명시 측정 시각이나 완전 구간 종료 시각과 다를 수 있습니다. samples가 0이어도 개별 metric의 실제 측정\
+        값은 유효할 수 있습니다. 보존 범위 밖 수치와 계산할 수 없는 비율은 null이며 장비 측정값 0으로 채우지 않습니다."
+      properties:
+        engines:
+          items:
+            $ref: "#/components/schemas/InferenceObservationEngine"
+          type: "array"
+        failedSamples:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        from:
+          format: "date-time"
+          type: "string"
+        host:
+          additionalProperties:
+            $ref: "#/components/schemas/InferenceObservationMetric"
+          type: "object"
+        retentionState:
+          $ref: "#/components/schemas/InferenceObservationRetentionState"
+        samples:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        to:
+          format: "date-time"
+          type: "string"
+      required:
+      - "engines"
+      - "from"
+      - "host"
+      - "retentionState"
+      - "to"
+      type: "object"
+    InferenceObservationRetentionState:
+      enum:
+      - "WITHIN"
+      - "PARTIAL"
+      - "OUTSIDE"
+      type: "string"
+    InferenceObservationValueState:
+      enum:
+      - "OBSERVED"
+      - "UNKNOWN"
+      - "NOT_REPORTED"
+      - "UNSUPPORTED"
+      - "SOURCE_FAILED"
+      type: "string"
+    InferenceObservationView:
+      description: "고정된 보고 원천의 장비 전역 표본입니다. 기관·워크스페이스·원인·공개 모델 수요 필터의 개인별 장비 점유율이\
+        \ 아닙니다."
+      properties:
+        bucketSeconds:
+          format: "int32"
+          type: "integer"
+        evidence:
+          $ref: "#/components/schemas/InferenceObservationEvidence"
+        from:
+          format: "date-time"
+          type: "string"
+        retentionDays:
+          format: "int32"
+          type: "integer"
+        sampleIntervalSeconds:
+          format: "int32"
+          type: "integer"
+        series:
+          items:
+            $ref: "#/components/schemas/InferenceObservationPoint"
+          type: "array"
+        sourceId:
+          format: "uuid"
+          type: "string"
+        to:
+          format: "date-time"
+          type: "string"
+        upstreamId:
+          format: "uuid"
+          type: "string"
+        upstreamName:
+          type:
+          - "string"
+          - "null"
+      required:
+      - "bucketSeconds"
+      - "evidence"
+      - "from"
+      - "retentionDays"
+      - "sampleIntervalSeconds"
+      - "series"
+      - "sourceId"
+      - "to"
+      - "upstreamId"
+      type: "object"
     InstitutionAdminLlmBudgetResponse:
       properties:
         creditDepletionForecast:
@@ -14708,7 +14984,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.111.0"
+  version: "0.112.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -16325,7 +16601,8 @@ paths:
   /admin/llm/capacity:
     get:
       description: "같은 절대 기간의 보존된 raw event에서 수요·거절 사유·소비처를 조회합니다. 기관·워크스페이스와 관측 업\
-        무 범위를 집계 전에 적용합니다. 실제 장비 지표는 아직 제공하지 않으며 외부 호출이나 변경을 실행하지 않습니다."
+        무 범위를 수요 집계 전에 적용합니다. 기존 SYS 전역 읽기에서는 설정된 고정 원천의 같은 기간 장비 표본과 품질을 독립 제공합니다\
+        . 설치 완료·완전 수집·개인별 장비 귀속을 보장하지 않으며 외부 호출이나 변경을 실행하지 않습니다."
       operationId: "getAdminLlmCapacity"
       parameters:
       - description: "포함하는 시작 시각(UTC Instant)"
@@ -16417,6 +16694,14 @@ paths:
         schema:
           format: "int32"
           type: "integer"
+      - description: "SYS 전역 장비 표본의 고정 원천 공개 ID. 기관·공간·원인·공개 모델 수요 필터와 독립이며 현재 설정된\
+          \ 단일 원천만 지원합니다."
+        in: "query"
+        name: "telemetrySourceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:

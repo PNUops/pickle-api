@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import kr.ac.pusan.pickle.observation.dto.InferenceObservationView;
 
 /** Scoped raw-event demand and independently labelled current configuration. */
 @Schema(description = "요청 시각 기준의 관측된 수요. 최종 upstream 소비는 중간 재시도 부하나 개인별 GPU 점유율을 뜻하지 않습니다.")
@@ -30,7 +31,7 @@ public record AdminLlmCapacityResponse(
         PROVIDER, INPUT, AUTHENTICATION, SERVICE, CANCELED, UNCLASSIFIED
     }
     public enum CapacityRawHistoryState { NOT_SWEPT, WITHIN_RETAINED_RANGE, PARTIALLY_SWEPT, FULLY_SWEPT }
-    public enum CapacityTelemetryStatus { NOT_CONFIGURED, NOT_PROVIDED }
+    public enum CapacityTelemetryStatus { NOT_CONFIGURED, NOT_PROVIDED, NOT_REPORTED, REPORTED }
 
     @Schema(description = "보존된 raw event의 관측 수. 요청 기간 전체가 삭제 경계 밖이면 수치는 null입니다. 부분 삭제 기간은 quality를 함께 확인해야 합니다.")
     public record CapacityCounts(
@@ -98,6 +99,7 @@ public record AdminLlmCapacityResponse(
             String completeness, LlmGatewayStatusResponse gateway) {
     }
 
-    public record CapacityTelemetry(CapacityTelemetryStatus status) {
+    @Schema(description = "SYS 전역 장비 관측과 기관 수요는 서로 다른 모집단입니다. 기관에는 상태 외 전역 source·장비·엔진 값을 제공하지 않습니다.")
+    public record CapacityTelemetry(CapacityTelemetryStatus status, @Nullable InferenceObservationView device) {
     }
 }
