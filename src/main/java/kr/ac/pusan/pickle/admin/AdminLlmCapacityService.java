@@ -27,8 +27,6 @@ import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacityReference;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacityReferenceCollection;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacitySelectors;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacitySeriesPoint;
-import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacityTelemetry;
-import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacityTelemetryStatus;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
@@ -44,6 +42,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import kr.ac.pusan.pickle.observation.ObservationReader;
+import kr.ac.pusan.pickle.common.time.DatabaseTimestamps;
 
 /** One scoped raw relation feeds every demand aggregate and exact consumer page. */
 @Service
@@ -89,11 +89,13 @@ public class AdminLlmCapacityService {
     private final AdminLlmObservabilityService observations;
     private final LlmUsageRetentionPolicy retention;
     private final Clock clock;
+    private final ObservationReader observationReader;
 
     public AdminLlmCapacityService(JdbcTemplate jdbc, OrgRepository orgs, InstitutionLlmQueryAccess access,
-            AdminLlmObservabilityService observations, LlmUsageRetentionPolicy retention, Clock clock) {
+            AdminLlmObservabilityService observations, LlmUsageRetentionPolicy retention, Clock clock, ObservationReader observationReader) {
         this.jdbc = jdbc; this.orgs = orgs; this.access = access; this.observations = observations;
         this.retention = retention; this.clock = clock;
+        this.observationReader = observationReader;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -101,7 +103,7 @@ public class AdminLlmCapacityService {
             @Nullable UUID orgId, @Nullable UUID workspaceId, @Nullable UUID upstreamId,
             @Nullable String model, @Nullable String error, boolean errorTypeMissing,
             @Nullable CapacityReasonCategory reasonCategory, CapacityGroup group,
-            int page, int size, @Nullable Integer requestedBucket) {
+            int page, int size, @Nullable Integer requestedBucket, @Nullable UUID telemetrySourceId) {
         Instant now = clock.instant();
         int bucket = bucket(from, to, now, requestedBucket);
         if (error != null && errorTypeMissing) { throw invalid("errorTypeMissing", "errorType과 미기록 필터를 함께 지정할 수 없습니다."); }
@@ -118,7 +120,7 @@ public class AdminLlmCapacityService {
         LocalDate swept = jdbc.queryForObject("select max(swept_before) from llm_usage_rollup_state", LocalDate.class);
         Instant retained = swept == null ? null : swept.atStartOfDay(ClockConfig.KST).toInstant();
         List<Object> args = new ArrayList<>();
-        args.add(Timestamp.from(from)); args.add(Timestamp.from(to)); args.addAll(scopeSql.args());
+        args.add(DatabaseTimestamps.ceilingMicros(from)); args.add(DatabaseTimestamps.ceilingMicros(to)); args.addAll(scopeSql.args());
         StringBuilder where = new StringBuilder("e.requested_at>=? and e.requested_at<? and ").append(scopeSql.text());
         if (retained != null && from.isBefore(retained)) { where.append(" and e.requested_at>=?"); args.add(Timestamp.from(retained)); }
         if (upstream != null) { where.append(" and lower(e.upstream_ref)=?"); args.add(upstream); }
@@ -155,12 +157,12 @@ public class AdminLlmCapacityService {
         return new AdminLlmCapacityResponse(now, "Asia/Seoul", from, to, bucket, summary, series, reasons, consumers,
                 selectors(scopeSql, upstreams), new CapacityQuality(state, retained, retention.retentionDays(), received,
                         rollup, "UNKNOWN", observations.gatewayStatus(actor, now)), telemetry,
-                new CapacityTelemetry(telemetry ? CapacityTelemetryStatus.NOT_CONFIGURED : CapacityTelemetryStatus.NOT_PROVIDED));
+                observationReader.read(actor, from, to, bucket, telemetrySourceId));
     }
 
     private List<CapacitySeriesPoint> series(String cte, List<Object> args, AuthenticatedUser actor,
             Instant from, Instant to, int bucket, @Nullable Instant retained) {
-        List<Object> values = new ArrayList<>(args); values.add(Timestamp.from(from)); values.add(bucket);
+        List<Object> values = new ArrayList<>(args); values.add(DatabaseTimestamps.ceilingMicros(from)); values.add(bucket);
         Map<Long, CapacityCounts> rows = new HashMap<>();
         jdbc.query(cte + "select floor(extract(epoch from (requested_at-?::timestamptz)) / ?)::bigint as bucket,"
                 + COUNTS + " from events group by bucket", rs -> {

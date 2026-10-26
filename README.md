@@ -102,8 +102,8 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   필드의 공개 조건은 별도의 판정과 HTTP 테스트로 검증합니다.
 - **책임 경계** — 이 서버는 SSH 연결을 열지 않습니다. 웹 터미널은 별도 브리지가
   담당하고, 필요한 OpenSSH 공개키 파싱과 키쌍 생성은 와이어 포맷을 직접 다룹니다.
-- **자격증명 문제는 기동에서 걸러냅니다.** 데이터베이스 비밀번호, JWT 서명 키, 자격증명
-  암호화 키, 내부 토큰 중 하나라도 비어 있으면 서버가 실행되지 않습니다.
+- **자격증명 문제는 사용 전에 걸러냅니다.** 데이터베이스 비밀번호, JWT 서명 키, 자격증명
+  암호화 키가 비어 있으면 기동을 거부합니다. 기계 연동은 전용 토큰이 없으면 해당 경로를 거부합니다.
 - **테스트가 외부 런타임을 요구하지 않습니다.** Zonky embedded-postgres와 WireMock으로
   돌기 때문에 `mvn verify` 하나로 전체 테스트가 끝납니다.
 - **플랫폼 서브도메인의 DNS 레코드를 서버가 직접 씁니다.** 이름 하나에 A 레코드 하나를
@@ -133,8 +133,70 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 수치는 null이며 부분 삭제 구간의 숫자는 남아 있는 관측분입니다. 마지막 event 수신 시각은
 완전한 수집을 보장하는 시각이 아닙니다. 최종 upstream 소비와 TOKEN/CREDIT 예산 축,
 보고 금액은 서로 다른 정보이며 중간 재시도 부하나 개인별 GPU 점유율로 환산하지 않습니다.
-실제 장비 시계열은 아직 제공하지 않습니다. 전역 장비 상태를 읽을 수 있는 SYS 응답은
-`telemetry.status=NOT_CONFIGURED`, ORG 응답은 `telemetryVisible=false`와 `NOT_PROVIDED`입니다.
+전역 장비 상태를 읽을 수 있는 기존 SYS 응답은 별도의 `telemetry.device`를 제공합니다.
+ORG 응답은 `telemetryVisible=false`, `telemetry.status=NOT_PROVIDED`, `device=null`이며
+전역 원천·장비·엔진 이름을 제공하지 않습니다. 장비 표본은 기관·workspace·원인·공개 모델의
+수요 필터와 다른 모집단입니다. `telemetrySourceId`는 서버가 설정한 단일 원천의 공개 ID이며,
+수요의 최종 upstream 필터와 독립입니다. 원천 설정이 없으면 `NOT_CONFIGURED`, 요청 기간에
+보고가 없으면 `NOT_REPORTED`, 보고가 있으면 `REPORTED`입니다. 이 상태는 실제 설치나
+장비 가용성, 기간 전체의 수집 완료를 증명하지 않습니다.
+
+### 장비 관측 표본
+
+`POST /internal/inference-observations`는 전용 보고자만 사용하는 경로입니다. 기본적으로
+비활성이고 별도 bearer·실제 TCP peer·고정 source/upstream UUID가 모두 필요합니다.
+SSH·relay·LLM gateway 토큰이나 사용자 JWT를 공유하지 않습니다. 직접 연결을 전제로
+`server.forward-headers-strategy=none`만 지원하며, request wrapper의 원래 peer를 확인합니다.
+Forwarded/X-Forwarded-For나 본문의 hostname을 인증 근거로 사용하지 않습니다.
+
+본문은 UTF-8 JSON 512 KiB 이하의 version1 표본 한 개입니다. source UUID와 producer epoch,
+안전 정수 sequence, UTC 밀리초 `observedAt`과 최초 `reporterReceivedAt`, 최소 host 측정값과
+정해진 누적 추론 지표만 받습니다. source별 UTC 분에 새 표본 한 개를 저장합니다. 같은
+source/epoch/sequence의 정확한 본문 bytes가 같으면 `DUPLICATE`, 다르면 409 충돌입니다.
+서버의 `contentSha256`은 수신 bytes의 SHA256이며 원 HTTP 본문을 중복 영구 저장하지 않습니다.
+보고자는 최초 import 시각을 포함한 불변 outbox bytes를 재전송하고, ACK의 key와 byte SHA가
+일치하는 `ACCEPTED` 또는 `DUPLICATE`만 완료로 처리해야 합니다.
+
+host는 CPU의 1분 load average(백분율이 아님), 메모리·swap bytes, GPU 사용률·온도·전력과
+지원 여부를 구분합니다. 통합 메모리와 GPU 표본을 두 용량으로 더하지 않습니다. 측정된 0,
+미지원, 미보고, source 실패를 구분하고 임의 사용자 label이나 원시 Prometheus 본문을
+저장하지 않습니다. 허용 secondary label은 빈 값과 escaped newline을 보존하지만
+PostgreSQL JSONB가 표현할 수 없는 NUL은 치환 없이 거부합니다.
+
+읽기는 같은 `[from,to)`와 실제 `bucketSeconds`를 사용합니다. gauge는 명시 측정 시각을
+존중하고, 비율·히스토그램 평균은 양끝이 요청·보존 범위 안인 완전 관측 구간만 종료 시각의
+버킷으로 묶습니다. 부분 구간을 균등 분할해 요청 분포를 추정하지 않습니다. 비율은 누적
+차분 합/실제 경과 시간 합, histogram mean은 sum 차분 합/count 차분 합입니다. min/max는
+gauge 표본값 또는 완전 구간 평균의 범위이며 분위수가 아닙니다. `intervalSeconds`는 완전
+관측 구간의 실제 초 합으로 버킷 길이를 넘을 수 있고 시간 점유율이나 연속 센싱 비율이 아닙니다.
+첫 표본·identity 변경·reset·gap·불가능한 delta의 비율은 null입니다. snapshot 행수와 개별
+metric 측정 시각·수가 다를 수 있으므로 행수 0만으로 실제 metric 0을 숨기지 않습니다.
+
+새 표본만 90일 만료를 적용합니다. `retainedFrom`은 서버의 즉시 조회 cutoff이며 물리 삭제
+완료 watermark가 아닙니다. `WITHIN|PARTIAL|OUTSIDE`와 미수집 구간을 구분하고 보존 범위 밖의
+수치는 null입니다. 최신 source의 freshness와 과거 요청 기간의 조회 성공도 구분합니다.
+물리 정리는 JobRunr가 1시간마다 1,000행씩 최대 10회 수행하며 워커가 멈추면 지연됩니다.
+ingress를 비활성화해도 이 정리는 유지하고 기존 usage·body·감사 보존 정책은 바꾸지 않습니다.
+
+조회는 fetch size128 cursor로 최대 130,000행을 순회하고 원문 목록을 메모리에 모으지 않습니다.
+최대 1,440버킷·32 engine identity·20,000 metric 집계와 device JSON 4 MiB 상한을 적용합니다.
+상한에 걸리면 `truncated=true`와 누락값으로 표시하며 관측값 0으로 채우지 않습니다.
+일반 애플리케이션 로그는 secret masking을 적용한 Logback 콘솔 출력이고, 감사 행위는
+append-only `audit_logs`, 요청 사용량과 장비 표본은 각각 별도 테이블의 데이터입니다.
+
+설정은 다음 환경 변수로 제공합니다.
+
+| 환경 변수 | 의미 |
+|---|---|
+| `PICKLE_INFERENCE_OBSERVATIONS_ENABLED` | 기본 `false`, 기계 보고 수신 활성화 |
+| `PICKLE_INFERENCE_OBSERVATIONS_TOKEN` | 보고자 전용 현재 bearer |
+| `PICKLE_INFERENCE_OBSERVATIONS_PREVIOUS_TOKEN` | 교체 중인 이전 bearer, 현재 값도 필수 |
+| `PICKLE_INFERENCE_OBSERVATIONS_SOURCE_IP` | 실제 연결의 고정 TCP peer |
+| `PICKLE_INFERENCE_OBSERVATIONS_SOURCE_ID` | 고정 관측 원천 UUID |
+| `PICKLE_INFERENCE_OBSERVATIONS_UPSTREAM_ID` | 연결된 등록 공급원의 공개 UUID |
+
+토큰·주소·UUID 기본값이나 등록 UI, 환경 seed는 없습니다. 실제 자격증명 발급·설치·네트워크
+허용·DB 배포는 별도의 운영 작업입니다.
 
 ## 유료 모델 허용·차단
 
