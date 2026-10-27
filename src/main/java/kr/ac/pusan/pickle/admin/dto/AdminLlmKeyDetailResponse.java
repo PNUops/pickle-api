@@ -68,7 +68,7 @@ public record AdminLlmKeyDetailResponse(
         @Schema(description = "키 사용 관측의 현재 열람 권한") boolean observationVisible, @Nullable List<InstitutionLlmAccountReference> accountReferences,
         boolean tokenReferenceVisible, boolean budgetReferenceVisible, List<String> allowedWorkIds,
         @Schema(description = "현재 예산 명령의 최초 사업 계정 결합 가능 여부. 예산 명령 참조가 없으면 null이며 사용액 관측값을 제공하지 않습니다.")
-        @Nullable Boolean initialAccountBindingAllowed) {
+        @Nullable Boolean initialAccountBindingAllowed, @Nullable LlmKeyLimitsProjection limitsProjection) {
 
     public static AdminLlmKeyDetailResponse from(LlmApiKey key, UUID workspaceId,
             String workspaceName, UUID orgId, String orgName, UUID requestId,
@@ -83,7 +83,7 @@ public record AdminLlmKeyDetailResponse(
                 key.getOpenrouterLimitRemaining(), openrouterAccountId, openrouterAccountName,
                 workspaceId, workspaceName, orgId, orgName, requestId, key.getCreatedAt(),
                 key.getRevokedAt(), creditAllowedModels, creditDeniedModels,
-                passthroughEndpoints, passthroughEndpoints.contains(PassthroughEndpoints.CHAT), true, true, true, null, false, false, List.of(), null);
+                passthroughEndpoints, passthroughEndpoints.contains(PassthroughEndpoints.CHAT), true, true, true, null, false, false, List.of(), null, null);
     }
 
     public AdminLlmKeyDetailResponse project(boolean metadata, boolean observation, boolean finance, boolean tokenReference, boolean budgetReference) {
@@ -97,24 +97,33 @@ public record AdminLlmKeyDetailResponse(
                 metadata || budget ? openrouterAccountId : null, metadata || budget ? openrouterAccountName : null,
                 workspaceId, workspaceName, orgId, orgName, requestId, createdAt, revokedAt,
                 budget ? creditAllowedModels : null, budget ? creditDeniedModels : null, budget ? passthroughEndpoints : null,
-                token || budget ? chatEnabled : null, finance, metadata, observation, accountReferences, tokenReference, budgetReference, allowedWorkIds, initialAccountBindingAllowed);
+                token || budget ? chatEnabled : null, finance, metadata, observation, accountReferences, tokenReference, budgetReference, allowedWorkIds, initialAccountBindingAllowed,
+                !budget || limitsProjection == null ? null : finance && observation
+                        ? limitsProjection : limitsProjection.withoutAccountImpact());
     }
 
     public AdminLlmKeyDetailResponse withAccountReferences(@Nullable List<InstitutionLlmAccountReference> references) {
-        return new AdminLlmKeyDetailResponse(id, name, purpose, status, expiresAt, lastUsedAt, rpm, tpm, concurrency, dailyTokens, quotaExhausted, creditLimit, creditLimitReset, creditAxisConnected, creditUsage, creditUsageAt, creditLimitRemaining, openrouterAccountId, openrouterAccountName, workspaceId, workspaceName, orgId, orgName, requestId, createdAt, revokedAt, creditAllowedModels, creditDeniedModels, passthroughEndpoints, chatEnabled, financeVisible, metadataVisible, observationVisible, references, tokenReferenceVisible, budgetReferenceVisible, allowedWorkIds, initialAccountBindingAllowed);
+        return new AdminLlmKeyDetailResponse(id, name, purpose, status, expiresAt, lastUsedAt, rpm, tpm, concurrency, dailyTokens, quotaExhausted, creditLimit, creditLimitReset, creditAxisConnected, creditUsage, creditUsageAt, creditLimitRemaining, openrouterAccountId, openrouterAccountName, workspaceId, workspaceName, orgId, orgName, requestId, createdAt, revokedAt, creditAllowedModels, creditDeniedModels, passthroughEndpoints, chatEnabled, financeVisible, metadataVisible, observationVisible, references, tokenReferenceVisible, budgetReferenceVisible, allowedWorkIds, initialAccountBindingAllowed, limitsProjection);
     }
     public AdminLlmKeyDetailResponse withAllowedWorkIds(List<String> work) {
         return new AdminLlmKeyDetailResponse(id,name,purpose,status,expiresAt,lastUsedAt,rpm,tpm,concurrency,dailyTokens,quotaExhausted,
                 creditLimit,creditLimitReset,creditAxisConnected,creditUsage,creditUsageAt,creditLimitRemaining,openrouterAccountId,
                 openrouterAccountName,workspaceId,workspaceName,orgId,orgName,requestId,createdAt,revokedAt,creditAllowedModels,
                 creditDeniedModels,passthroughEndpoints,chatEnabled,financeVisible,metadataVisible,observationVisible,accountReferences,
-                tokenReferenceVisible,budgetReferenceVisible,List.copyOf(work),initialAccountBindingAllowed);
+                tokenReferenceVisible,budgetReferenceVisible,List.copyOf(work),initialAccountBindingAllowed,limitsProjection);
     }
     public AdminLlmKeyDetailResponse withInitialAccountBindingAllowed(@Nullable Boolean allowed) {
         return new AdminLlmKeyDetailResponse(id,name,purpose,status,expiresAt,lastUsedAt,rpm,tpm,concurrency,dailyTokens,quotaExhausted,
                 creditLimit,creditLimitReset,creditAxisConnected,creditUsage,creditUsageAt,creditLimitRemaining,openrouterAccountId,
                 openrouterAccountName,workspaceId,workspaceName,orgId,orgName,requestId,createdAt,revokedAt,creditAllowedModels,
                 creditDeniedModels,passthroughEndpoints,chatEnabled,financeVisible,metadataVisible,observationVisible,accountReferences,
-                tokenReferenceVisible,budgetReferenceVisible,allowedWorkIds,allowed);
+                tokenReferenceVisible,budgetReferenceVisible,allowedWorkIds,allowed,limitsProjection);
+    }
+    public AdminLlmKeyDetailResponse withLimitsProjection(@Nullable LlmKeyLimitsProjection projection) {
+        return new AdminLlmKeyDetailResponse(id,name,purpose,status,expiresAt,lastUsedAt,rpm,tpm,concurrency,dailyTokens,quotaExhausted,
+                creditLimit,creditLimitReset,creditAxisConnected,creditUsage,creditUsageAt,creditLimitRemaining,openrouterAccountId,
+                openrouterAccountName,workspaceId,workspaceName,orgId,orgName,requestId,createdAt,revokedAt,creditAllowedModels,
+                creditDeniedModels,passthroughEndpoints,chatEnabled,financeVisible,metadataVisible,observationVisible,accountReferences,
+                tokenReferenceVisible,budgetReferenceVisible,allowedWorkIds,initialAccountBindingAllowed,projection);
     }
 }

@@ -13,6 +13,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeApplyResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeOperationResponse.AdminBulkChangeEffect;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmAccountImpactProjection;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeRequest;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -57,12 +58,13 @@ class AdminBulkChangeStore {
     }
 
     AdminBulkChangePreviewResponse savePreview(long actorId, AdminBulkChangeRequest request,
-            List<kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem> items, Map<UUID, Boolean> fingerprintVisibility) {
+            List<kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem> items, Map<UUID, Boolean> fingerprintVisibility,
+            @Nullable LlmAccountImpactProjection accountImpact) {
         Instant now = clock.instant();
         AdminBulkChangeRequest savedRequest = new AdminBulkChangeRequest(request.targetType(), request.targetIds(),
                 request.change(), null, null, null, null);
         AdminBulkChangePreviewResponse response = new AdminBulkChangePreviewResponse(UUID.randomUUID(), now,
-                now.plus(Duration.ofHours(24)), request.targetType(), request.change(), items, null);
+                now.plus(Duration.ofHours(24)), request.targetType(), request.change(), items, null, accountImpact);
         ObjectNode storedPreview = mapper.valueToTree(response);
         storedPreview.set("_fingerprintVisibility", mapper.valueToTree(fingerprintVisibility));
         jdbc.update("""
@@ -81,7 +83,8 @@ class AdminBulkChangeStore {
                 (rs, row) -> rs.getObject(1, UUID.class), id, actorId).stream().findFirst().orElse(null);
         AdminBulkChangePreviewResponse response = saved.response();
         return new Preview(saved.request(), new AdminBulkChangePreviewResponse(response.previewId(), response.createdAt(),
-                response.expiresAt(), response.targetType(), response.change(), response.items(), consumed), saved.fingerprintVisibility());
+                response.expiresAt(), response.targetType(), response.change(), response.items(), consumed,
+                response.accountImpact()), saved.fingerprintVisibility());
     }
 
     private Preview decodePreview(String request, String preview) {

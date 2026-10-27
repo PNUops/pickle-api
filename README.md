@@ -112,12 +112,48 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   계정 인증은 이미 쓰고 있는 jjwt로 RS256 JWT를 서명해 토큰으로 바꿉니다. 제공자가 설정되지
   않았으면 기동은 되고 플랫폼 서브도메인 공개만 거부됩니다.
 
+## 사업 계정과 키 탐색
+
+`GET /api/v1/admin/llm/keys`는 기존 기관·workspace·신청·계정 필터에 `cohort`와 `sort`를
+적용한 뒤 전체 개수와 현재 페이지를 반환합니다. `cohort=COMMITTED|AWAITING_PROVISION|USAGE_UNREPORTED`는
+현재 live 양수 한도와 발급·vendor meter 상태를 구분합니다. 계정 상세의 `keyNavigation`은
+현재 읽을 수 있는 키 부분집합이고, `boundKeyCount`와 계정 전체 `allocation`은 별도 값입니다.
+TOKEN 사용량은 보존된 당일 TOKEN 이벤트에서 일괄 집계하며 저장된 한도, vendor meter의
+보고 잔여와 실제 gateway 적용 상태를 구분합니다. RPM·TPM·동시성의 서비스 기본값과
+실시간 처리 여유는 보고되지 않습니다.
+
+`policyModel`과 `policyFeature`는 현재 공개 모델 cache와 저장된 허용·차단 패턴, 기능 정책으로
+가능한 키를 탐색합니다. 실제 처리 성공이나 현재 공급 경로의 가용성을 보장하지 않습니다.
+금액·관측·정책에 따른 필터와 정렬은 조건 적용 전 모집단 전체에 해당 필드 읽기가 허용될 때만
+제공합니다. 권한이 있으나 관측되지 않은 행은 개수에 남고 vendor 잔여 정렬에서는 뒤에 놓입니다.
+
+`GET /api/v1/admin/llm/usage`의 소비처는 `consumerPage`, `consumerSize`, `consumerSort`로,
+현재 한도 검토는 `reviewPage`, `reviewSize`로 탐색합니다. `GET /api/v1/admin/llm/accounts/{id}/usage`는
+`days`, `page`, `size`, `sort`를 받습니다. 계정 사용량의 키 페이지와 `keysUsed`, 전체 합계는
+같은 KST 일별 rollup·현재 계정 결합 관계에서 계산합니다. 응답의 실제 일자 범위와 출처를
+함께 확인하며 보존된 원시 요청의 capacity 키 개수와 동일한 값으로 해석하지 않습니다.
+
+키 상세 GET의 `projectLimits=true`는 저장된 현재 한도와 제안 값을 같은 서버 계산으로
+비교합니다. `proposedCreditLimit`은 생략하면 변경하지 않으며 0 이상, 정수 10자리·소수 2자리까지
+받습니다. `proposedCreditLimitResetSet=true`에서 reset 값을 생략하면 명시 총액 한도이고,
+`false`이면 기존 창을 유지합니다. `proposedOpenrouterAccountId`는 기존 최초 연결 조건에만
+사용합니다. `limitsProjection.draft`는 전달한 제안을 그대로 구분해 반환하며, 이 GET은 키 연결,
+credential 사용 기록, 잡 등록이나 vendor 호출을 실행하지 않습니다.
+
+단건 제안과 공통 일괄 미리보기의 `accountImpact`는 읽기가 허용된 계정 전체의 변경 전후
+서버 cache snapshot입니다. 각 키의 사용량을 한도 안에서 clamp한 뒤 모든 적용 대상의 기여를
+교체합니다. 관측 출처·시각·stale, 미발급·미보고 키 수와 reset 창 불일치를 독립적으로 제공합니다.
+미보고 키에 현재 한도를 대입한 금액은 계정의 실측값이나 보장된 상한이 아닙니다. 창을 바꾼
+뒤의 잔여와 초과 여부는 이전 창 사용량으로 추정하지 않고 null로 둡니다. 영향 정보를 읽을 수
+없으면 `NOT_PROVIDED`이며 기존 한도 변경 권한은 유지합니다. 이 정보는 새 예약이나 금융
+잠금 조건이 아니고, 저장된 미리보기를 다시 읽을 때 현재 필드 권한으로 마스킹합니다.
+
 ## LLM 수요와 현재 한도
 
 `GET /api/v1/admin/llm/capacity`는 `from`을 포함하고 `to`를 제외하는 UTC 시각 구간으로
 보존된 요청 수요를 조회합니다. 최대 기간은 90일이며 응답의 실제 기간과 `generatedAt`,
 `timezone`, `bucketSeconds`를 함께 제공합니다. 기관과 workspace, 보이는 등록 upstream의
-공개 ID, 요청 당시 공개 모델 이름과 오류 유형으로 좁힐 수 있습니다. `errorTypeMissing=true`는
+공개 ID, 현재 연결된 사업 계정의 공개 ID(`openrouterAccountId`), 요청 당시 공개 모델 이름과 오류 유형으로 좁힐 수 있습니다. `errorTypeMissing=true`는
 정상 응답을 제외한 오류 유형 미기록 요청이며, `errorType`과 함께 지정할 수 없습니다.
 `reasonCategory`를 함께 지정하면 같은 오류 유형의 공급 경로 결과와 전역 중계 포화도
 해당 사유 행의 정확한 소비처로 나누어 조회합니다. 시도 횟수 미기록을 실제 0으로

@@ -42,7 +42,8 @@ public record AdminLlmKeySummaryResponse(
         Instant createdAt,
         @Schema(description = "개별 키 금융 정보의 현재 열람 권한") boolean financeVisible,
         @Schema(description = "키 metadata의 현재 열람 권한") boolean metadataVisible,
-        @Schema(description = "키 사용 관측의 현재 열람 권한") boolean observationVisible, List<String> allowedWorkIds) {
+        @Schema(description = "키 사용 관측의 현재 열람 권한") boolean observationVisible, List<String> allowedWorkIds,
+        @Nullable LlmTokenObservation tokenObservation) {
 
     public static AdminLlmKeySummaryResponse from(LlmApiKey key, UUID workspaceId,
             String workspaceName, UUID orgId, String orgName, UUID requestId,
@@ -55,21 +56,27 @@ public record AdminLlmKeySummaryResponse(
                 key.getOpenrouterUsage(), key.getOpenrouterUsageAt(),
                 key.getOpenrouterLimitRemaining(), openrouterAccountId,
                 openrouterAccountName, workspaceId, workspaceName, orgId, orgName,
-                requestId, key.getCreatedAt(), true, true, true, List.of());
+                requestId, key.getCreatedAt(), true, true, true, List.of(), null);
     }
 
     public AdminLlmKeySummaryResponse projectFinance(boolean visible) {
         if (visible) { return this; }
-        return new AdminLlmKeySummaryResponse(id, name, purpose, status, expiresAt, lastUsedAt, rpm, tpm, concurrency, dailyTokens, null, null, null, null, null, null, openrouterAccountId, openrouterAccountName, workspaceId, workspaceName, orgId, orgName, requestId, createdAt, false, metadataVisible, observationVisible, allowedWorkIds);
+        return new AdminLlmKeySummaryResponse(id, name, purpose, status, expiresAt, lastUsedAt, rpm, tpm, concurrency, dailyTokens, null, null, null, null, null, null, openrouterAccountId, openrouterAccountName, workspaceId, workspaceName, orgId, orgName, requestId, createdAt, false, metadataVisible, observationVisible, allowedWorkIds, tokenObservation);
     }
 
     public AdminLlmKeySummaryResponse project(boolean metadata, boolean observation, boolean finance) {
         AdminLlmKeySummaryResponse value = projectFinance(finance);
-        return new AdminLlmKeySummaryResponse(value.id, value.name, metadata ? value.purpose : null, value.status, value.expiresAt, (metadata || observation) ? value.lastUsedAt : null, (metadata || observation) ? value.rpm : null, (metadata || observation) ? value.tpm : null, (metadata || observation) ? value.concurrency : null, (metadata || observation) ? value.dailyTokens : null, value.creditLimit, value.creditLimitReset, value.creditAxisConnected, value.creditUsage, value.creditUsageAt, value.creditLimitRemaining, (metadata || finance) ? value.openrouterAccountId : null, (metadata || finance) ? value.openrouterAccountName : null, value.workspaceId, value.workspaceName, value.orgId, value.orgName, value.requestId, value.createdAt, value.financeVisible, metadata, observation, allowedWorkIds);
+        return new AdminLlmKeySummaryResponse(value.id, value.name, metadata ? value.purpose : null, value.status, value.expiresAt, (metadata || observation) ? value.lastUsedAt : null, (metadata || observation) ? value.rpm : null, (metadata || observation) ? value.tpm : null, (metadata || observation) ? value.concurrency : null, (metadata || observation) ? value.dailyTokens : null, value.creditLimit, value.creditLimitReset, value.creditAxisConnected, value.creditUsage, value.creditUsageAt, value.creditLimitRemaining, (metadata || finance) ? value.openrouterAccountId : null, (metadata || finance) ? value.openrouterAccountName : null, value.workspaceId, value.workspaceName, value.orgId, value.orgName, value.requestId, value.createdAt, value.financeVisible, metadata, observation, allowedWorkIds, observation ? tokenObservation : null);
     }
     public AdminLlmKeySummaryResponse withAllowedWorkIds(List<String> work) {
         return new AdminLlmKeySummaryResponse(id,name,purpose,status,expiresAt,lastUsedAt,rpm,tpm,concurrency,dailyTokens,
                 creditLimit,creditLimitReset,creditAxisConnected,creditUsage,creditUsageAt,creditLimitRemaining,openrouterAccountId,
-                openrouterAccountName,workspaceId,workspaceName,orgId,orgName,requestId,createdAt,financeVisible,metadataVisible,observationVisible,List.copyOf(work));
+                openrouterAccountName,workspaceId,workspaceName,orgId,orgName,requestId,createdAt,financeVisible,metadataVisible,observationVisible,List.copyOf(work),tokenObservation);
+    }
+    public AdminLlmKeySummaryResponse withTokenObservation(@Nullable LlmTokenObservation observation) {
+        return new AdminLlmKeySummaryResponse(id,name,purpose,status,expiresAt,lastUsedAt,rpm,tpm,concurrency,dailyTokens,
+                creditLimit,creditLimitReset,creditAxisConnected,creditUsage,creditUsageAt,creditLimitRemaining,openrouterAccountId,
+                openrouterAccountName,workspaceId,workspaceName,orgId,orgName,requestId,createdAt,financeVisible,metadataVisible,
+                observationVisible,allowedWorkIds,observationVisible ? observation : null);
     }
 }

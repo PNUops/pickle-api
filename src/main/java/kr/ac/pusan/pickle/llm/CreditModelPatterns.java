@@ -244,6 +244,43 @@ public final class CreditModelPatterns {
         return withoutAlias(modelName.trim().toLowerCase(Locale.ROOT)).startsWith("openrouter/");
     }
 
+    /**
+     * Finite matching patterns for one fixed model in the existing one-star
+     * language. SQL can test stored strings against this set without growing
+     * a second implementation of alias, variant and separator matching.
+     */
+    public static List<String> matchingPatternsFor(String modelName, boolean denied) {
+        String name = modelName.trim().toLowerCase(Locale.ROOT);
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        matchingCandidates(name, candidates);
+        if (denied) { matchingCandidates(withoutAlias(name), candidates); }
+        List<String> result = new ArrayList<>();
+        for (String candidate : candidates) {
+            if (denied ? matchesDenied(candidate, name) : matches(candidate, name)) { result.add(candidate); }
+        }
+        return List.copyOf(result);
+    }
+
+    private static void matchingCandidates(String name, LinkedHashSet<String> candidates) {
+        candidates.add(name); candidates.add(withoutVariant(name));
+        int slash = name.indexOf('/');
+        if (slash <= 0 || slash == name.length() - 1) { return; }
+        String rest = name.substring(slash + 1);
+        String base = withoutVariant(rest);
+        for (String provider : List.of(name.substring(0, slash), "*")) {
+            String prefix = provider + "/";
+            candidates.add(prefix + "*"); candidates.add(prefix + rest); candidates.add(prefix + base);
+            for (int i = 1; i <= rest.length(); i++) {
+                candidates.add(prefix + rest.substring(0, i) + "*");
+                candidates.add(prefix + "*" + rest.substring(rest.length() - i));
+            }
+            for (int i = 1; i <= base.length(); i++) {
+                candidates.add(prefix + "*" + base.substring(base.length() - i));
+            }
+            for (char separator : new char[] {'-', '.', ':'}) { candidates.add(prefix + rest + separator + "*"); }
+        }
+    }
+
     private static String withoutAlias(String name) {
         int start = 0;
         while (start < name.length() && name.charAt(start) == '~') {

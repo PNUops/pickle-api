@@ -13,6 +13,7 @@ import kr.ac.pusan.pickle.security.institution.InstitutionQuerySourceConstraints
 import kr.ac.pusan.pickle.security.institution.InstitutionQuerySourceConstraints.InstitutionLlmServiceRelationKind;
 import kr.ac.pusan.pickle.security.institution.InstitutionQuerySourceConstraints.InstitutionQuerySourceConstraint;
 import kr.ac.pusan.pickle.security.institution.InstitutionWorkspaceScope;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +22,70 @@ import org.springframework.stereotype.Component;
 public class InstitutionLlmQueryAccess {
     private final InstitutionAuthorization authorization;
     private final JdbcTemplate jdbc;
+
+    /** The same complete source branches as the key collection's fixed projections. */
+    public String selectorKeyRows(AuthenticatedUser actor) {
+        if (InstitutionLlmAccess.systemRead(actor)) { return "true"; }
+        List<String> rows = new ArrayList<>();
+        for (InstitutionWork work : List.of(InstitutionWork.LLM_METADATA_READ, InstitutionWork.LLM_METADATA_SUPPORT_READ,
+                InstitutionWork.LLM_OBSERVE, InstitutionWork.LLM_OBSERVE_SUPPORT_READ, InstitutionWork.LLM_KEY_COST_READ,
+                InstitutionWork.LLM_ACL_SUPPORT_READ, InstitutionWork.LLM_ACL_SUPPORT_MANAGE,
+                InstitutionWork.LLM_TOKEN_OPERATE, InstitutionWork.LLM_KEY_BUDGET, InstitutionWork.LLM_STATE_OPERATE,
+                InstitutionWork.LLM_PERIOD, InstitutionWork.LLM_REVOKE)) {
+            rows.add(authorizationKeyRows(actor, work, work.write()
+                    && work != InstitutionWork.LLM_ACL_SUPPORT_MANAGE));
+        }
+        return "(" + String.join(" or ", rows) + ")";
+    }
+
+    /** Reading a binding follows the current key field or its existing budget reference. */
+    public String bindingKeyRows(AuthenticatedUser actor) {
+        if (InstitutionLlmAccess.systemRead(actor)) { return "true"; }
+        return "(" + authorizationKeyRows(actor, InstitutionWork.LLM_METADATA_READ, false) + " or "
+                + authorizationKeyRows(actor, InstitutionWork.LLM_METADATA_SUPPORT_READ, false) + " or "
+                + authorizationKeyRows(actor, InstitutionWork.LLM_KEY_COST_READ, false) + " or "
+                + authorizationKeyRows(actor, InstitutionWork.LLM_KEY_BUDGET, true) + ")";
+    }
+
+    /** Only a configuration field or command reference can supply policy membership. */
+    public String policyKeyRows(AuthenticatedUser actor, boolean financial) {
+        if (InstitutionLlmAccess.systemRead(actor)) { return "true"; }
+        if (financial) {
+            return "(" + authorizationKeyRows(actor, InstitutionWork.LLM_KEY_COST_READ, false) + " or "
+                    + authorizationKeyRows(actor, InstitutionWork.LLM_KEY_BUDGET, true) + ")";
+        }
+        return "(" + bindingKeyRows(actor) + " or " + observationFieldKeyRows(actor) + " or "
+                + authorizationKeyRows(actor, InstitutionWork.LLM_TOKEN_OPERATE, true) + ")";
+    }
+
+    public String observationFieldKeyRows(AuthenticatedUser actor) {
+        if (InstitutionLlmAccess.systemRead(actor)) { return "true"; }
+        return "(" + authorizationKeyRows(actor, InstitutionWork.LLM_OBSERVE, false) + " or "
+                + authorizationKeyRows(actor, InstitutionWork.LLM_OBSERVE_SUPPORT_READ, false) + ")";
+    }
+
+    public String metadataKeyRows(AuthenticatedUser actor) {
+        if (InstitutionLlmAccess.systemRead(actor)) { return "true"; }
+        return "(" + authorizationKeyRows(actor, InstitutionWork.LLM_METADATA_READ, false) + " or "
+                + authorizationKeyRows(actor, InstitutionWork.LLM_METADATA_SUPPORT_READ, false) + ")";
+    }
+
+    private String authorizationKeyRows(AuthenticatedUser actor, InstitutionWork work, boolean command) {
+        List<String> rows = new ArrayList<>();
+        for (var source : authorization.sources(actor, work)) {
+            String institution = source.requiredInstitutionId() == null
+                    ? "(k.org_id is null or k.org_id in (select id from orgs))"
+                    : "k.org_id in (select id from orgs where public_id='" + source.requiredInstitutionId() + "'::uuid)";
+            String workspace = "exists(select 1 from workspaces source_workspace where source_workspace.id=k.workspace_id";
+            if (source.workspaceScope().mode() == InstitutionWorkspaceScope.Mode.LISTED) {
+                if (source.workspaceScope().workspaceIds().isEmpty()) { continue; }
+                workspace += " and source_workspace.public_id in (" + uuidList(source.workspaceScope().workspaceIds()) + ")";
+            }
+            if (command) { workspace += " and source_workspace.deleted_at is null"; }
+            rows.add("(" + institution + " and " + workspace + "))");
+        }
+        return rows.isEmpty() ? "false" : "(" + String.join(" or ", rows) + ")";
+    }
 
     public InstitutionLlmQueryAccess(InstitutionAuthorization authorization, JdbcTemplate jdbc) {
         this.authorization = authorization; this.jdbc = jdbc;

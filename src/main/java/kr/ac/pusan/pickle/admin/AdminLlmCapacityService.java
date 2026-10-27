@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmConsumerSort;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacityConsumer;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacityConsumers;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacityCounts;
@@ -104,6 +105,17 @@ public class AdminLlmCapacityService {
             @Nullable String model, @Nullable String error, boolean errorTypeMissing,
             @Nullable CapacityReasonCategory reasonCategory, CapacityGroup group,
             int page, int size, @Nullable Integer requestedBucket, @Nullable UUID telemetrySourceId) {
+        return get(actor, from, to, orgId, workspaceId, upstreamId, model, error, errorTypeMissing,
+                reasonCategory, group, page, size, requestedBucket, telemetrySourceId, null, LlmConsumerSort.REQUESTS_DESC);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public AdminLlmCapacityResponse get(AuthenticatedUser actor, Instant from, Instant to,
+            @Nullable UUID orgId, @Nullable UUID workspaceId, @Nullable UUID upstreamId,
+            @Nullable String model, @Nullable String error, boolean errorTypeMissing,
+            @Nullable CapacityReasonCategory reasonCategory, CapacityGroup group,
+            int page, int size, @Nullable Integer requestedBucket, @Nullable UUID telemetrySourceId,
+            @Nullable UUID openrouterAccountId, LlmConsumerSort sort) {
         Instant now = clock.instant();
         int bucket = bucket(from, to, now, requestedBucket);
         if (error != null && errorTypeMissing) { throw invalid("errorTypeMissing", "errorType과 미기록 필터를 함께 지정할 수 없습니다."); }
@@ -111,6 +123,10 @@ public class AdminLlmCapacityService {
         Long requestedOrg = orgId == null ? null : orgs.findByPublicId(orgId).map(Org::getId).orElse(null);
         OrgScope scope = access.queryScope(actor, orgId, requestedOrg);
         Sql scopeSql = keyScope(actor, scope, workspaceId);
+        if (openrouterAccountId != null && Boolean.TRUE.equals(jdbc.queryForObject(
+                "select exists(select 1 from llm_api_keys k join workspaces w on w.id=k.workspace_id where "
+                        + scopeSql.text() + " and not (" + access.bindingKeyRows(actor) + "))",
+                Boolean.class, scopeSql.args().toArray()))) { throw denied(); }
         if (workspaceId != null && !Boolean.TRUE.equals(jdbc.queryForObject(
                 "select exists(select 1 from llm_api_keys k join workspaces w on w.id=k.workspace_id where " + scopeSql.text() + ")",
                 Boolean.class, scopeSql.args().toArray()))) { throw missing(); }
@@ -123,6 +139,10 @@ public class AdminLlmCapacityService {
         args.add(DatabaseTimestamps.ceilingMicros(from)); args.add(DatabaseTimestamps.ceilingMicros(to)); args.addAll(scopeSql.args());
         StringBuilder where = new StringBuilder("e.requested_at>=? and e.requested_at<? and ").append(scopeSql.text());
         if (retained != null && from.isBefore(retained)) { where.append(" and e.requested_at>=?"); args.add(Timestamp.from(retained)); }
+        if (openrouterAccountId != null) {
+            where.append(" and k.openrouter_account_id=(select id from openrouter_accounts where public_id=?)");
+            args.add(openrouterAccountId);
+        }
         if (upstream != null) { where.append(" and lower(e.upstream_ref)=?"); args.add(upstream); }
         if (model != null) { bounded(model, "publicModelName"); where.append(" and e.public_model_name=?"); args.add(model); }
         if (error != null) { bounded(error, "errorType"); where.append(" and e.error_type=?"); args.add(error); }
@@ -139,6 +159,9 @@ public class AdminLlmCapacityService {
                 + " classified_events as (select raw_events.*," + CATEGORY + " as reason_category from raw_events),"
                 + " events as (select * from classified_events" + (reasonCategory == null ? "" : " where reason_category=?") + ") ";
         if (reasonCategory != null) { args.add(reasonCategory.name()); }
+        if (sort == LlmConsumerSort.REPORTED_COST_DESC && (!access.hasMoneySources(actor)
+                || Boolean.TRUE.equals(jdbc.queryForObject(cte + "select exists(select 1 from events where not finance_visible)",
+                        Boolean.class, args.toArray())))) { throw denied(); }
         CapacityRawHistoryState state = history(from, to, retained);
         boolean available = state != CapacityRawHistoryState.FULLY_SWEPT;
         CapacityCounts summary = jdbc.queryForObject(cte + "select " + COUNTS + " from events",
@@ -149,7 +172,7 @@ public class AdminLlmCapacityService {
                 + " where status is null or status<>'OK' group by error_type,reason_category order by requests desc,error_type nulls first,category",
                 (rs, n) -> new CapacityReason(rs.getString("error_type"), CapacityReasonCategory.valueOf(rs.getString("category")),
                         rs.getLong("requests"), rs.getLong("known_keys")), args.toArray());
-        CapacityConsumers consumers = consumers(cte, args, actor, group, page, size, now, available);
+        CapacityConsumers consumers = consumers(cte, args, actor, group, page, size, now, available, sort);
         Instant received = jdbc.queryForObject("select max(e.received_at) from llm_usage_events e left join llm_api_keys k on k.id=e.key_id"
                 + " left join workspaces w on w.id=k.workspace_id where " + scopeSql.text(), Instant.class, scopeSql.args().toArray());
         Instant rollup = jdbc.queryForObject("select max(last_success_at) from llm_usage_rollup_state", Instant.class);
@@ -157,7 +180,7 @@ public class AdminLlmCapacityService {
         return new AdminLlmCapacityResponse(now, "Asia/Seoul", from, to, bucket, summary, series, reasons, consumers,
                 selectors(scopeSql, upstreams), new CapacityQuality(state, retained, retention.retentionDays(), received,
                         rollup, "UNKNOWN", observations.gatewayStatus(actor, now)), telemetry,
-                observationReader.read(actor, from, to, bucket, telemetrySourceId));
+                observationReader.read(actor, from, to, bucket, telemetrySourceId), openrouterAccountId);
     }
 
     private List<CapacitySeriesPoint> series(String cte, List<Object> args, AuthenticatedUser actor,
@@ -180,7 +203,7 @@ public class AdminLlmCapacityService {
     }
 
     private CapacityConsumers consumers(String cte, List<Object> args, AuthenticatedUser actor,
-            CapacityGroup group, int page, int size, Instant now, boolean available) {
+            CapacityGroup group, int page, int size, Instant now, boolean available, LlmConsumerSort sort) {
         String dimensions = switch (group) {
             case ORG -> "org_public_id,org_name";
             case WORKSPACE -> "workspace_public_id,workspace_name";
@@ -194,22 +217,38 @@ public class AdminLlmCapacityService {
         Long total = jdbc.queryForObject(cte + "select count(*) from (select 1 from events group by " + dimensions + ") grouped", Long.class, args.toArray());
         List<Object> values = new ArrayList<>(args); values.add(size); values.add((long) page * size);
         String tie = switch (group) { case ORG -> "org_public_id"; case WORKSPACE -> "workspace_public_id"; case KEY -> "key_public_id"; };
+        String ordering = switch (sort) {
+            case REQUESTS_DESC -> "requests desc";
+            case TOKENS_DESC -> "(sum(input_tokens)+sum(output_tokens)) desc";
+            case REPORTED_COST_DESC -> "sum(cost_usd) desc nulls last";
+        };
         List<CapacityConsumer> items = jdbc.query(cte + "select " + dimensions + "," + missing + COUNTS
-                + " from events group by " + dimensions + " order by requests desc," + tie + " nulls last limit ? offset ?",
+                + " from events group by " + dimensions + " order by " + ordering + "," + tie + " nulls last limit ? offset ?",
                 (rs, n) -> {
                     UUID key = rs.getObject("key_public_id", UUID.class);
                     return new CapacityConsumer(rs.getObject("org_public_id", UUID.class), rs.getString("org_name"),
                             rs.getObject("workspace_public_id", UUID.class), rs.getString("workspace_name"), key, rs.getString("key_name"),
-                            counts(rs, actor, available), key == null ? null : currentLimits(key, now));
+                            counts(rs, actor, available), null);
                 }, values.toArray());
+        Map<UUID, CapacityCurrentLimits> limits = currentLimits(items.stream().map(CapacityConsumer::keyId)
+                .filter(java.util.Objects::nonNull).toList(), now);
+        items = items.stream().map(item -> new CapacityConsumer(item.orgId(), item.orgName(), item.workspaceId(),
+                item.workspaceName(), item.keyId(), item.keyName(), item.counts(), limits.get(item.keyId()))).toList();
         long count = total == null ? 0 : total;
-        return new CapacityConsumers(group, items, page, size, count, (int) Math.min(Integer.MAX_VALUE, (count + size - 1) / size));
+        return new CapacityConsumers(group, items, page, size, count,
+                (int) Math.min(Integer.MAX_VALUE, (count + size - 1) / size), sort);
     }
 
-    private CapacityCurrentLimits currentLimits(UUID key, Instant now) {
-        return jdbc.queryForObject("select rpm,tpm,concurrency,daily_tokens,quota_exhausted from llm_api_keys where public_id=?",
-                (rs, n) -> new CapacityCurrentLimits(now, rs.getObject("rpm", Integer.class), rs.getObject("tpm", Integer.class),
-                        rs.getObject("concurrency", Integer.class), rs.getObject("daily_tokens", Long.class), rs.getBoolean("quota_exhausted"), false), key);
+    private Map<UUID, CapacityCurrentLimits> currentLimits(List<UUID> keys, Instant now) {
+        Map<UUID, CapacityCurrentLimits> result = new HashMap<>();
+        if (keys.isEmpty()) { return result; }
+        String ids = "{" + keys.stream().map(UUID::toString).collect(java.util.stream.Collectors.joining(",")) + "}";
+        jdbc.query("select public_id,rpm,tpm,concurrency,daily_tokens,quota_exhausted from llm_api_keys where public_id=any(?::uuid[])",
+                rs -> { result.put(rs.getObject("public_id", UUID.class), new CapacityCurrentLimits(now,
+                        rs.getObject("rpm", Integer.class), rs.getObject("tpm", Integer.class),
+                        rs.getObject("concurrency", Integer.class), rs.getObject("daily_tokens", Long.class),
+                        rs.getBoolean("quota_exhausted"), false)); }, ids);
+        return result;
     }
 
     private CapacitySelectors selectors(Sql scope, List<Upstream> upstreams) {

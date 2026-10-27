@@ -12,13 +12,19 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import java.util.UUID;
+import java.math.BigDecimal;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyExpiryRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyLimitsRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeySummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyUsageResponse;
 import kr.ac.pusan.pickle.admin.dto.SuspendAdminLlmKeyRequest;
+import kr.ac.pusan.pickle.admin.dto.LlmKeyCohort;
+import kr.ac.pusan.pickle.admin.dto.LlmKeySort;
+import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
 import kr.ac.pusan.pickle.admin.dto.InstitutionAdminLlmModelsResponse;
@@ -62,9 +68,16 @@ public class AdminLlmKeyController {
             @RequestParam(required = false) LlmApiKeyStatus status,
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+            @Parameter(description = "현재 키 행의 모집단. 승인 후 키 생성 전 계획은 포함하지 않습니다.")
+            @RequestParam(defaultValue = "ALL") LlmKeyCohort cohort,
+            @Parameter(description = "안정된 서버 정렬. 요청 집합 전체의 해당 관측·금융 source를 읽을 수 있어야 해당 값으로 정렬합니다.")
+            @RequestParam(defaultValue = "NEWEST") LlmKeySort sort,
+            @Parameter(description = "저장 정책과 기능 권한이 허용하는 공개 모델명. 예산·발급·라우팅·실제 처리 성공을 보장하지 않습니다.")
+            @RequestParam(required = false) String policyModel,
+            @RequestParam(defaultValue = "chat") String policyFeature) {
         return service.list(principal, orgId, workspaceId, requestId, openrouterAccountId,
-                status, query, page, size);
+                status, query, page, size, cohort, sort, policyModel, policyFeature);
     }
 
     @GetMapping("/{keyId}")
@@ -72,8 +85,27 @@ public class AdminLlmKeyController {
             description = "실제 키에 대한 업무별로 운영 상태와 현재 허용값을 투영하며, 금융 필드는 별도로 판정합니다. 인증 비밀이나 기록된 본문은 반환하지 않습니다.")
     public AdminLlmKeyDetailResponse getAdminLlmKey(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable UUID keyId) {
-        return service.get(principal, keyId);
+            @PathVariable UUID keyId,
+            @Parameter(description = "true이면 현재 허용된 금액 제안의 읽기 projection을 포함합니다. false이면 제안 파라미터를 보내지 않습니다. 저장·계정 결합·외부 호출을 하지 않습니다.")
+            @RequestParam(defaultValue = "false") boolean projectLimits,
+            @Parameter(description = "제안 금액(USD). 생략은 현재 값 유지, 빈 값·null은 허용하지 않습니다. 0 이상, 정수 10자리·소수 2자리까지이며 0은 유료 모델을 닫습니다.")
+            @RequestParam(required = false) @DecimalMin(value = "0", message = "금액 한도는 0 이상이어야 합니다.")
+            @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.") BigDecimal proposedCreditLimit,
+            @Parameter(description = "false는 리셋 제안 없음, true이면서 proposedCreditLimitReset 생략은 명시한 총액 한도입니다.")
+            @RequestParam(defaultValue = "false") boolean proposedCreditLimitResetSet,
+            @Parameter(description = "resetSet=true일 때 제안하는 DAILY/WEEKLY/MONTHLY 창. resetSet=true이면서 이 값을 생략하면 명시한 총액 한도(null), resetSet=false는 리셋 변경 없음입니다.")
+            @RequestParam(required = false) CreditLimitReset proposedCreditLimitReset,
+            @Parameter(description = "기존 최초 계정 연결 규칙으로 평가할 공개 ID. 계정 전환이나 재결합이 아닙니다.")
+            @RequestParam(required = false) UUID proposedOpenrouterAccountId,
+            HttpServletRequest httpRequest) {
+        boolean amountSet = httpRequest.getParameterMap().containsKey("proposedCreditLimit");
+        boolean resetParameter = httpRequest.getParameterMap().containsKey("proposedCreditLimitReset");
+        boolean accountParameter = httpRequest.getParameterMap().containsKey("proposedOpenrouterAccountId");
+        boolean anyDraft = amountSet || resetParameter || accountParameter
+                || httpRequest.getParameterMap().containsKey("proposedCreditLimitResetSet");
+        return service.get(principal, keyId, projectLimits, anyDraft, amountSet, proposedCreditLimit,
+                proposedCreditLimitResetSet, resetParameter, proposedCreditLimitReset, accountParameter,
+                proposedOpenrouterAccountId);
     }
 
     @GetMapping("/{keyId}/usage")
