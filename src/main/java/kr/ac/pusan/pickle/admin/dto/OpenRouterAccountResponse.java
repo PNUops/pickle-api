@@ -25,7 +25,7 @@ public record OpenRouterAccountResponse(
         @Nullable String contact,
         @Schema(description = "현재 positive-credit key binding에 선택할 수 있는지")
         boolean eligibleForBinding,
-        @Schema(description = "이 사업 계정에 연결된 LLM API 키 수")
+        @Schema(description = "이 사업 계정에 현재 연결된 모든 상태의 LLM API 키 수. live 약속량과 현재 읽을 수 있는 keyNavigation 부분집합, 기간별 소비 키 수와 다릅니다.")
         @Nullable Long boundKeyCount,
         @Schema(description = "프로비저닝과 대사에 사용할 management credential이 있는지")
         @Nullable Boolean credentialAvailable,
@@ -48,11 +48,20 @@ public record OpenRouterAccountResponse(
         @Schema(description = "등록 시각")
         Instant createdAt,
         @Schema(description = "Metadata 최종 변경 시각")
-        Instant updatedAt, boolean financeVisible, boolean credentialVisible, boolean policyReferenceVisible) {
+        Instant updatedAt, boolean financeVisible, boolean credentialVisible, boolean policyReferenceVisible,
+        @Nullable LlmAccountKeyNavigation keyNavigation) {
     public OpenRouterAccountResponse project(boolean finance, boolean credential, boolean metadata, boolean managementReference) {
         return new OpenRouterAccountResponse(id, orgId, orgName, name, status, metadata ? program : null, metadata ? contact : null, eligibleForBinding, metadata || finance ? boundKeyCount : null,
                 credential ? credentialAvailable : null, credential ? activeCredential : null, credential ? rotationCredential : null,
                 finance ? credits : null, finance ? allocation : null, finance || managementReference ? defaultCreditAllowedModels : null,
-                finance || managementReference ? defaultCreditDeniedModels : null, createdAt, updatedAt, finance, credential, finance || managementReference);
+                finance || managementReference ? defaultCreditDeniedModels : null, createdAt, updatedAt, finance, credential, finance || managementReference,
+                keyNavigation == null || finance ? keyNavigation : keyNavigation.withoutFinance());
+    }
+
+    public OpenRouterAccountResponse withKeyNavigation(@Nullable LlmAccountKeyNavigation navigation) {
+        return new OpenRouterAccountResponse(id, orgId, orgName, name, status, program, contact, eligibleForBinding,
+                boundKeyCount, credentialAvailable, activeCredential, rotationCredential, credits, allocation,
+                defaultCreditAllowedModels, defaultCreditDeniedModels, createdAt, updatedAt, financeVisible,
+                credentialVisible, policyReferenceVisible, navigation);
     }
 }

@@ -54,6 +54,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
+import kr.ac.pusan.pickle.admin.dto.LlmConsumerSort;
+import kr.ac.pusan.pickle.admin.dto.LlmAccountKeyNavigation;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
@@ -80,6 +83,7 @@ public class AdminOpenRouterAccountService {
     private final OpenRouterCreditRefreshScheduler creditRefreshScheduler;
     private final ObjectMapper objectMapper;
     private final AdminLlmAccountUsageService accountUsageService;
+    private final AdminLlmKeyExplorationQuery keyExploration;
 
     public AdminOpenRouterAccountService(OpenRouterAccountRepository accountRepository,
             OpenRouterAccountCredentialRepository credentialRepository,
@@ -91,7 +95,8 @@ public class AdminOpenRouterAccountService {
             OpenRouterAccountCreditsQueryService creditsQuery,
             OpenRouterAllocationQuery allocationQuery,
             OpenRouterCreditRefreshScheduler creditRefreshScheduler, ObjectMapper objectMapper,
-            AdminLlmAccountUsageService accountUsageService, InstitutionAccountAccess institutionAccess, InstitutionLlmAccess actors) {
+            AdminLlmAccountUsageService accountUsageService, InstitutionAccountAccess institutionAccess,
+            InstitutionLlmAccess actors, AdminLlmKeyExplorationQuery keyExploration) {
         this.institutionAccess = institutionAccess; this.actors = actors;
         this.accountRepository = accountRepository;
         this.credentialRepository = credentialRepository;
@@ -108,9 +113,10 @@ public class AdminOpenRouterAccountService {
         this.creditRefreshScheduler = creditRefreshScheduler;
         this.objectMapper = objectMapper;
         this.accountUsageService = accountUsageService;
+        this.keyExploration = keyExploration;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<OpenRouterAccountResponse> list(AuthenticatedUser actor, @Nullable UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
@@ -126,12 +132,14 @@ public class AdminOpenRouterAccountService {
                 .toList();
         Map<Long, OpenRouterAllocationQuery.Allocation> allocations = allocationQuery.forAccounts(
                 accounts.stream().map(OpenRouterAccount::getId).toList());
+        Map<Long, LlmAccountKeyNavigation> navigation = keyExploration.navigation(actor, accounts);
         return accounts.stream()
-                .map(account -> response(actor, account, allocations.get(account.getId())))
+                .map(account -> response(actor, account, allocations.get(account.getId()))
+                        .withKeyNavigation(navigation.get(account.getId())))
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public OpenRouterAccountResponse get(AuthenticatedUser actor, UUID accountId) {
         return response(actor, requireReadable(actor, accountId));
     }
@@ -145,11 +153,17 @@ public class AdminOpenRouterAccountService {
      * the account response: this one attributes, that one states. They are read
      * side by side on the screen and are never subtracted from each other.
      */
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminLlmAccountUsageResponse usage(AuthenticatedUser actor, UUID accountId, int days) {
+        return usage(actor, accountId, days, 0, 20, LlmConsumerSort.REPORTED_COST_DESC);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public AdminLlmAccountUsageResponse usage(AuthenticatedUser actor, UUID accountId, int days,
+            int page, int size, LlmConsumerSort sort) {
         OpenRouterAccount account = requireReadable(actor, accountId);
         if (!institutionAccess.work(actor, InstitutionWork.INSTITUTION_ACCOUNT_FINANCE_READ, account.getOrgId())) { throw notFound(); }
-        return accountUsageService.usage(account.getId(), days);
+        return accountUsageService.usage(account.getId(), days, page, size, sort);
     }
 
     public OpenRouterAccountResponse create(AuthenticatedUser actor,
@@ -958,7 +972,8 @@ public class AdminOpenRouterAccountService {
     }
 
     private OpenRouterAccountResponse response(AuthenticatedUser actor, OpenRouterAccount account) {
-        return response(actor, account, allocationQuery.forAccount(account.getId()));
+        return response(actor, account, allocationQuery.forAccount(account.getId()))
+                .withKeyNavigation(keyExploration.navigation(actor, List.of(account)).get(account.getId()));
     }
 
     /**
@@ -988,7 +1003,7 @@ public class AdminOpenRouterAccountService {
                 CreditModelPatterns.fromJson(objectMapper,
                         account.getDefaultCreditDeniedModels(),
                         "openrouter account " + account.getPublicId()),
-                account.getCreatedAt(), account.getUpdatedAt(), true, true, true).project(
+                account.getCreatedAt(), account.getUpdatedAt(), true, true, true, null).project(
                         institutionAccess.work(current, InstitutionWork.INSTITUTION_ACCOUNT_FINANCE_READ, account.getOrgId()),
                         (institutionAccess.work(current, InstitutionWork.INSTITUTION_ACCOUNT_READ, account.getOrgId())
                             || institutionAccess.work(current, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE, account.getOrgId())),

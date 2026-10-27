@@ -16,6 +16,7 @@ import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeApplyResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeKind;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmAccountImpactProjection;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeReason;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeResult;
@@ -50,7 +51,8 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class AdminBulkChangeService {
 
-    private record PreviewProjection(List<AdminBulkChangePreviewItem> items, Map<UUID, Boolean> fingerprintVisibility) { }
+    private record PreviewProjection(List<AdminBulkChangePreviewItem> items, Map<UUID, Boolean> fingerprintVisibility,
+            @org.jspecify.annotations.Nullable LlmAccountImpactProjection accountImpact) { }
 
     private final Map<AdminBulkChangeKind, BulkChangeHandler<?>> handlers =
             new EnumMap<>(AdminBulkChangeKind.class);
@@ -90,7 +92,7 @@ public class AdminBulkChangeService {
             throw ApiException.validationFailed(List.of(new FieldValidationError("previewId", "새 미리보기에는 적용 식별자를 보내지 마세요.")));
         }
         PreviewProjection projection = preview(handler, actor, request, now);
-        return store.savePreview(actor.id(), request, projection.items(), projection.fingerprintVisibility());
+        return store.savePreview(actor.id(), request, projection.items(), projection.fingerprintVisibility(), projection.accountImpact());
     }
 
     @Transactional
@@ -203,7 +205,8 @@ public class AdminBulkChangeService {
         }
         AdminBulkChangePreviewResponse response = saved.response();
         return new AdminBulkChangePreviewResponse(response.previewId(), response.createdAt(), response.expiresAt(),
-                response.targetType(), masked ? null : response.change(), items, response.consumedOperationId());
+                response.targetType(), masked ? null : response.change(), items, response.consumedOperationId(),
+                handler.projectAccountImpact(actor, saved.request(), targets, saved.response().items(), response.accountImpact()));
     }
 
     private AdminBulkChangeApplyResponse maskResult(AuthenticatedUser actor, AdminBulkChangeRequest request,
@@ -264,6 +267,7 @@ public class AdminBulkChangeService {
         Map<UUID, T> targets = handler.load(request);
         List<AdminBulkChangePreviewItem> items = new ArrayList<>();
         Map<UUID, Boolean> fingerprintVisibility = new LinkedHashMap<>();
+        Map<UUID, BulkChangeHandler.Judgement> changes = new LinkedHashMap<>();
         for (UUID targetId : request.targetIds()) {
             T target = targets.get(targetId);
             AdminBulkChangeReason reach = target == null ? AdminBulkChangeReason.NOT_FOUND
@@ -279,11 +283,13 @@ public class AdminBulkChangeService {
             String fingerprint = fingerprint(handler, actor, target, change);
             fingerprintVisibility.put(targetId, handler.fingerprintContainsRestrictedFields(actor, target, change));
             BulkChangeHandler.Judgement judgement = handler.judge(actor, target, change, now);
+            if (judgement.writes()) { changes.put(targetId, judgement); }
             items.add(new AdminBulkChangePreviewItem(targetId, handler.name(target),
                     judgement.reason() == null, judgement.reason(), handler.projectFields(actor, target, change, judgement.fields()),
                     fingerprint, judgement.writes() ? handler.actorAccessImpact(actor, target, change) : null));
         }
-        return new PreviewProjection(List.copyOf(items), Map.copyOf(fingerprintVisibility));
+        return new PreviewProjection(List.copyOf(items), Map.copyOf(fingerprintVisibility),
+                handler.accountImpact(actor, request, targets, Map.copyOf(changes), now));
     }
 
     private <T> List<AdminBulkChangeApplyItem> apply(BulkChangeHandler<T> handler,

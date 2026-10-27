@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmUsageResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmConsumerSort;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -43,7 +44,14 @@ public class AdminLlmUsageController {
             @Parameter(description = "일별 추이와 소비처 기간. 7, 30, 90 중 하나")
             @RequestParam(defaultValue = "7") int days,
             @Parameter(description = "소비처와 한도 검토가 각각 반환할 최대 행 수")
-            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int top) {
-        return service.get(principal, orgId, workspaceId, days, top);
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int top,
+            @RequestParam(defaultValue = "0") @Min(0) int consumerPage,
+            @RequestParam(required = false) @Min(1) @Max(100) Integer consumerSize,
+            @RequestParam(defaultValue = "REQUESTS_DESC") LlmConsumerSort consumerSort,
+            @RequestParam(defaultValue = "0") @Min(0) int reviewPage,
+            @RequestParam(required = false) @Min(1) @Max(100) Integer reviewSize) {
+        return service.get(principal, orgId, workspaceId, days, top, consumerPage,
+                consumerSize == null ? top : consumerSize, consumerSort, reviewPage,
+                reviewSize == null ? top : reviewSize);
     }
 }

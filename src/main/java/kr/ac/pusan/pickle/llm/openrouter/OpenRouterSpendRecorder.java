@@ -19,8 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
  * half-hourly job means the number on screen is always that much behind and a
  * screen that does not say so is lying quietly.
  *
- * <p>Legacy observations remain one auto-committed statement per key. An
- * account PAIR is different: its claim, reset-aware ledger and scoped drift
+ * <p>An account PAIR's claim, reset-aware ledger and scoped drift
  * writes are one transaction, locking the account first and key rows in id
  * order. That ordering is load-bearing. The only other multi-key writers
  * ({@code LlmQuotaService} and usage {@code last_used_at}) also sort by id,
@@ -41,13 +40,6 @@ public class OpenRouterSpendRecorder {
      * per half hour never becomes a table anybody has to think about.
      */
     private static final int SNAPSHOT_RETENTION_DAYS = 90;
-
-    private static final String UPDATE_KEY_SQL = """
-            update llm_api_keys
-               set openrouter_usage = ?, openrouter_usage_at = ?,
-                   openrouter_limit_remaining = ?
-             where id = ?
-            """;
 
     private static final String UPDATE_ACCOUNT_KEY_SQL = """
             update llm_api_keys
@@ -88,24 +80,6 @@ public class OpenRouterSpendRecorder {
         public Spend(long keyId, BigDecimal usage, BigDecimal creditLimit) {
             this(keyId, usage, creditLimit, null);
         }
-    }
-
-    /**
-     * Records every reported spend and prunes old snapshots. Called once per
-     * reconciliation, after its verdicts, so a failure here cannot cost a
-     * drift finding.
-     */
-    public void record(List<Spend> spends, Instant readAt) {
-        Timestamp at = Timestamp.from(readAt);
-        spends.stream()
-                .sorted(Comparator.comparingLong(Spend::keyId))
-                .forEach(spend -> {
-                    jdbcTemplate.update(UPDATE_KEY_SQL, spend.usage(), at,
-                            spend.limitRemaining(), spend.keyId());
-                    jdbcTemplate.update(INSERT_SNAPSHOT_SQL, spend.keyId(), spend.usage(),
-                            spend.creditLimit(), at);
-                });
-        prune(readAt);
     }
 
     /**

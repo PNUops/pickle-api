@@ -12,11 +12,14 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.AdminLlmKeyService;
+import kr.ac.pusan.pickle.admin.AdminLlmAccountImpactService;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeFieldDiff;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeKind;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeReason;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeSpec;
+import kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem;
+import kr.ac.pusan.pickle.admin.dto.LlmAccountImpactProjection;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkListChange;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkLlmKeyLimitsChange;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkLlmKeyStatusAction;
@@ -59,15 +62,50 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final InstitutionLlmAccess access;
+    private final AdminLlmAccountImpactService accountImpacts;
 
     LlmKeyBulkChanges(LlmApiKeyRepository keyRepository, AdminLlmKeyService keyService,
-            EntityManager entityManager, ObjectMapper objectMapper, Clock clock, InstitutionLlmAccess access) {
+            EntityManager entityManager, ObjectMapper objectMapper, Clock clock, InstitutionLlmAccess access,
+            AdminLlmAccountImpactService accountImpacts) {
         this.access = access;
         this.keyRepository = keyRepository;
         this.keyService = keyService;
         this.entityManager = entityManager;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.accountImpacts = accountImpacts;
+    }
+
+    @Override
+    LlmAccountImpactProjection accountImpact(AuthenticatedUser actor, AdminBulkChangeRequest request,
+            Map<UUID, LlmApiKey> targets, Map<UUID, Judgement> changes, Instant now) {
+        if (request.change().kind() != AdminBulkChangeKind.LLM_KEY_LIMITS
+                || !financialInput(request.change().llmKeyLimits())) {
+            return LlmAccountImpactProjection.notApplicable(now);
+        }
+        List<AdminLlmAccountImpactService.Plan> plans = new ArrayList<>();
+        for (var item : changes.entrySet()) {
+            LimitsPlan plan = (LimitsPlan) item.getValue().plan();
+            plans.add(new AdminLlmAccountImpactService.Plan(targets.get(item.getKey()), plan.next(), plan.account(), true));
+        }
+        return accountImpacts.evaluate(actor, plans);
+    }
+
+    @Override
+    @Nullable LlmAccountImpactProjection projectAccountImpact(AuthenticatedUser actor, AdminBulkChangeRequest request,
+            Map<UUID, LlmApiKey> targets, List<AdminBulkChangePreviewItem> originalItems,
+            @Nullable LlmAccountImpactProjection saved) {
+        if (saved == null) { return null; }
+        List<LlmApiKey> keys = new ArrayList<>();
+        for (AdminBulkChangePreviewItem item : originalItems) {
+            if (!item.applicable() || item.fields().isEmpty()) { continue; }
+            LlmApiKey key = targets.get(item.targetId());
+            if (key == null || accessRefusal(actor, key, request.change()) != null) {
+                return LlmAccountImpactProjection.notProvided(saved.observedAt());
+            }
+            keys.add(key);
+        }
+        return accountImpacts.remask(actor, saved, keys);
     }
 
     /** What a limits judgment settled on, carried to the write untouched. */

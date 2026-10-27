@@ -22,6 +22,7 @@ import kr.ac.pusan.pickle.admin.dto.LlmUsageBreakdownResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageConsumerLevel;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageConsumerResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageConsumersResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmConsumerSort;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageDailyPointResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageDemandResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageModelBreakdownResponse;
@@ -103,6 +104,13 @@ public class AdminLlmUsageService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminLlmUsageResponse get(AuthenticatedUser actor, @Nullable UUID orgId,
             @Nullable UUID workspaceId, int days, int top) {
+        return get(actor, orgId, workspaceId, days, top, 0, top, LlmConsumerSort.REQUESTS_DESC, 0, top);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public AdminLlmUsageResponse get(AuthenticatedUser actor, @Nullable UUID orgId,
+            @Nullable UUID workspaceId, int days, int top, int consumerPage, int consumerSize,
+            LlmConsumerSort consumerSort, int reviewPage, int reviewSize) {
         if (days != 7 && days != 30 && days != 90) {
             throw ApiException.validationFailed(List.of(new FieldValidationError(
                     "days", "조회 기간은 7일, 30일, 90일 중 하나여야 합니다.")));
@@ -118,9 +126,10 @@ public class AdminLlmUsageService {
         Map<LocalDate, UsageTotals> ninetyDays = dailyTotals(
                 context, to.minusDays(89), to);
         LlmUsageDemandResponse demand = demand(ninetyDays, from, to);
-        LlmUsageConsumersResponse consumers = consumers(context, actor, from, to, top);
+        LlmUsageConsumersResponse consumers = consumers(context, actor, from, to,
+                consumerSize, consumerPage, consumerSort);
         LlmLimitReviewCollectionResponse limitReview = limitReview(
-                context, generatedAt, to, top);
+                context, generatedAt, to, reviewSize, reviewPage);
         LlmUsageQualityResponse quality = quality(
                 context, actor, generatedAt, from, to);
         LlmUsageBreakdownResponse breakdown = breakdown(context, from, to, top);
@@ -220,7 +229,11 @@ public class AdminLlmUsageService {
     }
 
     private LlmUsageConsumersResponse consumers(ScopeContext context, AuthenticatedUser actor,
-            LocalDate from, LocalDate to, int top) {
+            LocalDate from, LocalDate to, int size, int page, LlmConsumerSort sort) {
+        if (sort == LlmConsumerSort.REPORTED_COST_DESC && !completeMoneyProjection(context)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "현재 조회 범위에서는 금액순 정렬을 제공할 수 없습니다.");
+        }
         LlmUsageConsumerLevel level = context.workspace() != null
                 ? LlmUsageConsumerLevel.KEY
                 : (!actor.role().isOrgTier() && context.scope().isUnrestricted()
@@ -264,8 +277,7 @@ public class AdminLlmUsageService {
         args.add(windowEnd);
         args.add(windowStart);
         args.addAll(parts.args());
-        args.add(top);
-        List<ConsumerRow> rows = jdbcTemplate.query("""
+        String query = """
                 with per_key as (
                     select d.key_id,
                            sum(d.requests) as requests,
@@ -315,16 +327,28 @@ public class AdminLlmUsageService {
                   join orgs o on o.id = k.org_id
                   left join metered m on m.key_id = pk.key_id
                  where true
-                """.replace("__MONEY__", institutionQueries.moneyKeyRows(context.actor())).formatted(dimensions) + parts.clause() + " group by " + group
-                + " order by requests desc, " + order + " limit ?",
-                (rs, rowNum) -> consumerRow(rs), args.toArray());
-        long total = rows.isEmpty() ? 0 : rows.getFirst().totalItems();
+                """.replace("__MONEY__", institutionQueries.moneyKeyRows(context.actor())).formatted(dimensions)
+                + parts.clause() + " group by " + group;
+        String ordering = switch (sort) {
+            case REQUESTS_DESC -> "requests desc";
+            case TOKENS_DESC -> "(sum(pk.input_tokens)+sum(pk.output_tokens)) desc";
+            case REPORTED_COST_DESC -> "case when sum(pk.priced_requests)>0 then sum(pk.cost_usd) end desc nulls last";
+        };
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(size); pageArgs.add((long) page * size);
+        List<ConsumerRow> rows = jdbcTemplate.query(query + " order by " + ordering + ", " + order + " limit ? offset ?",
+                (rs, rowNum) -> consumerRow(rs), pageArgs.toArray());
+        Long emptyPageTotal = rows.isEmpty() ? jdbcTemplate.queryForObject(
+                "select count(*) from (" + query + ") matched_consumers", Long.class, args.toArray()) : null;
+        long total = rows.isEmpty() ? emptyPageTotal == null ? 0 : emptyPageTotal : rows.getFirst().totalItems();
         return new LlmUsageConsumersResponse(level,
-                rows.stream().map(ConsumerRow::item).toList(), total, total > rows.size());
+                rows.stream().map(ConsumerRow::item).toList(), total, total > rows.size(), page, size,
+                (int) Math.min(Integer.MAX_VALUE, (total + size - 1) / size), from, to,
+                "DAILY_ROLLUP_AND_VENDOR_METER_SNAPSHOTS", sort);
     }
 
     private LlmLimitReviewCollectionResponse limitReview(ScopeContext context,
-            Instant generatedAt, LocalDate today, int top) {
+            Instant generatedAt, LocalDate today, int size, int page) {
         SqlParts parts = scopedParts(context, "k.org_id", "k.workspace_id");
         List<Object> args = new ArrayList<>(parts.args());
         args.add(Timestamp.from(generatedAt));
@@ -332,7 +356,6 @@ public class AdminLlmUsageService {
         args.add(today);
         args.add(today.minusDays(6));
         args.add(today.plusDays(1));
-        args.add(top);
         String sql = """
                 with scoped_keys as (
                     select k.id, k.public_id, k.name, k.status, k.expires_at,
@@ -413,14 +436,19 @@ public class AdminLlmUsageService {
                 )
                 select review.*, count(*) over() as total_items
                   from review
-                 order by actually_exhausted desc, utilization desc nulls last, id desc
-                 limit ?
                 """;
-        List<LimitRow> rows = jdbcTemplate.query(sql,
-                (rs, rowNum) -> limitRow(rs), args.toArray());
-        long total = rows.isEmpty() ? 0 : rows.getFirst().totalItems();
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(size); pageArgs.add((long) page * size);
+        List<LimitRow> rows = jdbcTemplate.query(sql
+                + " order by actually_exhausted desc, utilization desc nulls last, id desc limit ? offset ?",
+                (rs, rowNum) -> limitRow(rs), pageArgs.toArray());
+        Long emptyPageTotal = rows.isEmpty() ? jdbcTemplate.queryForObject(
+                "select count(*) from (" + sql + ") matched_review", Long.class, args.toArray()) : null;
+        long total = rows.isEmpty() ? emptyPageTotal == null ? 0 : emptyPageTotal : rows.getFirst().totalItems();
         return new LlmLimitReviewCollectionResponse(
-                rows.stream().map(LimitRow::item).toList(), total, total > rows.size());
+                rows.stream().map(LimitRow::item).toList(), total, total > rows.size(), page, size,
+                (int) Math.min(Integer.MAX_VALUE, (total + size - 1) / size),
+                today.minusDays(6), today, generatedAt);
     }
 
     private LlmUsageQualityResponse quality(ScopeContext context, AuthenticatedUser actor,

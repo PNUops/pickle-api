@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmConsumerSort;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacityGroup;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmCapacityResponse.CapacityReasonCategory;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -56,11 +57,16 @@ public class AdminLlmCapacityController {
             @Parameter(description = "버킷 초. 생략하면 기간에 맞추며 최대 1440개 버킷을 반환합니다.")
             @RequestParam(required = false) Integer bucketSeconds,
             @Parameter(description = "SYS 전역 장비 표본의 고정 원천 공개 ID. 기관·공간·원인·공개 모델 수요 필터와 독립이며 현재 설정된 단일 원천만 지원합니다.")
-            @RequestParam(required = false) @Nullable UUID telemetrySourceId) {
+            @RequestParam(required = false) @Nullable UUID telemetrySourceId,
+            @Parameter(description = "현재 보이는 키의 사업 계정 결합으로 보존 원문을 좁히는 공개 ID. 실제 지불 주체나 과거 계정 이력의 증거가 아닙니다.")
+            @RequestParam(required = false) @Nullable UUID openrouterAccountId,
+            @RequestParam(defaultValue = "REQUESTS_DESC") LlmConsumerSort sort) {
         List<FieldValidationError> errors = new ArrayList<>();
         if (from == null) { errors.add(new FieldValidationError("from", "조회 시작 시각을 보내 주세요.")); }
         if (to == null) { errors.add(new FieldValidationError("to", "조회 종료 시각을 보내 주세요.")); }
         if (!errors.isEmpty()) { throw ApiException.validationFailed(errors); }
-        return service.get(actor, from, to, orgId, workspaceId, upstreamId, publicModelName, errorType, errorTypeMissing, reasonCategory, group, page, size, bucketSeconds, telemetrySourceId);
+        return service.get(actor, from, to, orgId, workspaceId, upstreamId, publicModelName, errorType,
+                errorTypeMissing, reasonCategory, group, page, size, bucketSeconds, telemetrySourceId,
+                openrouterAccountId, sort);
     }
 }

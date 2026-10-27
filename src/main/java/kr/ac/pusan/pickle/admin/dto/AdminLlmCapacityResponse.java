@@ -23,7 +23,7 @@ public record AdminLlmCapacityResponse(
         CapacitySelectors selectors,
         CapacityQuality quality,
         boolean telemetryVisible,
-        CapacityTelemetry telemetry) {
+        CapacityTelemetry telemetry, @Nullable UUID openrouterAccountId) {
 
     public enum CapacityGroup { ORG, WORKSPACE, KEY }
     public enum CapacityReasonCategory {
@@ -64,7 +64,7 @@ public record AdminLlmCapacityResponse(
     }
 
     public record CapacityConsumers(CapacityGroup group, List<CapacityConsumer> items,
-            int page, int size, long totalElements, int totalPages) {
+            int page, int size, long totalElements, int totalPages, LlmConsumerSort sort) {
     }
 
     public record CapacityConsumer(@Nullable UUID orgId, @Nullable String orgName,

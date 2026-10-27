@@ -24,12 +24,12 @@ import tools.jackson.databind.ObjectMapper;
  * characters are plenty: this guards against a target changing between two
  * screens, not against an adversary.
  */
-final class BulkFingerprints {
+public final class BulkFingerprints {
 
     private BulkFingerprints() {
     }
 
-    static String of(ObjectMapper objectMapper, Map<String, Object> values) {
+    public static String of(ObjectMapper objectMapper, Map<String, Object> values) {
         byte[] canonical = objectMapper.writeValueAsBytes(values);
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical);

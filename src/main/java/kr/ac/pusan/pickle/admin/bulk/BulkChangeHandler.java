@@ -11,6 +11,8 @@ import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeKind;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeReason;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeSpec;
+import kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem;
+import kr.ac.pusan.pickle.admin.dto.LlmAccountImpactProjection;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.jspecify.annotations.Nullable;
@@ -56,6 +58,13 @@ abstract class BulkChangeHandler<T> {
     }
 
     void prepareApply(AuthenticatedUser actor, AdminBulkChangeRequest request) { }
+
+    @Nullable LlmAccountImpactProjection accountImpact(AuthenticatedUser actor, AdminBulkChangeRequest request,
+            Map<UUID, T> targets, Map<UUID, Judgement> changes, Instant now) { return null; }
+
+    @Nullable LlmAccountImpactProjection projectAccountImpact(AuthenticatedUser actor, AdminBulkChangeRequest request,
+            Map<UUID, T> targets, List<AdminBulkChangePreviewItem> originalItems,
+            @Nullable LlmAccountImpactProjection saved) { return null; }
 
     @Nullable ActorAccessImpact actorAccessImpact(AuthenticatedUser actor, T target,
             AdminBulkChangeSpec change) { return null; }
