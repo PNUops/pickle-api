@@ -217,13 +217,13 @@ public class LlmApiKey {
      * so it is always as stale as that job's interval — which is why the time
      * travels with it. Null is unreported, never zero.
      */
-    @Column(name = "openrouter_usage")
+    @Column(name = "openrouter_usage", updatable = false)
     private @Nullable BigDecimal openrouterUsage;
 
-    @Column(name = "openrouter_usage_at")
+    @Column(name = "openrouter_usage_at", updatable = false)
     private @Nullable Instant openrouterUsageAt;
 
-    @Column(name = "openrouter_limit_remaining")
+    @Column(name = "openrouter_limit_remaining", updatable = false)
     private @Nullable BigDecimal openrouterLimitRemaining;
 
     @Column(name = "created_by", nullable = false)

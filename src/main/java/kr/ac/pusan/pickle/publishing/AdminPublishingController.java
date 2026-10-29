@@ -47,7 +47,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/admin")
 // Read surfaces: org tier + sys tier. resyncRoutes
 // is a sys-tier-only routine recovery via a method-level override below.
-@PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+@PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN', 'SYS_MANAGER')")
 public class AdminPublishingController {
 
     private final AdminPublishingService adminPublishingService;
@@ -127,7 +127,7 @@ public class AdminPublishingController {
     }
 
     @PatchMapping("/domain-roots/{rootDomain}")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "루트 도메인 승인 정책 변경",
             description = "이 루트 아래 이름 신청을 자동으로 승인할지, 승인 큐에 세울지 정합니다. "
                     + "앞으로 들어오는 신청에만 적용되며 이미 발급된 이름과 이미 기다리는 신청은 "
@@ -152,7 +152,7 @@ public class AdminPublishingController {
     }
 
     @PatchMapping("/domains/{domainId}/renewal")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "도메인 사용 기한 조정",
             description = "외부 도메인의 사용 기한을 옮깁니다. 미루면 그만큼 더 쓰고, 당기면 "
                     + "그 시점에 연장하지 않는 한 이름이 해제됩니다.")

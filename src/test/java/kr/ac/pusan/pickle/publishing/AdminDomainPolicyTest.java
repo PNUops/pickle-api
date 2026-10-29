@@ -5,12 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.publishing.dto.UpdateDomainRenewalRequest;
 import kr.ac.pusan.pickle.publishing.dto.UpdateDomainRootRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.institution.InstitutionActorProvider;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -38,6 +38,8 @@ class AdminDomainPolicyTest {
     private DomainRepository domainRepository;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private InstitutionActorProvider actors;
 
     private long orgId;
     private long workspaceId;
@@ -55,10 +57,7 @@ class AdminDomainPolicyTest {
                 insert into users (email, name, role, status, password_hash)
                 values (?, ?, 'SYS_ADMIN', 'ACTIVE', 'x') returning id
                 """, Long.class, slug + "@pusan.ac.kr", "관리자");
-        admin = new AuthenticatedUser(userId,
-                jdbcTemplate.queryForObject("select public_id from users where id = ?", UUID.class,
-                        userId),
-                slug + "@pusan.ac.kr", UserRole.SYS_ADMIN, Map.of());
+        admin = currentActor(userId);
         jdbcTemplate.update("delete from domain_roots");
         // Inserted without the policy column on purpose: the default is what
         // keeps every name already in the ground issued the way it was issued,
@@ -247,13 +246,8 @@ class AdminDomainPolicyTest {
                 insert into users (email, name, role, status, password_hash)
                 values (?, ?, 'ORG_VIEWER', 'ACTIVE', 'x') returning id
                 """, Long.class, slug + "@pusan.ac.kr", "기관 열람자");
-        jdbcTemplate.update(
-                "insert into user_org_roles (user_id, org_id, role) values (?, ?, 'ORG_VIEWER')",
-                userId, inOrgId);
-        return new AuthenticatedUser(userId,
-                jdbcTemplate.queryForObject("select public_id from users where id = ?", UUID.class,
-                        userId),
-                slug + "@pusan.ac.kr", UserRole.ORG_VIEWER, Map.of(inOrgId, UserRole.ORG_VIEWER));
+        SeedFixtures.grantOrgRole(jdbcTemplate, userId, inOrgId, UserRole.ORG_VIEWER);
+        return currentActor(userId);
     }
 
     /** An organisation-tier administrator of the seeded organisation only. */
@@ -263,13 +257,14 @@ class AdminDomainPolicyTest {
                 insert into users (email, name, role, status, password_hash)
                 values (?, ?, 'ORG_ADMIN', 'ACTIVE', 'x') returning id
                 """, Long.class, slug + "@pusan.ac.kr", "기관 관리자");
-        jdbcTemplate.update(
-                "insert into user_org_roles (user_id, org_id, role) values (?, ?, 'ORG_ADMIN')",
-                userId, orgId);
-        return new AuthenticatedUser(userId,
-                jdbcTemplate.queryForObject("select public_id from users where id = ?", UUID.class,
-                        userId),
-                slug + "@pusan.ac.kr", UserRole.ORG_ADMIN, Map.of(orgId, UserRole.ORG_ADMIN));
+        SeedFixtures.grantOrgRole(jdbcTemplate, userId, orgId, UserRole.ORG_ADMIN);
+        return currentActor(userId);
+    }
+
+    private AuthenticatedUser currentActor(long userId) {
+        UUID publicId = jdbcTemplate.queryForObject("select public_id from users where id = ?", UUID.class, userId);
+        int tokenVersion = jdbcTemplate.queryForObject("select token_version from users where id = ?", Integer.class, userId);
+        return actors.authenticate(publicId, tokenVersion).orElseThrow();
     }
 
     /** A VM a served domain can hang from, built the way the surface test does. */

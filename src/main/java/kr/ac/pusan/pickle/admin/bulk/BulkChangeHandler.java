@@ -11,6 +11,8 @@ import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeKind;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeReason;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeSpec;
+import kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem;
+import kr.ac.pusan.pickle.admin.dto.LlmAccountImpactProjection;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.jspecify.annotations.Nullable;
@@ -56,6 +58,13 @@ abstract class BulkChangeHandler<T> {
     }
 
     void prepareApply(AuthenticatedUser actor, AdminBulkChangeRequest request) { }
+
+    @Nullable LlmAccountImpactProjection accountImpact(AuthenticatedUser actor, AdminBulkChangeRequest request,
+            Map<UUID, T> targets, Map<UUID, Judgement> changes, Instant now) { return null; }
+
+    @Nullable LlmAccountImpactProjection projectAccountImpact(AuthenticatedUser actor, AdminBulkChangeRequest request,
+            Map<UUID, T> targets, List<AdminBulkChangePreviewItem> originalItems,
+            @Nullable LlmAccountImpactProjection saved) { return null; }
 
     @Nullable ActorAccessImpact actorAccessImpact(AuthenticatedUser actor, T target,
             AdminBulkChangeSpec change) { return null; }
@@ -104,6 +113,33 @@ abstract class BulkChangeHandler<T> {
 
     /** Explicit public values; internal fingerprint inputs never define the read surface. */
     abstract Map<String, Object> observationValues(T target, AdminBulkChangeSpec change);
+
+    /** Public observations are projected for the current actor, independently of fingerprint inputs. */
+    Map<String, Object> observationValues(AuthenticatedUser actor, T target, AdminBulkChangeSpec change) {
+        return observationValues(target, change);
+    }
+
+
+    /** Diffs are a read projection, independent of the complete internal write plan. */
+    List<AdminBulkChangeFieldDiff> projectFields(AuthenticatedUser actor, T target,
+            AdminBulkChangeSpec change, List<AdminBulkChangeFieldDiff> fields) {
+        return fields;
+    }
+
+    /** A stored command body can contain fields the current actor no longer reads. */
+    boolean canReadChange(AuthenticatedUser actor, T target, AdminBulkChangeSpec change) {
+        return true;
+    }
+
+    /** Whether this actor needs proof that an old hash excluded restricted fields. */
+    boolean requiresLimitedPreviewFingerprint(AuthenticatedUser actor, T target, AdminBulkChangeSpec change) {
+        return false;
+    }
+
+    /** Server-only evidence about the field projection used when the hash was created. */
+    boolean fingerprintContainsRestrictedFields(AuthenticatedUser actor, T target, AdminBulkChangeSpec change) {
+        return false;
+    }
 
     static Map<String, Object> publicValues(Map<String, Object> values, Set<String> fields) {
         Map<String, Object> result = new java.util.LinkedHashMap<>();

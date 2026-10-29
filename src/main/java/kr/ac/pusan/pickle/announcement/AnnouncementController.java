@@ -28,12 +28,12 @@ import java.util.UUID;
 
 /**
  * Contract tag {@code admin}, announcements ({@code createAnnouncement} /
- * {@code listAnnouncements}). ORG_ADMIN and SYS_ADMIN; the ALL-scope
- * SYS_ADMIN-only rule is enforced in the service (403).
+ * {@code listAnnouncements}). Role annotations supply coarse admission; services
+ * require the exact current work and target. ALL sends remain SYS_ADMIN-only.
  */
 @RestController
 @RequestMapping("/api/v1/admin/announcements")
-@PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+@PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
 public class AnnouncementController {
 
     private final AnnouncementService announcementService;
@@ -65,7 +65,7 @@ public class AnnouncementController {
     @GetMapping("/{announcementId}")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(operationId = "getAnnouncement", summary = "알림 발송건 상세 조회",
-            description = "저장된 내용과 대상, 발송 당시 선정 인원을 조회합니다. 기관 계층의 열람 범위는 발송 목록과 같은 작성자 현재 기관 역할 기준입니다.")
+            description = "저장된 내용과 대상, 발송 당시 선정 인원을 조회합니다. 기관 계층은 허용된 기관 업무와 작성자의 현재 기관 행 및 전체 발송건을 기준으로 조회합니다.")
     public AnnouncementDetailResponse getAnnouncement(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID announcementId) {
         return announcementQueryService.get(principal, announcementId);

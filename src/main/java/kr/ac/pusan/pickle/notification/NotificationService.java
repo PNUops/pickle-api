@@ -18,8 +18,6 @@ import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.notification.dto.NotificationView;
 import kr.ac.pusan.pickle.user.User;
-import kr.ac.pusan.pickle.user.UserOrgRole;
-import kr.ac.pusan.pickle.user.UserOrgRoleRepository;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -68,13 +66,11 @@ public class NotificationService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
-    private final UserOrgRoleRepository userOrgRoleRepository;
 
     public NotificationService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
             NotificationComposer composer, NotificationRepository notificationRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
-            ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
-            UserOrgRoleRepository userOrgRoleRepository) {
+            ResourceAccessGrantRepository grantRepository, UserRepository userRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.composer = composer;
@@ -82,7 +78,6 @@ public class NotificationService {
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
         this.userRepository = userRepository;
-        this.userOrgRoleRepository = userOrgRoleRepository;
     }
 
     // ── publishing ─────────────────────────────────────────────────────────
@@ -130,7 +125,13 @@ public class NotificationService {
         Map<String, Object> requester = jdbcTemplate.queryForMap(
                 "select public_id, email, name, status::text from users where id = ?", requesterId);
         java.util.UUID requesterPublicId = (java.util.UUID) requester.get("public_id");
-        var snapshot = orgOperationsQuery.forSelection(orgPublicId, requesterPublicId);
+        var requestTarget = jdbcTemplate.queryForMap("select resource_type::text,workspace_id,org_id from requests where id=?", requestId);
+        java.util.UUID actualOrg = jdbcTemplate.queryForObject("select public_id from orgs where id=?",
+                java.util.UUID.class, requestTarget.get("org_id"));
+        if (!orgPublicId.equals(actualOrg)) { throw new IllegalStateException("Request notification institution must match the stored request"); }
+        var snapshot = orgOperationsQuery.forSelection(actualOrg, requesterPublicId,
+                kr.ac.pusan.pickle.access.ResourceType.valueOf(requestTarget.get("resource_type").toString()),
+                ((Number) requestTarget.get("workspace_id")).longValue());
         List<Long> inserted = jdbcTemplate.query("""
                 insert into request_notification_selections (request_id, org_id, policy_revision, mail_mode, recipients)
                 values (?, (select id from orgs where public_id = ?), ?, ?, ?::jsonb)
@@ -148,12 +149,12 @@ public class NotificationService {
         Map<String, Object> adminArgs = new java.util.LinkedHashMap<>(args);
         adminArgs.put("admin", true);
         for (var member : snapshot.members()) {
-            if (!member.inAppRecipient()) continue;
+            if (!Boolean.TRUE.equals(member.inAppRecipient())) continue;
             long userId = jdbcTemplate.queryForObject("select id from users where public_id = ?",
                     Long.class, member.userId());
             insertFrozen(userId, NotificationEvent.REQUEST_SUBMITTED, adminArgs,
                     "request_submitted:" + requestPublicId + ":admin", true, selectionId,
-                    member.email(), member.currentMailRecipient(), "NOT_SELECTED");
+                    member.email(), Boolean.TRUE.equals(member.currentMailRecipient()), "NOT_SELECTED");
         }
     }
 
@@ -273,41 +274,10 @@ public class NotificationService {
                 .toList();
     }
 
-    /**
-     * The org's ACTIVE ORG_ADMINs — the accounts holding that role <i>in this
-     * org</i>. An account that administers another org and merely operates this
-     * one is not a recipient here, which is why the role is read from the
-     * membership row rather than from {@code users.role} (V90).
-     */
+    /** Active holders of an actual complete FULL assignment in this institution. */
     public List<Long> orgAdminIds(long orgId) {
-        List<Long> holderIds = userOrgRoleRepository
-                .findByOrgIdAndRole(orgId, UserRole.ORG_ADMIN).stream()
-                .map(UserOrgRole::getUserId)
-                .toList();
-        return userRepository.findAllById(holderIds).stream()
-                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
-                .map(User::getId)
-                .toList();
-    }
-
-    /**
-     * Who is mailed about a new request in the org, the requester aside: the
-     * ACTIVE holders the org has chosen, among the roles that may approve one.
-     * With nobody chosen — or nobody chosen still active, or the only one
-     * chosen being the requester — every other org admin is, as before the
-     * choice existed (V133). Falling back rather than mailing nobody: a request
-     * no approver hears about waits for somebody to open the queue by chance.
-     */
-    public List<Long> requestMailRecipientIds(long orgId, long requesterId) {
-        List<Long> chosenIds = userOrgRoleRepository.findByOrgIdAndRequestMailTrue(orgId).stream()
-                .filter(row -> UserOrgRole.mayReceiveRequestMail(row.getRole()))
-                .map(UserOrgRole::getUserId)
-                .filter(id -> id != requesterId)
-                .toList();
-        List<Long> chosen = activeAmong(chosenIds);
-        return chosen.isEmpty()
-                ? orgAdminIds(orgId).stream().filter(id -> id != requesterId).toList()
-                : chosen;
+        return orgOperationsQuery.activeFullAccounts(orgId).stream().map(publicId -> jdbcTemplate.queryForObject(
+                "select id from users where public_id=?", Long.class, publicId)).toList();
     }
 
     /** All ACTIVE SYS_ADMINs. */

@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin;
 
 import io.swagger.v3.oas.annotations.Operation;
 import java.util.UUID;
+import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.AdminOrgOperationsResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.jspecify.annotations.Nullable;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import jakarta.validation.Valid;
 import jakarta.servlet.http.HttpServletRequest;
 import kr.ac.pusan.pickle.admin.dto.SaveOrgOperationsRequest;
+import kr.ac.pusan.pickle.admin.dto.SaveOrgRequestMailSettingsRequest;
 import kr.ac.pusan.pickle.admin.dto.OrgOperationsPreviewResponse;
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
@@ -39,12 +41,14 @@ public class AdminOrgOperationsController {
     public AdminOrgOperationsResponse getAdminOrgOperations(
             @AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID orgId,
-            @RequestParam(required = false) @Nullable UUID requesterId) {
-        return queryService.get(actor, orgId, requesterId);
+            @RequestParam(required = false) @Nullable UUID requesterId,
+            @RequestParam(required = false) @Nullable ResourceType requestType,
+            @RequestParam(required = false) @Nullable UUID workspaceId) {
+        return queryService.get(actor, orgId, requesterId, requestType, workspaceId);
     }
 
     @PostMapping("/preview")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     @Operation(operationId = "previewAdminOrgOperations", summary = "기관 명단과 수신 설정의 변경안 미리보기")
     public OrgOperationsPreviewResponse previewAdminOrgOperations(
             @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID orgId,
@@ -53,11 +57,31 @@ public class AdminOrgOperationsController {
     }
 
     @PutMapping
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     @Operation(operationId = "saveAdminOrgOperations", summary = "기관 명단과 수신 설정의 원자 저장")
     public AdminOrgOperationsResponse saveAdminOrgOperations(
             @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID orgId,
             @Valid @RequestBody SaveOrgOperationsRequest request, HttpServletRequest httpRequest) {
         return service.save(actor, orgId, request, clientIp(httpRequest));
+    }
+
+    @PostMapping("/request-mail/preview")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
+    @Operation(operationId = "previewAdminOrgRequestMailSettings", summary = "기관 신청 메일 수신 설정 미리보기")
+    public OrgOperationsPreviewResponse previewAdminOrgRequestMailSettings(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID orgId,
+            @Valid @RequestBody SaveOrgRequestMailSettingsRequest request,
+            @RequestParam(required = false) @Nullable ResourceType requestType,
+            @RequestParam(required = false) @Nullable UUID workspaceId) {
+        return service.previewMail(actor, orgId, request, requestType, workspaceId);
+    }
+
+    @PutMapping("/request-mail")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
+    @Operation(operationId = "saveAdminOrgRequestMailSettings", summary = "권한 부여를 바꾸지 않고 기관 신청 메일 수신 설정 저장")
+    public AdminOrgOperationsResponse saveAdminOrgRequestMailSettings(
+            @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID orgId,
+            @Valid @RequestBody SaveOrgRequestMailSettingsRequest request, HttpServletRequest httpRequest) {
+        return service.saveMail(actor, orgId, request, clientIp(httpRequest));
     }
 }

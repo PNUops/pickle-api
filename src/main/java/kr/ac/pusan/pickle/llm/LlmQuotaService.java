@@ -52,7 +52,7 @@ public class LlmQuotaService {
     static final String JOB_ID = "llm-key-daily-quota";
 
     /**
-     * Which limited keys are on the wrong side of their allowance right now.
+     * Which keys are on the wrong side of their allowance right now.
      * The usage sum counts input and output alike: the granted figure is one
      * number, so splitting it here would invent a policy nobody approved.
      *
@@ -71,7 +71,8 @@ public class LlmQuotaService {
      */
     private static final String DRIFTED_SQL = """
             select k.id,
-                   coalesce(sum(e.input_tokens + e.output_tokens), 0) >= k.daily_tokens
+                   (k.daily_tokens is not null
+                    and coalesce(sum(e.input_tokens + e.output_tokens), 0) >= k.daily_tokens)
                        as now_exhausted
               from llm_api_keys k
               left join llm_usage_events e
@@ -83,9 +84,10 @@ public class LlmQuotaService {
                              select 1 from llm_models m
                               where m.public_name = e.public_model_name
                                 and m.budget_axis = 'TOKEN')))
-             where k.daily_tokens is not null
+             where k.daily_tokens is not null or k.quota_exhausted
              group by k.id, k.quota_exhausted, k.daily_tokens
-            having (coalesce(sum(e.input_tokens + e.output_tokens), 0) >= k.daily_tokens)
+            having (k.daily_tokens is not null
+                    and coalesce(sum(e.input_tokens + e.output_tokens), 0) >= k.daily_tokens)
                    is distinct from k.quota_exhausted
              order by k.id
             """;

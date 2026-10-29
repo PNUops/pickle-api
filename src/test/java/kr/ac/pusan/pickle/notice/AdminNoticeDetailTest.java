@@ -75,6 +75,20 @@ class AdminNoticeDetailTest {
     }
 
     @Test
+    void institutionDisplayRolesWithoutAssignmentsCannotReadAdministrativeDetails() throws Exception {
+        for (UserRole role : java.util.List.of(UserRole.ORG_VIEWER, UserRole.ORG_MANAGER, UserRole.ORG_ADMIN)) {
+            User user = new User("notice-unassigned-" + UUID.randomUUID() + "@example.test", "{noop}unused", "합성 무소속 계정");
+            user.setRole(role);
+            user.setStatus(UserStatus.ACTIVE);
+            String token = jwt.createAccessToken(users.saveAndFlush(user));
+            mvc.perform(get(path(scheduled.getPublicId())).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+            mvc.perform(get("/api/v1/notices/" + scheduled.getPublicId()).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Test
     void administrativeDetailDoesNotWidenPublicVisibilityOrWriting() throws Exception {
         mvc.perform(get(path(scheduled.getPublicId()))).andExpect(status().isUnauthorized());
         mvc.perform(get(path(scheduled.getPublicId())).header("Authorization", "Bearer " + token(UserRole.USER)))
@@ -119,7 +133,9 @@ class AdminNoticeDetailTest {
         User user = users.findByEmail(email).orElseGet(() -> new User(email, "{noop}unused", "합성 관리자"));
         user.setRole(role);
         user.setStatus(UserStatus.ACTIVE);
-        return jwt.createAccessToken(users.saveAndFlush(user));
+        User saved = users.saveAndFlush(user);
+        if (role.isOrgTier()) { SeedFixtures.grantOrgRole(jdbc, saved.getId(), SeedFixtures.seedOrgId(jdbc), role); }
+        return jwt.createAccessToken(saved);
     }
 
     private static String path(UUID id) { return "/api/v1/admin/notices/" + id; }

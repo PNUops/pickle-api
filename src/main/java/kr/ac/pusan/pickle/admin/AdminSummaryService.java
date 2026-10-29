@@ -28,7 +28,6 @@ import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.ipam.IpPoolRepository;
 import kr.ac.pusan.pickle.ipam.IpamService;
-import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.provisioning.DriftFindingRepository;
 import kr.ac.pusan.pickle.provisioning.DriftFindingStatus;
@@ -36,7 +35,6 @@ import kr.ac.pusan.pickle.proxmox.ProxmoxApiException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.dto.NodeStatusInfo;
 import kr.ac.pusan.pickle.proxmox.dto.NodeStorageStatus;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.VmStatus;
@@ -70,6 +68,8 @@ public class AdminSummaryService {
     private final NodeRepository nodeRepository;
     private final ProxmoxClient proxmoxClient;
     private final Clock clock;
+    @org.springframework.beans.factory.annotation.Autowired
+    private InstitutionDashboardQueries dashboard;
 
     public AdminSummaryService(JdbcTemplate jdbcTemplate, OrgRepository orgRepository,
             OrgHeadroomService orgHeadroomService, AdminNodeQueryService adminNodeQueryService,
@@ -95,78 +95,67 @@ public class AdminSummaryService {
      */
     @Transactional(readOnly = true)
     public OrgDashboardSummaryResponse orgSummary(AuthenticatedUser actor, UUID orgId) {
-        OrgScope scope = resolveOrgId(actor, orgId);
-        String orgs = scope.arrayParam();
+        requireExistingOrg(orgId);
+        var requests = dashboard.requests(actor, orgId);
+        var metadata = dashboard.vmMetadata(actor, orgId);
+        var allocation = dashboard.allocation(actor, orgId);
+        var publications = dashboard.publications(actor, orgId);
+        if (!requests.available() && !metadata.available() && !allocation.available() && !publications.available()) {
+            throw dashboardDenied(orgId);
+        }
         LocalDate today = ClockConfig.todayKst(clock);
         Instant decidedSince = clock.instant().minus(Duration.ofDays(14));
+        Long pending = requests.available() ? count("select count(*) from requests q where " + requests.sql()
+                + " and q.status='SUBMITTED'", requests.with()) : null;
+        RecentDecisions decisions = requests.available() ? jdbcTemplate.queryForObject("""
+                select count(*) filter (where r.decision='APPROVE') as approved,
+                       count(*) filter (where r.decision='REJECT') as rejected
+                  from request_reviews r join requests q on q.id=r.request_id
+                 where %s and r.created_at>=?
+                """.formatted(requests.sql()), (rs, index) -> new RecentDecisions(rs.getLong("approved"), rs.getLong("rejected")),
+                requests.with(java.sql.Timestamp.from(decidedSince))) : null;
+        Resource resource = null;
+        if (allocation.available()) {
+            var totals = jdbcTemplate.queryForObject("""
+                    select coalesce(sum(v.vcpu),0) as cpu,coalesce(sum(v.memory_mb),0) as memory,
+                           coalesce(sum(v.disk_gb),0) as disk from vms v
+                     where %s and v.deleted_at is null and v.status<>'DELETED'
+                    """.formatted(allocation.sql()), (rs, index) -> new kr.ac.pusan.pickle.admin.dto.ResourceTotalsResponse(
+                    rs.getInt("cpu"), rs.getLong("memory"), rs.getLong("disk")), allocation.with());
+            var headroom = orgHeadroomService.headroom(totals);
+            resource = new Resource(totals.vcpu(), totals.memoryMb(), totals.diskGb(), headroom.capacityVcpu(),
+                    headroom.capacityMemoryMb(), headroom.capacityDiskGb(), headroom.guidance());
+        }
+        List<TopWorkspace> topWorkspaces = metadata.available() ? jdbcTemplate.query("""
+                select w.public_id,w.name,count(*) as vm_count from vms v join workspaces w on w.id=v.workspace_id
+                 where %s and v.status<>'DELETED' group by w.id,w.public_id,w.name
+                 order by vm_count desc,w.id limit 10
+                """.formatted(metadata.sql()), (rs,index)->new TopWorkspace(rs.getObject("public_id", UUID.class),
+                rs.getString("name"), rs.getLong("vm_count")), metadata.with()) : null;
+        Long published = publications.available() ? count("""
+                select count(*) from routes r join domains d on d.id=r.domain_id join vms v on v.id=d.vm_id
+                 where %s and r.status<>'REMOVED'
+                """.formatted(publications.sql()), publications.with()) : null;
+        Long expiring = metadata.available() ? count("""
+                select count(*) from vms v where %s and v.end_date>=? and v.end_date<=?
+                 and v.status not in ('DELETED','DELETING')
+                """.formatted(metadata.sql()), metadata.with(today,today.plusDays(30))) : null;
+        Attention attention = metadata.available() ? new Attention(
+                count("select count(*) from provisioning_tasks t join vms v on v.id=t.vm_id where "
+                        + metadata.sql() + " and t.status='FAILED'", metadata.with()),
+                count("select count(*) from vms v where " + metadata.sql() + " and v.status='NEEDS_ADMIN'", metadata.with()),
+                count("select count(*) from vms v where " + metadata.sql()
+                        + " and v.end_date<? and v.status not in ('DELETED','DELETING')", metadata.with(today))) : null;
+        return new OrgDashboardSummaryResponse(pending, decisions, metadata.available() ? vmCountsByStatus(metadata) : null,
+                resource, topWorkspaces, published, expiring, attention);
+    }
 
-        long pending = count("select count(*) from requests"
-                + " where %s and status = 'SUBMITTED'".formatted(scope.guard("org_id")),
-                orgs, orgs);
-        RecentDecisions decisions = jdbcTemplate.queryForObject("""
-                select count(*) filter (where r.decision = 'APPROVE') as approved,
-                       count(*) filter (where r.decision = 'REJECT') as rejected
-                  from request_reviews r
-                  join requests q on q.id = r.request_id
-                 where %s and r.created_at >= ?
-                """.formatted(scope.guard("q.org_id")),
-                (rs, rowNum) -> new RecentDecisions(rs.getLong("approved"),
-                rs.getLong("rejected")), orgs, orgs,
-                java.sql.Timestamp.from(decidedSince));
-
-        OrgHeadroomService.HeadroomResult headroom = orgHeadroomService.headroom(scope);
-        Resource resource = new Resource(headroom.allocated().vcpu(),
-                headroom.allocated().memoryMb(), headroom.allocated().diskGb(),
-                headroom.capacityVcpu(), headroom.capacityMemoryMb(), headroom.capacityDiskGb(),
-                headroom.guidance());
-
-        List<TopWorkspace> topWorkspaces = jdbcTemplate.query("""
-                select g.public_id as workspace_public_id, v.workspace_id, g.name,
-                       count(*) as vm_count
-                  from vms v
-                  join workspaces g on g.id = v.workspace_id
-                 where %s and v.status <> 'DELETED'
-                 group by g.public_id, v.workspace_id, g.name
-                 order by vm_count desc, v.workspace_id
-                 limit 10
-                """.formatted(scope.guard("v.org_id")), (rs, rowNum) -> new TopWorkspace(
-                rs.getObject("workspace_public_id", UUID.class), rs.getString("name"),
-                rs.getLong("vm_count")), orgs, orgs);
-
-        long published = count("""
-                select count(*)
-                  from routes r
-                  join domains d on d.id = r.domain_id
-                  join vms v on v.id = d.vm_id
-                 where %s and r.status <> 'REMOVED'
-                """.formatted(scope.guard("v.org_id")), orgs, orgs);
-        long expiring30d = jdbcTemplate.queryForObject("""
-                select count(*) from vms
-                 where %s and end_date is not null
-                   and end_date >= ? and end_date <= ?
-                   and status not in ('DELETED', 'DELETING')
-                """.formatted(scope.guard("org_id")),
-                Long.class, orgs, orgs, today, today.plusDays(30));
-
-        Attention attention = new Attention(
-                count("""
-                        select count(*) from provisioning_tasks t
-                          join vms v on v.id = t.vm_id
-                         where %s and t.status = 'FAILED'
-                        """.formatted(scope.guard("v.org_id")), orgs, orgs),
-                count("select count(*) from vms where %s"
-                        .formatted(scope.guard("org_id"))
-                        + " and status = 'NEEDS_ADMIN'", orgs, orgs),
-                jdbcTemplate.queryForObject("""
-                        select count(*) from vms
-                         where %s
-                           and end_date is not null and end_date < ?
-                           and status not in ('DELETED', 'DELETING')
-                        """.formatted(scope.guard("org_id")), Long.class, orgs, orgs, today));
-
-        return new OrgDashboardSummaryResponse(pending, decisions,
-                vmCountsByStatus(scope), resource, topWorkspaces,
-                published, expiring30d, attention);
+    private Map<String, Long> vmCountsByStatus(InstitutionDashboardQueries.Filter filter) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (VmStatus status : VmStatus.values()) { counts.put(status.name(), 0L); }
+        jdbcTemplate.query("select v.status::text,count(*) from vms v where " + filter.sql() + " group by v.status",
+                rs -> { counts.put(rs.getString(1), rs.getLong(2)); }, filter.with());
+        return counts;
     }
 
     /**
@@ -359,26 +348,13 @@ public class AdminSummaryService {
         return value == null ? 0 : value;
     }
 
-    /**
-     * The org tier aggregates the organisations it holds a role in, and may
-     * name one of them; naming any other answers 404. For the sys tier an
-     * explicit {@code orgId} must exist (unknown → 404) and no {@code orgId}
-     * means the platform-wide aggregate — the console home calls the summary
-     * without a drill-in for every role.
-     *
-     * <p>Package-private rather than private because the capacity trend is the
-     * same panel over time and must be scoped by the identical rule; two copies
-     * of a pinning rule is how one of them drifts open.
-     */
-    OrgScope resolveOrgId(AuthenticatedUser actor, UUID orgId) {
-        Long requested = orgId == null ? null
-                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        if (!actor.role().isOrgTier() && orgId != null && requested == null) {
-            // The summary addresses an organisation rather than filtering by
-            // one, so an unknown id is a 404 here where the lists answer empty.
-            throw orgNotFound();
-        }
-        return AdminOrgScope.read(actor, orgId, requested);
+    void requireExistingOrg(UUID orgId) {
+        if (orgId != null && orgRepository.findByPublicId(orgId).isEmpty()) { throw orgNotFound(); }
+    }
+
+    static ApiException dashboardDenied(UUID orgId) {
+        return orgId != null ? orgNotFound() : new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                "조회 권한이 없습니다", "요약의 신청·자원 조회 업무가 필요합니다.");
     }
 
     private static ApiException orgNotFound() {

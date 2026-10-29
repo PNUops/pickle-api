@@ -19,11 +19,8 @@ import org.jspecify.annotations.Nullable;
  * Contract schema {@code ApproveLlmKeyRequestSpec}: what the reviewer grants an
  * LLM API key request.
  *
- * <p>All four are optional, and that is the ordinary approval: a key with no
- * limits of its own runs on the gateway's defaults, which is what the service
- * is tuned for. Granting a number here is the exception a reviewer makes
- * deliberately, so leaving the form untouched must mean "the usual", not "no
- * limit at all".
+ * <p>RPM, TPM and concurrency use the gateway's defaults when absent. A null
+ * daily token allowance is unlimited; zero closes the token budget axis.
  */
 public record ApproveLlmKeyRequestSpec(
         @Schema(description = "부여 분당 요청 수. 비우면 서비스 기본값이 적용됩니다.")
@@ -76,7 +73,7 @@ public record ApproveLlmKeyRequestSpec(
                         + "신청자가 고른 목록(reqPassthroughEndpoints)으로 승인하고, 빈 배열이면 기능을 "
                         + "하나도 쓸 수 없습니다(chat도 포함). 모델 목록과 반대로 이 목록은 "
                         + "채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, "
-                        + "images, embeddings이고, web_search와 pdf_ocr은 chat과 함께 "
+                        + "images, embeddings, rerank, speech, transcriptions이고, web_search와 pdf_ocr은 chat과 함께 "
                         + "부여해야 합니다. 모델 조회는 이 목록과 무관합니다."))
         @Size(max = 20, message = "기능은 최대 20개까지 허용할 수 있습니다.")
         @Nullable List<String> grantedPassthroughEndpoints,

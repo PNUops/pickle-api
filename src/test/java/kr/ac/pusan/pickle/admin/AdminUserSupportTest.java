@@ -130,6 +130,8 @@ class AdminUserSupportTest {
             removed.andExpect(status().isNoContent());
             diagnose(actor, resource).andExpect(status().isOk()).andExpect(jsonPath("$.canRevoke").value(false))
                     .andExpect(jsonPath("$.revokeReason").value("NO_PERSONAL_GRANT"));
+        } else if (role.isOrgTier()) {
+            removed.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         } else { removed.andExpect(status().isForbidden()); }
         assertThat(jdbc.queryForObject("select count(*) from resource_access_grants where public_id=?", Long.class, grantId))
                 .isEqualTo(allowed ? 0L : 1L);
@@ -440,8 +442,7 @@ class AdminUserSupportTest {
         long resource = vm(workspace, org);
         grant(resource, target, "EDITOR");
         jdbc.update("update vms set status='DELETED', deleted_at=now() where id=?", resource);
-        mvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspace))
-                .header("Authorization", "Bearer " + token(owner))).andExpect(status().isNoContent());
+        mvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mvc, json, token(owner), "/api/v1/workspaces/" + pub("workspaces", workspace))).andExpect(status().isNoContent());
         read(sysAdmin, "").andExpect(status().isOk()).andExpect(jsonPath("$.memberships").isEmpty())
                 .andExpect(jsonPath("$.resources[0].id").value(pub("vms", resource).toString()))
                 .andExpect(jsonPath("$.resources[0].status").value("DELETED"))

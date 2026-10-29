@@ -57,6 +57,10 @@ public class WorkspaceInvitationService {
      */
     private static final Pattern EMAIL_SHAPE = Pattern.compile("^[^@\\s]+@[^@\\s]+$");
 
+    private final WorkspaceTerminationImpactService terminationImpacts;
+    private final LifecycleActors lifecycleActors;
+    private final kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions;
+    private final WorkspaceRepository workspaces;
     private final WorkspaceService workspaceService;
     private final WorkspaceInvitationRepository invitationRepository;
     private final UserRepository userRepository;
@@ -72,8 +76,10 @@ public class WorkspaceInvitationService {
             UserRepository userRepository,
             RateLimitService rateLimitService, AuditService auditService, InvitationLocks invitationLocks,
             InvitationWriter invitationWriter,
-            kr.ac.pusan.pickle.request.RequestRecipientService recipientService) {
-        this.administrationLock = administrationLock; this.accessImpacts = accessImpacts;
+            kr.ac.pusan.pickle.request.RequestRecipientService recipientService, WorkspaceTerminationImpactService terminationImpacts,
+            LifecycleActors lifecycleActors, WorkspaceRepository workspaces, kr.ac.pusan.pickle.security.institution.ResourceInstitutionPermissions permissions) {
+        this.terminationImpacts = terminationImpacts; this.lifecycleActors = lifecycleActors; this.workspaces = workspaces;
+        this.permissions = permissions; this.administrationLock = administrationLock; this.accessImpacts = accessImpacts;
         this.invitationWriter = invitationWriter;
         this.recipientService = recipientService;
         this.workspaceService = workspaceService;
@@ -110,10 +116,13 @@ public class WorkspaceInvitationService {
     public InviteWorkspaceMembersResponse invite(AuthenticatedUser actor, UUID publicWorkspaceId,
             InviteWorkspaceMembersRequest request, String ip, boolean support) {
         administrationLock.acquire();
+        if (support) { actor = permissions.currentAfterLock(actor); }
         workspaceService.requireActiveActor(actor);
         String subject = "user:" + actor.id();
         rateLimitService.hit(INVITE_CALL_SCOPE, subject, INVITE_CALLS_PER_MINUTE);
         Workspace workspace = workspaceService.findWorkspace(publicWorkspaceId);
+        if (support) { workspaceService.requireSupportWork(actor, workspace,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_INVITATIONS_MANAGE); }
         workspaceService.requireOwnerForMemberManagement(workspace, actor,
                 "워크스페이스 소유자(OWNER)만 구성원을 초대할 수 있습니다.",
                 "PERSONAL 워크스페이스에는 구성원을 초대할 수 없습니다.", support);
@@ -194,14 +203,23 @@ public class WorkspaceInvitationService {
     /** Cancels an open invitation. Answered or canceled ones are not found. */
     @Transactional
     public void cancel(AuthenticatedUser actor, UUID publicWorkspaceId, UUID publicInvitationId, String ip) {
-        cancel(actor, publicWorkspaceId, publicInvitationId, ip, false);
+        cancel(actor, publicWorkspaceId, publicInvitationId, ip, false, null);
     }
 
     @Transactional
     public void cancel(AuthenticatedUser actor, UUID publicWorkspaceId, UUID publicInvitationId, String ip, boolean support) {
+        cancel(actor, publicWorkspaceId, publicInvitationId, ip, support, null);
+    }
+
+    @Transactional
+    public void cancel(AuthenticatedUser actor, UUID publicWorkspaceId, UUID publicInvitationId, String ip, boolean support,
+            kr.ac.pusan.pickle.workspace.dto.@Nullable TerminationConfirmation confirmation) {
         administrationLock.acquire();
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
         workspaceService.requireActiveActor(actor);
         Workspace workspace = workspaceService.findWorkspace(publicWorkspaceId);
+        if (support) { workspaceService.requireSupportWork(actor, workspace,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_INVITATIONS_MANAGE); }
         workspaceService.requireOwnerForMemberManagement(workspace, actor,
                 "워크스페이스 소유자만 초대를 관리할 수 있습니다.", "개인 워크스페이스에는 초대가 없습니다.", support);
         WorkspaceInvitation invitation = invitationRepository.findWithLockByPublicId(publicInvitationId)
@@ -209,6 +227,10 @@ public class WorkspaceInvitationService {
                 .filter(found -> found.getStatus() == WorkspaceInvitationStatus.PENDING)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.WORKSPACE_INVITATION_NOT_FOUND,
                         "초대를 찾을 수 없습니다", "대기 중인 초대가 아닙니다. 이미 수락되었거나 취소되었을 수 있습니다."));
+        workspaces.findByIdForUpdate(workspace.getId()).orElseThrow();
+        recipientService.lockForInvitationTermination(invitation.getId());
+        var impact = terminationImpacts.lockedSnapshot(actor, workspace, invitation, support);
+        TerminationConfirmations.requireConfirmed(impact.fingerprint(), confirmation);
         invitation.cancel(actor.id(), Instant.now());
         // A request that reserved a resource for this invitee stops waiting.
         recipientService.onInvitationCanceled(invitation);
@@ -222,7 +244,10 @@ public class WorkspaceInvitationService {
     public kr.ac.pusan.pickle.access.dto.ActorAccessImpact previewInvite(AuthenticatedUser actor, UUID workspaceId,
             InviteWorkspaceMembersRequest request, boolean support) {
         administrationLock.acquire();
+        if (support) { actor = permissions.currentAfterLock(actor); }
         Workspace workspace = workspaceService.findWorkspace(workspaceId);
+        if (support) { workspaceService.requireSupportWork(actor, workspace,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_INVITATIONS_MANAGE); }
         workspaceService.requireOwnerForMemberManagement(workspace, actor, "소유자만 초대할 수 있습니다.",
                 "개인 워크스페이스에는 초대할 수 없습니다.", support);
         return invitationImpact(actor, workspace, normalize(request.entries()));
@@ -235,7 +260,7 @@ public class WorkspaceInvitationService {
                 || i.studentNo() != null && holder.getStudentNo() != null && i.studentNo().equalsIgnoreCase(holder.getStudentNo()));
         String binding = "INVITE:" + workspace.getPublicId() + ':' + invitees.stream().map(Invitee::key).toList();
         return self ? accessImpacts.membership(actor, workspace, WorkspaceMemberRole.MEMBER, binding, List.of())
-                : accessImpacts.bind(binding, List.of(), List.of());
+                : accessImpacts.bind(actor, binding, List.of(), List.of());
     }
 
     private void requireOwner(Workspace workspace, AuthenticatedUser actor) {

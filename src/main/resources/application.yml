@@ -207,6 +207,13 @@ pickle:
     # Peers confined to the relay sync surface: a relay's tunnel address must
     # reach only /internal/relays/** (403 everywhere else, actuator included).
     restricted-source-ips: ${PICKLE_RELAY_RESTRICTED_SOURCE_IPS:10.100.100.1}
+  inference-observations:
+    enabled: ${PICKLE_INFERENCE_OBSERVATIONS_ENABLED:false}
+    token: ${PICKLE_INFERENCE_OBSERVATIONS_TOKEN:}
+    previous-token: ${PICKLE_INFERENCE_OBSERVATIONS_PREVIOUS_TOKEN:}
+    allowed-source-ip: ${PICKLE_INFERENCE_OBSERVATIONS_SOURCE_IP:}
+    source-id: ${PICKLE_INFERENCE_OBSERVATIONS_SOURCE_ID:}
+    upstream-id: ${PICKLE_INFERENCE_OBSERVATIONS_UPSTREAM_ID:}
   llm-gateway:
     # LLM gateway link (/internal/llm/**, own filter chain + static bearer).
     # No token default outside dev/test: when blank the chain fails closed
@@ -229,6 +236,13 @@ pickle:
     max-sync-body-bytes: ${PICKLE_LLM_MAX_SYNC_BODY_BYTES:65536}
     max-usage-body-bytes: ${PICKLE_LLM_MAX_USAGE_BODY_BYTES:4194304}
     max-bodies-body-bytes: ${PICKLE_LLM_MAX_BODIES_BODY_BYTES:8388608}
+    # Async-object ownership calls. Counted in memory, not in auth_rate_limits:
+    # lookup sits on a client's request path. Bind has no bucket on purpose.
+    object-intents-rate-limit-per-minute: ${PICKLE_LLM_OBJECT_INTENTS_RATE_LIMIT:600}
+    object-lookup-rate-limit-per-minute: ${PICKLE_LLM_OBJECT_LOOKUP_RATE_LIMIT:6000}
+    object-release-rate-limit-per-minute: ${PICKLE_LLM_OBJECT_RELEASE_RATE_LIMIT:600}
+    max-object-body-bytes: ${PICKLE_LLM_MAX_OBJECT_BODY_BYTES:16384}
+    max-object-lookup-body-bytes: ${PICKLE_LLM_MAX_OBJECT_LOOKUP_BODY_BYTES:65536}
   openrouter:
     # OpenRouter key-management link. Every management credential belongs to
     # one institution account and lives encrypted in the keyring below; there

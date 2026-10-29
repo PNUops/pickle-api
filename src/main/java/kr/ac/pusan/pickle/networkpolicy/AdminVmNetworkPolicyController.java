@@ -32,7 +32,7 @@ public class AdminVmNetworkPolicyController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ORG_VIEWER','ORG_MANAGER','ORG_ADMIN','SYS_VIEWER','SYS_MANAGER','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(operationId = "getAdminVmNetworkPolicy", summary = "관리자 VM 통신 정책 조회")
     public VmNetworkPolicyView get(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID vmId) {
@@ -41,7 +41,7 @@ public class AdminVmNetworkPolicyController {
 
     @PutMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_MANAGER','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(operationId = "updateAdminVmNetworkPolicy", summary = "관리자 VM 통신 정책 변경")
     public VmNetworkPolicyView update(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID vmId,

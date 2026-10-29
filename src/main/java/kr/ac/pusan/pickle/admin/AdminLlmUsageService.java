@@ -22,12 +22,14 @@ import kr.ac.pusan.pickle.admin.dto.LlmUsageBreakdownResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageConsumerLevel;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageConsumerResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageConsumersResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmConsumerSort;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageDailyPointResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageDemandResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageModelBreakdownResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsagePassthroughGrantResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageQualityResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageWindowResponse;
+import kr.ac.pusan.pickle.admin.dto.InstitutionAdminLlmEndpointUsageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
@@ -36,7 +38,6 @@ import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
 import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import kr.ac.pusan.pickle.llm.dto.LlmEndpointKindUsageResponse;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgScope;
@@ -62,10 +63,11 @@ public class AdminLlmUsageService {
      * paid generation route and the free catalogue lookup is the whole reason
      * the two vocabularies are kept apart.
      *
-     * <p>{@code chat} lists the chat-protocol routes the gateway will open
-     * under it as well as {@code chat} itself; a route not served yet simply
-     * counts nothing. A capability judged from the request body rather than
-     * the route ({@code web_search}, {@code pdf_ocr}) has no entry, because a
+     * <p>{@code chat} lists every chat-protocol route the gateway serves under
+     * it: chat completions, messages, responses and legacy completions.
+     * {@code rerank} opens one route of the same name; {@code speech} and
+     * {@code transcriptions} open the two audio routes. A capability judged
+     * from the request body rather than the route ({@code web_search}, {@code pdf_ocr}) has no entry, because a
      * usage event does not record which plugin or engine a request used, and
      * a row built from the chat routes would count every chat request as a
      * use of it.
@@ -73,7 +75,10 @@ public class AdminLlmUsageService {
     private static final Map<String, String> ROUTES_BY_CAPABILITY = Map.of(
             PassthroughEndpoints.CHAT, "{chat,messages,responses,completions}",
             PassthroughEndpoints.IMAGES, "{images,images_models}",
-            PassthroughEndpoints.EMBEDDINGS, "{embeddings}");
+            PassthroughEndpoints.EMBEDDINGS, "{embeddings}",
+            PassthroughEndpoints.RERANK, "{rerank}",
+            PassthroughEndpoints.SPEECH, "{audio_speech}",
+            PassthroughEndpoints.TRANSCRIPTIONS, "{audio_transcriptions}");
     private static final List<String> PRESSURE_REASONS = List.of(
             "quota_exhausted", "credit_exhausted", "rate_limit_requests",
             "rate_limit_tokens", "rate_limit_concurrency");
@@ -83,10 +88,12 @@ public class AdminLlmUsageService {
     private final WorkspaceRepository workspaceRepository;
     private final AdminLlmObservabilityService observabilityService;
     private final Clock clock;
+    private final InstitutionLlmQueryAccess institutionQueries;
 
     public AdminLlmUsageService(JdbcTemplate jdbcTemplate, OrgRepository orgRepository,
             WorkspaceRepository workspaceRepository,
-            AdminLlmObservabilityService observabilityService, Clock clock) {
+            AdminLlmObservabilityService observabilityService, Clock clock, InstitutionLlmQueryAccess institutionQueries) {
+        this.institutionQueries = institutionQueries;
         this.jdbcTemplate = jdbcTemplate;
         this.orgRepository = orgRepository;
         this.workspaceRepository = workspaceRepository;
@@ -97,9 +104,19 @@ public class AdminLlmUsageService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminLlmUsageResponse get(AuthenticatedUser actor, @Nullable UUID orgId,
             @Nullable UUID workspaceId, int days, int top) {
+        return get(actor, orgId, workspaceId, days, top, 0, top, LlmConsumerSort.REQUESTS_DESC, 0, top);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public AdminLlmUsageResponse get(AuthenticatedUser actor, @Nullable UUID orgId,
+            @Nullable UUID workspaceId, int days, int top, int consumerPage, int consumerSize,
+            LlmConsumerSort consumerSort, int reviewPage, int reviewSize) {
         if (days != 7 && days != 30 && days != 90) {
             throw ApiException.validationFailed(List.of(new FieldValidationError(
                     "days", "조회 기간은 7일, 30일, 90일 중 하나여야 합니다.")));
+        }
+        if (!institutionQueries.observationReader(actor)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "기관 LLM 관측 업무가 필요합니다.");
         }
         ScopeContext context = resolveScope(actor, orgId, workspaceId);
         Instant generatedAt = clock.instant();
@@ -109,9 +126,10 @@ public class AdminLlmUsageService {
         Map<LocalDate, UsageTotals> ninetyDays = dailyTotals(
                 context, to.minusDays(89), to);
         LlmUsageDemandResponse demand = demand(ninetyDays, from, to);
-        LlmUsageConsumersResponse consumers = consumers(context, actor, from, to, top);
+        LlmUsageConsumersResponse consumers = consumers(context, actor, from, to,
+                consumerSize, consumerPage, consumerSort);
         LlmLimitReviewCollectionResponse limitReview = limitReview(
-                context, generatedAt, to, top);
+                context, generatedAt, to, reviewSize, reviewPage);
         LlmUsageQualityResponse quality = quality(
                 context, actor, generatedAt, from, to);
         LlmUsageBreakdownResponse breakdown = breakdown(context, from, to, top);
@@ -123,12 +141,12 @@ public class AdminLlmUsageService {
             @Nullable UUID workspaceId) {
         Long requestedOrgId = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        OrgScope scope = AdminOrgScope.read(actor, orgId, requestedOrgId);
+        OrgScope scope = institutionQueries.queryScope(actor, orgId, requestedOrgId);
         Workspace workspace = workspaceId == null ? null
                 : workspaceRepository.findByPublicId(workspaceId).orElseThrow(
                         AdminLlmUsageService::workspaceNotFound);
         if (workspace == null || scope.isUnrestricted() || scope.orgIds().isEmpty()) {
-            return new ScopeContext(scope, workspace);
+            return new ScopeContext(scope, workspace, actor);
         }
 
         String array = scope.arrayParam();
@@ -146,7 +164,7 @@ public class AdminLlmUsageService {
         if (!Boolean.TRUE.equals(visibleAssociation)) {
             throw workspaceNotFound();
         }
-        return new ScopeContext(scope, workspace);
+        return new ScopeContext(scope, workspace, actor);
     }
 
     private Map<LocalDate, UsageTotals> dailyTotals(ScopeContext context,
@@ -211,7 +229,11 @@ public class AdminLlmUsageService {
     }
 
     private LlmUsageConsumersResponse consumers(ScopeContext context, AuthenticatedUser actor,
-            LocalDate from, LocalDate to, int top) {
+            LocalDate from, LocalDate to, int size, int page, LlmConsumerSort sort) {
+        if (sort == LlmConsumerSort.REPORTED_COST_DESC && !completeMoneyProjection(context)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "현재 조회 범위에서는 금액순 정렬을 제공할 수 없습니다.");
+        }
         LlmUsageConsumerLevel level = context.workspace() != null
                 ? LlmUsageConsumerLevel.KEY
                 : (!actor.role().isOrgTier() && context.scope().isUnrestricted()
@@ -255,8 +277,7 @@ public class AdminLlmUsageService {
         args.add(windowEnd);
         args.add(windowStart);
         args.addAll(parts.args());
-        args.add(top);
-        List<ConsumerRow> rows = jdbcTemplate.query("""
+        String query = """
                 with per_key as (
                     select d.key_id,
                            sum(d.requests) as requests,
@@ -298,6 +319,7 @@ public class AdminLlmUsageService {
                        sum(m.metered_usd) as metered_usd,
                        min(k.openrouter_usage_at)
                            filter (where m.metered_usd is not null) as metered_observed_at,
+                       bool_and(__MONEY__) as finance_visible,
                        count(*) over() as total_items
                   from per_key pk
                   join llm_api_keys k on k.id = pk.key_id
@@ -305,16 +327,28 @@ public class AdminLlmUsageService {
                   join orgs o on o.id = k.org_id
                   left join metered m on m.key_id = pk.key_id
                  where true
-                """.formatted(dimensions) + parts.clause() + " group by " + group
-                + " order by requests desc, " + order + " limit ?",
-                (rs, rowNum) -> consumerRow(rs), args.toArray());
-        long total = rows.isEmpty() ? 0 : rows.getFirst().totalItems();
+                """.replace("__MONEY__", institutionQueries.moneyKeyRows(context.actor())).formatted(dimensions)
+                + parts.clause() + " group by " + group;
+        String ordering = switch (sort) {
+            case REQUESTS_DESC -> "requests desc";
+            case TOKENS_DESC -> "(sum(pk.input_tokens)+sum(pk.output_tokens)) desc";
+            case REPORTED_COST_DESC -> "case when sum(pk.priced_requests)>0 then sum(pk.cost_usd) end desc nulls last";
+        };
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(size); pageArgs.add((long) page * size);
+        List<ConsumerRow> rows = jdbcTemplate.query(query + " order by " + ordering + ", " + order + " limit ? offset ?",
+                (rs, rowNum) -> consumerRow(rs), pageArgs.toArray());
+        Long emptyPageTotal = rows.isEmpty() ? jdbcTemplate.queryForObject(
+                "select count(*) from (" + query + ") matched_consumers", Long.class, args.toArray()) : null;
+        long total = rows.isEmpty() ? emptyPageTotal == null ? 0 : emptyPageTotal : rows.getFirst().totalItems();
         return new LlmUsageConsumersResponse(level,
-                rows.stream().map(ConsumerRow::item).toList(), total, total > rows.size());
+                rows.stream().map(ConsumerRow::item).toList(), total, total > rows.size(), page, size,
+                (int) Math.min(Integer.MAX_VALUE, (total + size - 1) / size), from, to,
+                "DAILY_ROLLUP_AND_VENDOR_METER_SNAPSHOTS", sort);
     }
 
     private LlmLimitReviewCollectionResponse limitReview(ScopeContext context,
-            Instant generatedAt, LocalDate today, int top) {
+            Instant generatedAt, LocalDate today, int size, int page) {
         SqlParts parts = scopedParts(context, "k.org_id", "k.workspace_id");
         List<Object> args = new ArrayList<>(parts.args());
         args.add(Timestamp.from(generatedAt));
@@ -322,26 +356,28 @@ public class AdminLlmUsageService {
         args.add(today);
         args.add(today.minusDays(6));
         args.add(today.plusDays(1));
-        args.add(top);
         String sql = """
                 with scoped_keys as (
                     select k.id, k.public_id, k.name, k.status, k.expires_at,
-                           k.daily_tokens, k.quota_exhausted, k.credit_limit,
-                           k.credit_limit_reset, k.openrouter_usage,
-                           k.openrouter_limit_remaining, k.openrouter_usage_at,
-                           (k.credit_limit > 0 and k.openrouter_key_hash is not null)
-                               as credit_axis_connected,
+                           k.daily_tokens, k.quota_exhausted,
+                           __MONEY__ as finance_visible,
+                           case when __MONEY__ then k.credit_limit end as credit_limit,
+                           case when __MONEY__ then k.credit_limit_reset end as credit_limit_reset,
+                           case when __MONEY__ then k.openrouter_usage end as openrouter_usage,
+                           case when __MONEY__ then k.openrouter_limit_remaining end as openrouter_limit_remaining,
+                           case when __MONEY__ then k.openrouter_usage_at end as openrouter_usage_at,
+                           case when __MONEY__ then k.credit_limit > 0 and k.openrouter_key_hash is not null end as credit_axis_connected,
                            k.org_id, k.workspace_id,
                            w.public_id as workspace_public_id,
                            w.name as workspace_name, o.public_id as org_public_id,
-                           o.name as org_name, a.public_id as account_public_id,
-                           a.name as account_name
+                           o.name as org_name, case when __MONEY__ then a.public_id end as account_public_id,
+                           case when __MONEY__ then a.name end as account_name
                       from llm_api_keys k
                       join workspaces w on w.id = k.workspace_id
                       join orgs o on o.id = k.org_id
                       left join openrouter_accounts a on a.id = k.openrouter_account_id
                      where true
-                """ + parts.clause() + """
+                """.replace("__MONEY__", institutionQueries.moneyKeyRows(context.actor())) + parts.clause() + """
                        and k.status in ('PENDING'::llm_api_key_status,
                            'ACTIVE'::llm_api_key_status, 'SUSPENDED'::llm_api_key_status)
                        and (k.expires_at is null or k.expires_at > ?)
@@ -360,7 +396,7 @@ public class AdminLlmUsageService {
                 ), pressure as (
                     select e.key_id,
                            count(*) filter (where e.error_type = 'quota_exhausted') as quota,
-                           count(*) filter (where e.error_type = 'credit_exhausted') as credit,
+                           count(*) filter (where e.error_type = 'credit_exhausted' and k.finance_visible) as credit,
                            count(*) filter (where e.error_type = 'rate_limit_requests') as rpm,
                            count(*) filter (where e.error_type = 'rate_limit_tokens') as tpm,
                            count(*) filter (where e.error_type = 'rate_limit_concurrency')
@@ -400,14 +436,19 @@ public class AdminLlmUsageService {
                 )
                 select review.*, count(*) over() as total_items
                   from review
-                 order by actually_exhausted desc, utilization desc nulls last, id desc
-                 limit ?
                 """;
-        List<LimitRow> rows = jdbcTemplate.query(sql,
-                (rs, rowNum) -> limitRow(rs), args.toArray());
-        long total = rows.isEmpty() ? 0 : rows.getFirst().totalItems();
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(size); pageArgs.add((long) page * size);
+        List<LimitRow> rows = jdbcTemplate.query(sql
+                + " order by actually_exhausted desc, utilization desc nulls last, id desc limit ? offset ?",
+                (rs, rowNum) -> limitRow(rs), pageArgs.toArray());
+        Long emptyPageTotal = rows.isEmpty() ? jdbcTemplate.queryForObject(
+                "select count(*) from (" + sql + ") matched_review", Long.class, args.toArray()) : null;
+        long total = rows.isEmpty() ? emptyPageTotal == null ? 0 : emptyPageTotal : rows.getFirst().totalItems();
         return new LlmLimitReviewCollectionResponse(
-                rows.stream().map(LimitRow::item).toList(), total, total > rows.size());
+                rows.stream().map(LimitRow::item).toList(), total, total > rows.size(), page, size,
+                (int) Math.min(Integer.MAX_VALUE, (total + size - 1) / size),
+                today.minusDays(6), today, generatedAt);
     }
 
     private LlmUsageQualityResponse quality(ScopeContext context, AuthenticatedUser actor,
@@ -470,9 +511,10 @@ public class AdminLlmUsageService {
                          where key_id is null and day >= ? and day <= ?
                         """, Long.class, from, to)
                 : null;
+        boolean finance = completeMoneyProjection(context);
         return new LlmUsageQualityResponse(rollupLastSuccess, latestUsage,
-                safeMeters.total(), safeMeters.observed(), safeMeters.oldest(),
-                safeMeters.latest(), safe.totalRequests(), safe.estimatedRequests(),
+                finance ? safeMeters.total() : null, finance ? safeMeters.observed() : null, finance ? safeMeters.oldest() : null,
+                finance ? safeMeters.latest() : null, safe.totalRequests(), safe.estimatedRequests(),
                 ratio(safe.estimatedRequests(), safe.totalRequests()), safe.totalTokens(),
                 safe.estimatedTokens(), safe.estimatedTokens() == null ? null
                         : ratio(safe.estimatedTokens(), safe.totalTokens()),
@@ -481,7 +523,7 @@ public class AdminLlmUsageService {
                 gateway.oldestUnshippedEventAt(), gateway.queuedUsageEvents(),
                 gateway.queuedUsageBytes(), gateway.spoolWriteFailures(),
                 gateway.usageShipFailures(), gateway.usageQueueScanFailures(), unattributed,
-                safe.pricedRequests(), safe.endpointRecordedRequests());
+                finance ? safe.pricedRequests() : null, safe.endpointRecordedRequests());
     }
 
     /**
@@ -521,39 +563,41 @@ public class AdminLlmUsageService {
                        sum(d.priced_output_tokens) as priced_output_tokens,
                        sum(d.latency_ms_sum) as latency_ms_sum,
                        sum(d.priced_latency_ms_sum) as priced_latency_ms_sum,
-                       sum(d.priced_failed) as priced_failed
+                       sum(d.priced_failed) as priced_failed,
+                       bool_and(__MONEY__) as finance_visible
                   from llm_usage_daily d
                   left join llm_api_keys k on k.id = d.key_id
                  where d.day >= ? and d.day <= ?
-                """ + parts.clause() + """
+                """.replace("__MONEY__", institutionQueries.moneyKeyRows(context.actor())) + parts.clause() + """
                  group by d.public_model_name
                 having sum(d.requests) > 0
                  order by requests desc, model_name
                  limit ?
                 """, (rs, rowNum) -> {
+                    boolean finance = rs.getBoolean("finance_visible");
                     long requests = rs.getLong("requests");
                     long priced = rs.getLong("priced_requests");
                     return new LlmUsageModelBreakdownResponse(rs.getString("model_name"),
                             requests, rs.getLong("failed"), rs.getLong("input_tokens"),
                             rs.getLong("output_tokens"),
-                            priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced,
-                            rs.getLong("credit_axis_requests"),
-                            rs.getLong("priced_input_tokens"),
-                            rs.getLong("priced_output_tokens"),
+                            !finance || priced == 0 ? null : rs.getBigDecimal("cost_usd"), finance ? priced : null,
+                            finance ? rs.getLong("credit_axis_requests") : null,
+                            finance ? rs.getLong("priced_input_tokens") : null,
+                            finance ? rs.getLong("priced_output_tokens") : null,
                             requests == 0 ? 0 : rs.getLong("latency_ms_sum") / requests,
-                            priced == 0 ? 0 : rs.getLong("priced_latency_ms_sum") / priced,
+                            !finance ? null : priced == 0 ? 0L : rs.getLong("priced_latency_ms_sum") / priced,
                             // The complement, computed here rather than on the
                             // screen: the two rows must not each reinvent the
                             // subtraction that keeps them adding up.
-                            requests - priced == 0 ? 0
+                            !finance ? null : requests - priced == 0 ? 0L
                                     : (rs.getLong("latency_ms_sum")
                                             - rs.getLong("priced_latency_ms_sum"))
                                             / (requests - priced),
-                            rs.getLong("priced_failed"));
+                            finance ? rs.getLong("priced_failed") : null);
                 }, args.toArray());
     }
 
-    private List<LlmEndpointKindUsageResponse> endpointBreakdown(ScopeContext context,
+    private List<InstitutionAdminLlmEndpointUsageResponse> endpointBreakdown(ScopeContext context,
             LocalDate from, LocalDate to) {
         SqlParts parts = scopedParts(context, "k.org_id", "k.workspace_id");
         List<Object> args = new ArrayList<>();
@@ -571,24 +615,25 @@ public class AdminLlmUsageService {
                        sum(d.cost_usd) as cost_usd,
                        sum(d.priced_requests) as priced_requests,
                        sum(d.credit_axis_requests) as credit_axis_requests,
-                       sum(d.image_count) as image_count
+                       sum(d.image_count) as image_count,
+                       bool_and(__MONEY__) as finance_visible
                   from llm_usage_daily d
                   left join llm_api_keys k on k.id = d.key_id
                  where d.day >= ? and d.day <= ?
-                """ + parts.clause() + """
+                """.replace("__MONEY__", institutionQueries.moneyKeyRows(context.actor())) + parts.clause() + """
                  group by d.endpoint
                 having sum(d.requests) > 0
                  order by requests desc, d.endpoint
                 """, (rs, rowNum) -> {
                     long priced = rs.getLong("priced_requests");
-                    return new LlmEndpointKindUsageResponse(rs.getString("endpoint"),
+                    return InstitutionAdminLlmEndpointUsageResponse.of(new LlmEndpointKindUsageResponse(rs.getString("endpoint"),
                             rs.getLong("requests"), rs.getLong("succeeded"),
                             rs.getLong("rate_limited"),
                             rs.getLong("failed"), rs.getLong("input_tokens"),
                             rs.getLong("output_tokens"),
                             priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced,
                             rs.getLong("credit_axis_requests"),
-                            rs.getLong("image_count"));
+                            rs.getLong("image_count")), rs.getBoolean("finance_visible"));
                 }, args.toArray());
     }
 
@@ -637,7 +682,7 @@ public class AdminLlmUsageService {
                             rs.getLong("requests")),
                     useArgs.toArray());
             rows.add(new LlmUsagePassthroughGrantResponse(capability,
-                    granted == null ? 0 : granted,
+                    !PassthroughEndpoints.CHAT.equals(capability) && !completeMoneyProjection(context) ? null : granted == null ? 0L : granted,
                     used == null ? 0 : used.usedKeys(),
                     used == null ? 0 : used.requests()));
         }
@@ -647,9 +692,16 @@ public class AdminLlmUsageService {
     private record UsedRoutes(long usedKeys, long requests) {
     }
 
+    private boolean completeMoneyProjection(ScopeContext context) {
+        if (!institutionQueries.hasMoneySources(context.actor())) { return false; }
+        SqlParts parts = scopedParts(context, "k.org_id", "k.workspace_id");
+        return !Boolean.TRUE.equals(jdbcTemplate.queryForObject("select exists(select 1 from llm_api_keys k where not ("
+                + institutionQueries.moneyKeyRows(context.actor()) + ")" + parts.clause() + ")", Boolean.class, parts.args().toArray()));
+    }
+
     private SqlParts scopedParts(ScopeContext context, String orgColumn,
             String workspaceColumn) {
-        StringBuilder clause = new StringBuilder();
+        StringBuilder clause = new StringBuilder(" and (" + institutionQueries.observationKeyRows(context.actor()) + ")");
         List<Object> args = new ArrayList<>();
         if (!context.scope().isUnrestricted()) {
             clause.append(" and ").append(context.scope().guard(orgColumn));
@@ -671,6 +723,7 @@ public class AdminLlmUsageService {
     }
 
     private static ConsumerRow consumerRow(ResultSet rs) throws SQLException {
+        boolean finance = rs.getBoolean("finance_visible");
         long priced = rs.getLong("priced_requests");
         // The vendor's own per-key meter, summed over the consumer's keys. Null
         // where no key of it has ever been reconciled, which is not zero: the
@@ -682,13 +735,13 @@ public class AdminLlmUsageService {
                 rs.getObject("workspace_public_id", UUID.class), rs.getString("workspace_name"),
                 rs.getObject("key_public_id", UUID.class), rs.getString("key_name"),
                 rs.getLong("requests"), rs.getLong("input_tokens"),
-                rs.getLong("output_tokens"), metered,
+                rs.getLong("output_tokens"), finance ? metered : null,
                 // Absent rather than zero: a consumer whose whole window went
                 // to self-hosted models has no dollar figure, and a zero here
                 // would rank it beside one that genuinely spent nothing.
-                priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced,
-                rs.getLong("credit_axis_requests"),
-                observed == null ? null : observed.toInstant()),
+                !finance || priced == 0 ? null : rs.getBigDecimal("cost_usd"), finance ? priced : null,
+                finance ? rs.getLong("credit_axis_requests") : null,
+                !finance || observed == null ? null : observed.toInstant()),
                 rs.getLong("total_items"));
     }
 
@@ -713,9 +766,9 @@ public class AdminLlmUsageService {
                 rs.getBigDecimal("openrouter_usage"),
                 rs.getBigDecimal("openrouter_limit_remaining"),
                 instant(rs, "openrouter_usage_at"),
-                rs.getBoolean("credit_axis_connected"),
+                rs.getObject("credit_axis_connected", Boolean.class),
                 rs.getObject("account_public_id", UUID.class), rs.getString("account_name"),
-                List.copyOf(pressure));
+                List.copyOf(pressure), rs.getBoolean("finance_visible"));
         return new LimitRow(item, rs.getLong("total_items"));
     }
 
@@ -752,7 +805,7 @@ public class AdminLlmUsageService {
                 "리소스를 찾을 수 없습니다", "해당 워크스페이스를 찾을 수 없습니다.");
     }
 
-    private record ScopeContext(OrgScope scope, @Nullable Workspace workspace) {
+    private record ScopeContext(OrgScope scope, @Nullable Workspace workspace, AuthenticatedUser actor) {
     }
 
     private record SqlParts(String clause, List<Object> args) {

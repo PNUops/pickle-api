@@ -93,7 +93,7 @@ class PassthroughEndpointsTest {
         assertThat(errors).hasSize(1);
         assertThat(errors.getFirst().field()).isEqualTo("endpoints[1]");
         assertThat(errors.getFirst().message()).startsWith("아직 부여할 수 없는 기능입니다.")
-                .contains("chat, web_search, pdf_ocr, images, embeddings");
+                .contains("chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions");
     }
 
     /** A feature of chat means nothing without chat. */

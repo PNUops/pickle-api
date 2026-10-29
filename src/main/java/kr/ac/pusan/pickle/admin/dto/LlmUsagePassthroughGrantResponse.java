@@ -15,12 +15,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * have used either.
  */
 public record LlmUsagePassthroughGrantResponse(
-        @Schema(description = "기능 권한 값. chat, images, embeddings 중 하나입니다. 요청 본문으로 "
+        @Schema(description = "기능 권한 값. chat, images, embeddings, rerank, speech, transcriptions 중 하나입니다. 요청 본문으로 "
                 + "판정하는 기능(web_search, pdf_ocr)은 사용량 이벤트가 경로만 기록해 사용을 셀 수 "
                 + "없으므로 행이 없습니다.")
         String capability,
         @Schema(description = "지금 이 기능을 부여받은 키 수")
-        long grantedKeys,
+        @org.jspecify.annotations.Nullable Long grantedKeys,
         @Schema(description = """
                 이 기간에 이 기능이 여는 경로를 실제로 호출한 키 수. **grantedKeys의 \
                 부분집합이 아닙니다** — 부여는 지금 상태이고 호출은 지나간 사실이라, 쓰고 \

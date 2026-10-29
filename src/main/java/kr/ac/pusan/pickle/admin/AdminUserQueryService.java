@@ -15,12 +15,10 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.workspace.WorkspaceMember;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.mfa.UserMfaRepository;
 import kr.ac.pusan.pickle.orgs.ManagedOrgQueryService;
 import kr.ac.pusan.pickle.orgs.dto.ManagedOrgResponse;
-import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.profile.ProfileOptionsService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -31,7 +29,6 @@ import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.user.UserStatusChange;
 import kr.ac.pusan.pickle.user.UserStatusChangeRepository;
 import kr.ac.pusan.pickle.vm.VmRepository;
-import kr.ac.pusan.pickle.vm.VmStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -68,13 +65,16 @@ public class AdminUserQueryService {
     private final UserMfaRepository userMfaRepository;
     private final ManagedOrgQueryService managedOrgQueryService;
     private final ProfileOptionsService profileOptionsService;
+    private final StudentSupportPolicy studentPolicy;
+    private final StudentRelationshipPermissions relationships;
 
     public AdminUserQueryService(JdbcTemplate jdbcTemplate, UserRepository userRepository,
             WorkspaceMemberRepository workspaceMemberRepository, VmRepository vmRepository,
             UserStatusChangeRepository userStatusChangeRepository,
             UserMfaRepository userMfaRepository,
             ManagedOrgQueryService managedOrgQueryService,
-            ProfileOptionsService profileOptionsService) {
+            ProfileOptionsService profileOptionsService, StudentSupportPolicy studentPolicy,
+            StudentRelationshipPermissions relationships) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -83,16 +83,23 @@ public class AdminUserQueryService {
         this.userMfaRepository = userMfaRepository;
         this.managedOrgQueryService = managedOrgQueryService;
         this.profileOptionsService = profileOptionsService;
+        this.studentPolicy = studentPolicy;
+        this.relationships = relationships;
     }
 
     @Transactional(readOnly = true)
     public PageResponse<UserAdminViewResponse> listUsers(AuthenticatedUser actor, String q,
             UserStatus status, UserRole role, UUID orgId, String sort, int page, int size) {
-        StudentSupportPolicy.requireRead(actor);
+        studentPolicy.requireStudentLookup(actor);
+        boolean support = studentPolicy.canReadStudentSupport(actor);
+        if (orgId != null && !support) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "기관 소속 관계 필터에는 학생 지원 조회 권한이 필요합니다.");
+        }
         OrgScope scope = scopeOrgId(actor, orgId);
         StringBuilder where = new StringBuilder(" where 1 = 1");
         List<Object> params = new ArrayList<>();
-        if (actor.role().isOrgTier()) {
+        if (!actor.role().isSysTier()) {
             // System-tier accounts are withheld from the org tier (operator,
             // 2026-09-16): it can act on none of them. Filtered in SQL so the
             // count and the page boundaries agree with the rows, and taken from
@@ -104,17 +111,10 @@ public class AdminUserQueryService {
             params.addAll(SYS_TIER_ROLES);
         }
         if (!scope.isUnrestricted()) {
-            // Derived-org scoping in SQL: the org's own administrators plus
-            // ACTIVE members of a workspace linked to it (derived membership).
-            where.append(" and (exists (select 1 from user_org_roles uor")
-                    .append(" where uor.user_id = u.id and ")
-                    .append(scope.inList("uor.org_id"))
-                    .append(") or (u.status = 'ACTIVE' and ")
-                    .append(OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id", scope))
-                    .append("))");
-            params.addAll(scope.orgIds());
-            params.addAll(scope.orgIds());
-            params.addAll(scope.orgIds());
+            // Current profile affiliations and authorized derived resource relations are separate branches.
+            var membership = relationships.directoryInstitutionMembership(actor, scope);
+            where.append(" and (").append(membership.sql()).append(")");
+            params.addAll(membership.params());
         }
         if (q != null && !q.isBlank()) {
             String pattern = "%" + escapeLike(q.strip()) + "%";
@@ -150,15 +150,16 @@ public class AdminUserQueryService {
         List<Long> pageUserIds = rows.stream().map(Row::id).toList();
         // Real 2FA state: one set-membership query over the page's user ids
         // (the console mfa-reset button keys off this).
-        Set<Long> enrolled = rows.isEmpty() ? Set.of()
+        Set<Long> enrolled = !support || rows.isEmpty() ? Set.of()
                 : Set.copyOf(userMfaRepository.findEnrolledUserIds(pageUserIds));
         // One query for the whole page rather than one per row.
         Map<Long, List<ManagedOrgResponse>> managedOrgs =
-                managedOrgQueryService.byUser(pageUserIds);
+                support ? managedOrgQueryService.byUser(pageUserIds) : Map.of();
         List<UserAdminViewResponse> content = rows.stream()
                 .map(v -> new UserAdminViewResponse(v.publicId(), v.email(), v.name(), v.role(),
-                        managedOrgs.getOrDefault(v.id(), List.of()), v.status(),
-                        enrolled.contains(v.id()), v.createdAt()))
+                        support ? managedOrgs.getOrDefault(v.id(), List.of()) : null, v.status(),
+                        support ? enrolled.contains(v.id()) : null, support ? v.createdAt() : null,
+                        relationships.relationshipsLimited(actor)))
                 .toList();
         int totalPages = size > 0 ? (int) Math.ceil((double) totalElements / size) : 0;
         return new PageResponse<>(content, page, size, totalElements, totalPages);
@@ -168,62 +169,79 @@ public class AdminUserQueryService {
     public UserAdminDetailResponse getUser(AuthenticatedUser actor, UUID userId) {
         User user = userRepository.findByPublicId(userId)
                 .orElseThrow(AdminUserQueryService::userNotFound);
-        if (!StudentSupportPolicy.canReadUser(actor, user.getRole())) {
+        if (!studentPolicy.canLookupStudent(actor, user.getRole())) {
             // Withheld from the list, so withheld here too, or the id alone
             // reopens it. 404 as an organisation outside the actor's answers.
             throw userNotFound();
         }
 
-        List<WorkspaceMember> liveMemberships = workspaceMemberRepository.findWithWorkspaceByUserId(user.getId()).stream()
-                .filter(member -> member.getWorkspace().getDeletedAt() == null)
-                .toList();
-        List<Long> workspaceIds = liveMemberships.stream().map(m -> m.getWorkspace().getId()).toList();
-        Map<Long, List<UUID>> vmOrgs = vmOrgsByWorkspace(workspaceIds);
+        boolean support = studentPolicy.canReadStudentSupport(actor);
+        boolean profile = studentPolicy.canReadStudentProfile(actor, user.getRole());
+        boolean workspaceAvailable = support && relationships.workspaceAvailable(actor);
+        boolean vmMetadataAvailable = support && relationships.vmMetadataAvailable(actor);
+        var workspaceFilter = relationships.workspaces(actor);
+        List<Object> membershipParams = new ArrayList<>(); membershipParams.add(user.getId());
+        membershipParams.addAll(workspaceFilter.params());
+        List<MembershipRow> liveMemberships = !workspaceAvailable ? List.of() : jdbcTemplate.query(
+                "select w.id,w.public_id,w.name,w.kind,m.role from workspace_members m join workspaces w on w.id=m.workspace_id"
+                        + " where m.user_id=? and w.deleted_at is null and (" + workspaceFilter.sql() + ") order by w.id",
+                (rs, row) -> new MembershipRow(rs.getLong(1), rs.getObject(2, UUID.class), rs.getString(3),
+                        kr.ac.pusan.pickle.workspace.WorkspaceKind.valueOf(rs.getString(4)),
+                        kr.ac.pusan.pickle.workspace.WorkspaceMemberRole.valueOf(rs.getString(5))), membershipParams.toArray());
+        List<Long> workspaceIds = liveMemberships.stream().map(MembershipRow::id).toList();
+        Map<Long, List<UUID>> vmOrgs = !vmMetadataAvailable ? Map.of() : vmOrgsByWorkspace(actor, workspaceIds);
         List<AdminMembershipResponse> memberships = liveMemberships.stream()
-                .map(m -> new AdminMembershipResponse(m.getWorkspace().getPublicId(),
-                        m.getWorkspace().getName(), m.getWorkspace().getKind(), m.getRole(),
-                        vmOrgs.getOrDefault(m.getWorkspace().getId(), List.of())))
+                .map(m -> new AdminMembershipResponse(m.publicId(), m.name(), m.kind(), m.role(),
+                        vmMetadataAvailable && relationships.vmMetadataInWorkspace(actor, m.publicId())
+                                ? vmOrgs.getOrDefault(m.id(), List.of()) : null))
                 .toList();
-        int activeVmCount = workspaceIds.isEmpty() ? 0
-                : (int) vmRepository.countActiveByWorkspaceIdIn(workspaceIds, VmStatus.DELETED);
+        Integer activeVmCount = !support || !relationships.allVmMetadata(actor) ? null : jdbcTemplate.queryForObject(
+                "select count(*) from vms v where v.status<>'DELETED' and exists(select 1 from workspace_members m"
+                        + " join workspaces w on w.id=m.workspace_id where m.workspace_id=v.workspace_id and m.user_id=? and w.deleted_at is null)",
+                Integer.class, user.getId());
 
-        List<UserStatusChangeResponse> statusChanges = mapStatusChanges(
+        List<UserStatusChangeResponse> statusChanges = !support ? null : mapStatusChanges(
                 userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()),
-                actor.role().isOrgTier());
+                !actor.role().isSysTier());
 
         return new UserAdminDetailResponse(user.getPublicId(), user.getEmail(), user.getName(),
-                user.getRole(), managedOrgQueryService.of(user.getId()), user.getStatus(),
-                userMfaRepository.isEnrolled(user.getId()),
-                user.getCreatedAt(),
-                user.getWithdrawnAt(), user.getDisabledAt(), user.getDisabledReason(),
-                memberships, activeVmCount, statusChanges,
-                user.getPosition(), user.getStudentNo(), user.getDepartmentCode(),
-                profileOptionsService.departmentName(user.getDepartmentCode()), user.getDepartmentOther(),
+                user.getRole(), support ? managedOrgQueryService.of(user.getId()) : null, user.getStatus(),
+                support ? userMfaRepository.isEnrolled(user.getId()) : null,
+                support ? user.getCreatedAt() : null,
+                support ? user.getWithdrawnAt() : null, support ? user.getDisabledAt() : null,
+                support ? user.getDisabledReason() : null,
+                workspaceAvailable ? memberships : null, activeVmCount, statusChanges,
+                profile ? user.getPosition() : null, user.getStudentNo(), profile ? user.getDepartmentCode() : null,
+                profile ? profileOptionsService.departmentName(user.getDepartmentCode()) : null,
+                profile ? user.getDepartmentOther() : null,
                 new kr.ac.pusan.pickle.admin.dto.AdminUserSupportCapabilitiesResponse(
-                        StudentSupportPolicy.canReadUser(actor, user.getRole()),
-                        StudentSupportPolicy.canCorrectProfile(actor, user.getRole()),
-                        StudentSupportPolicy.canEnableAccount(actor)));
+                        profile,
+                        studentPolicy.canCorrectStudentProfile(actor, user.getRole()),
+                        StudentSupportPolicy.canEnableAccount(actor)),
+                !support || relationships.detailLimited(actor));
     }
 
     /**
      * The organisations each workspace has live machines in. Derived, since a
      * workspace has no organisation column, and one query for the whole set.
      */
-    private Map<Long, List<UUID>> vmOrgsByWorkspace(List<Long> workspaceIds) {
+    private Map<Long, List<UUID>> vmOrgsByWorkspace(AuthenticatedUser actor, List<Long> workspaceIds) {
         if (workspaceIds.isEmpty()) {
             return Map.of();
         }
         String placeholders = workspaceIds.stream().map(id -> "?").collect(Collectors.joining(", "));
         Map<Long, List<UUID>> byWorkspace = new java.util.LinkedHashMap<>();
+        var filter = relationships.vmMetadata(actor);
+        List<Object> params = new ArrayList<>(workspaceIds); params.addAll(filter.params());
         jdbcTemplate.query("""
-                select distinct v.workspace_id, o.public_id
-                  from vms v join orgs o on o.id = v.org_id
-                 where v.status <> 'DELETED' and v.workspace_id in (""" + placeholders + ")",
+                select distinct v.workspace_id, vo.public_id
+                  from vms v join orgs vo on vo.id = v.org_id join workspaces vw on vw.id=v.workspace_id
+                 where v.status <> 'DELETED' and v.workspace_id in (""" + placeholders + ") and (" + filter.sql() + ")",
                 rs -> {
                     byWorkspace.computeIfAbsent(rs.getLong("workspace_id"), k -> new ArrayList<>())
                             .add(rs.getObject("public_id", UUID.class));
                 },
-                workspaceIds.toArray());
+                params.toArray());
         return byWorkspace;
     }
 
@@ -260,6 +278,9 @@ public class AdminUserQueryService {
     private record Row(long id, UUID publicId, String email, String name, UserRole role,
             UserStatus status, java.time.Instant createdAt) {
     }
+
+    private record MembershipRow(long id, UUID publicId, String name,
+            kr.ac.pusan.pickle.workspace.WorkspaceKind kind, kr.ac.pusan.pickle.workspace.WorkspaceMemberRole role) { }
 
     private static Row mapRow(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Row(rs.getLong("id"), rs.getObject("public_id", UUID.class),

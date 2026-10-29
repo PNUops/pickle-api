@@ -79,6 +79,10 @@ public class RequestRecipient {
         this.reason = reason;
     }
 
+    public void cancelCreation() {
+        this.status = RequestRecipientStatus.CANCELED;
+    }
+
     public void created(long resourceId) {
         this.status = RequestRecipientStatus.CREATED;
         this.resourceId = resourceId;

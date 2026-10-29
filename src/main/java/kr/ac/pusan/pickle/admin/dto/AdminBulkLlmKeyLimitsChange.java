@@ -67,6 +67,7 @@ public class AdminBulkLlmKeyLimitsChange {
 
     @DecimalMin(value = "0", message = "금액 한도는 0 이상이어야 합니다.")
     @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.")
+    @kr.ac.pusan.pickle.common.openapi.NonNullWhenPresent
     private @Nullable BigDecimal creditLimit;
     private boolean creditLimitSet;
 
@@ -160,7 +161,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.creditDeniedModels = creditDeniedModels;
     }
 
-    @Schema(description = "기능 권한 목록에 적용할 변경. 생략하면 그대로 둡니다. 현재 변경 요청에는 chat, web_search, pdf_ocr, images, embeddings를 지정할 수 있습니다. 결과 목록의 web_search와 pdf_ocr는 chat과 함께 부여해야 합니다.")
+    @Schema(description = "기능 권한 목록에 적용할 변경. 생략하면 그대로 둡니다. 현재 변경 요청에는 chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions를 지정할 수 있습니다. 결과 목록의 web_search와 pdf_ocr는 chat과 함께 부여해야 합니다.")
     public @Nullable AdminBulkListChange getPassthroughEndpoints() {
         return passthroughEndpoints;
     }

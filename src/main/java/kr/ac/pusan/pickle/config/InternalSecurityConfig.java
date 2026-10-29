@@ -32,7 +32,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class InternalSecurityConfig {
 
     @Bean
-    @Order(Ordered.HIGHEST_PRECEDENCE + 2)
+    @Order(Ordered.HIGHEST_PRECEDENCE + 3)
     SecurityFilterChain internalSecurityFilterChain(HttpSecurity http,
             SshGatewayProperties sshGatewayProperties, RateLimitService rateLimitService,
             ProblemJsonWriter problemJsonWriter) throws Exception {

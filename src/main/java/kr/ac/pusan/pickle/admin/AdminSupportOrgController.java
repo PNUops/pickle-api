@@ -19,15 +19,19 @@ import org.springframework.web.bind.annotation.RestController;
 @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
 public class AdminSupportOrgController {
     private final OrgRepository orgs;
+    private final StudentSupportPolicy studentPolicy;
 
-    public AdminSupportOrgController(OrgRepository orgs) { this.orgs = orgs; }
+    public AdminSupportOrgController(OrgRepository orgs, StudentSupportPolicy studentPolicy) {
+        this.orgs = orgs;
+        this.studentPolicy = studentPolicy;
+    }
 
     @GetMapping
     @Operation(summary = "학생 지원 조회의 기관 필터 목록",
             description = "비활성 기관을 포함한 기관 ID·이름·상태만 조회합니다. 기관 설정이나 자격증명, 배정·운영 권한을 제공하지 않습니다.")
     @Transactional(readOnly = true)
     public List<AdminSupportOrgOptionResponse> listAdminSupportOrgs(@AuthenticationPrincipal AuthenticatedUser actor) {
-        StudentSupportPolicy.requireRead(actor);
+        studentPolicy.requireStudentSupport(actor);
         return orgs.findAll().stream().sorted(Comparator.comparing(Org::getName).thenComparing(Org::getId))
                 .map(org -> new AdminSupportOrgOptionResponse(org.getPublicId(), org.getName(), org.getStatus())).toList();
     }

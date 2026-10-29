@@ -28,12 +28,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Organisation and user administration (contract tag {@code admin}). Most of it
- * is SYS_ADMIN-only and the role gate for those sits on the controller, but the
- * organisation-role grant and revoke are open to ORG_ADMIN as well, and
- * <b>their organisation-level check is here, not on the controller</b>: the gate
- * sees only the effective role, which an account carries everywhere it holds
- * any role at all.
+ * Organisation and user administration. Controllers retain system-role admission,
+ * while institution membership changes require current delegation in the atomic
+ * operations service for the actual target institution.
  */
 @Service
 public class AdminService {
@@ -42,6 +39,8 @@ public class AdminService {
     private AdminOrgOperationsService orgOperations;
     @org.springframework.beans.factory.annotation.Autowired
     private kr.ac.pusan.pickle.orgs.OrgAdministrationLock orgAdministrationLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.workspace.LifecycleActors lifecycleActors;
 
     private final OrgRepository orgRepository;
     private final UserOrgRoleService userOrgRoleService;
@@ -126,6 +125,11 @@ public class AdminService {
     public UserSummaryResponse updateUser(AuthenticatedUser actor, UUID userId,
             UpdateUserAdminRequest request, String ip) {
         orgAdministrationLock.acquire();
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
+        if (actor.role() != UserRole.SYS_ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "전역 역할 변경은 시스템 관리자만 할 수 있습니다.");
+        }
         User user = userRepository.findByPublicId(userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                         "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다."));
@@ -150,26 +154,20 @@ public class AdminService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ROLE_UPDATE,
                 "user", user.getPublicId(),
                 Map.of("previousRole", previousRole.name(), "role", user.getRole().name(),
-                        "orgId", orgPublicIdsOrNone(previousOrgIds)), ip);
+                        "orgId", "null"), ip);
         return UserSummaryResponse.from(user);
     }
 
     /**
-     * Gives an account a role in one organisation, or changes the one it has
-     * there. Additive: what it holds in other organisations is untouched.
-     *
-     * <p>The {@code @PreAuthorize} gate cannot decide this on its own. It sees
-     * the effective role, and an account that administers any organisation
-     * carries {@code ORG_ADMIN} everywhere — so the organisation-level check
-     * belongs here. A caller who does not administer the target organisation
-     * gets the same 404 an unknown organisation gets, because whether an
-     * organisation exists is not theirs to learn.
+     * Saves one explicit institution assignment without changing other sources.
+     * The operations service verifies delegation and both revision values after
+     * acquiring the administration barrier, then derives the display role.
      */
     @Transactional
     public UserSummaryResponse grantOrgRole(AuthenticatedUser actor, UUID userId, UUID orgId,
             GrantOrgRoleRequest request, String ip) {
-        orgOperations.saveSingle(actor, orgId, userId, request.role(), null, false,
-                request.expectedRevision(), ip);
+        orgOperations.saveSingle(actor, orgId, userId, request.permission(), false,
+                request.expectedRevision(), request.permission().expectedRevision(), ip);
         return UserSummaryResponse.from(userRepository.findByPublicId(userId).orElseThrow());
     }
 
@@ -180,8 +178,8 @@ public class AdminService {
      */
     @Transactional
     public UserSummaryResponse revokeOrgRole(AuthenticatedUser actor, UUID userId, UUID orgId,
-            long expectedRevision, String ip) {
-        orgOperations.saveSingle(actor, orgId, userId, null, null, true, expectedRevision, ip);
+            long expectedRevision, long expectedPermissionRevision, String ip) {
+        orgOperations.saveSingle(actor, orgId, userId, null, true, expectedRevision, expectedPermissionRevision, ip);
         return UserSummaryResponse.from(userRepository.findByPublicId(userId).orElseThrow());
     }
 
@@ -193,70 +191,10 @@ public class AdminService {
     @Transactional
     public ManagedOrgResponse updateOrgRequestMail(AuthenticatedUser actor, UUID userId,
             UUID orgId, boolean enabled, long expectedRevision, String ip) {
-        var result = orgOperations.saveSingle(actor, orgId, userId, null, enabled, false,
+        var result = orgOperations.saveSingleMail(actor, orgId, userId, enabled,
                 expectedRevision, ip);
         var member = result.members().stream().filter(row -> row.userId().equals(userId)).findFirst().orElseThrow();
         return new ManagedOrgResponse(orgId, result.org().name(), member.role(), member.requestMail());
-    }
-
-    /** The org the grant names, if this actor may hand out roles in it. */
-    private Long requireGrantableOrg(AuthenticatedUser actor, UUID orgId) {
-        Long resolved = orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        if (resolved == null) {
-            throw orgNotFound();
-        }
-        if (actor.role().isOrgTier() && !actor.administers(resolved)) {
-            throw orgNotFound();
-        }
-        return resolved;
-    }
-
-    /**
-     * The account being edited. Two refusals: an actor may not edit itself, and
-     * the org tier may not touch a sys-tier account — otherwise an org admin
-     * could strip or re-grade the people above it.
-     */
-    private User requireGrantableUser(AuthenticatedUser actor, UUID userId) {
-        User user = userRepository.findByPublicId(userId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다."));
-        if (actor.id().equals(user.getId())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "자신의 기관 역할은 변경할 수 없습니다.");
-        }
-        if (user.getRole().isSysTier()) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "시스템 관리자 계정의 기관 역할은 변경할 수 없습니다.");
-        }
-        return user;
-    }
-
-    /** A changed effective role invalidates the account's outstanding tokens. */
-    private void bumpIfRoleChanged(User user, UserRole previousRole) {
-        if (user.getRole() != previousRole) {
-            user.bumpTokenVersion();
-        }
-    }
-
-    private static ApiException orgNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
-    }
-
-    /**
-     * The organisations the account administers after the edit, named publicly
-     * and comma-joined. Map.of refuses a null value, so an account under no
-     * organisation keeps the literal {@code "null"} this field has always
-     * carried there.
-     */
-    private String orgPublicIdsOrNone(List<Long> orgIds) {
-        if (orgIds.isEmpty()) {
-            return "null";
-        }
-        return orgIds.stream()
-                .map(id -> orgRepository.findById(id).map(org -> org.getPublicId().toString())
-                        .orElse("null"))
-                .collect(java.util.stream.Collectors.joining(","));
     }
 
     private static String normalize(String description) {

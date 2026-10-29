@@ -90,7 +90,14 @@ public class VmNetworkPolicyService {
 
     public VmNetworkPolicyView adminUpdate(AuthenticatedUser actor, UUID vmId,
             UpdateVmNetworkPolicyRequest request, String ip) {
-        return updateLocked(adminAccess.requireWritableVm(actor, vmId), actor, request, true, ip);
+        return transactions.execute(status -> {
+            AuthenticatedUser current=adminAccess.currentForWrite(actor);
+            Vm vm=adminAccess.requireWritableVm(current,vmId,
+                    kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_NETWORK_POLICY_WRITE);
+            if (!lock.tryInCurrentTransaction(vm.getId())) { throw busy(); }
+            long nodeId=store.requireMutationAllowed(vm.getId());
+            return update(vm,nodeId,current,request,true,ip);
+        });
     }
 
     private VmNetworkPolicyView updateLocked(Vm vm, AuthenticatedUser actor,
@@ -101,10 +108,13 @@ public class VmNetworkPolicyService {
             long nodeId = store.requireMutationAllowed(vm.getId());
             return update(vm, nodeId, actor, request, adminIntervention, ip);
         })))) {
-            throw VmNetworkPolicyStore.unavailable(
-                    "VM 통신 정책을 다른 작업이 처리 중입니다. 작성 중인 규칙을 유지하고 다시 시도해 주세요.");
+            throw busy();
         }
         return result.get();
+    }
+
+    private static ApiException busy() {
+        return VmNetworkPolicyStore.unavailable("VM 통신 정책을 다른 작업이 처리 중입니다. 작성 중인 규칙을 유지하고 다시 시도해 주세요.");
     }
 
     private VmNetworkPolicyView view(Vm vm) {

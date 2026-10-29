@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/workspaces")
-@PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+@PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN', 'SYS_MANAGER')")
 public class AdminWorkspaceController {
 
     private final AdminWorkspaceQueryService adminWorkspaceQueryService;
@@ -65,22 +65,23 @@ public class AdminWorkspaceController {
         return adminWorkspaceQueryService.listInvitations(principal, workspaceId);
     }
     @org.springframework.web.bind.annotation.PatchMapping("/{workspaceId}")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public AdminWorkspaceDetailResponse updateAdminWorkspace(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID workspaceId, @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
             kr.ac.pusan.pickle.workspace.dto.UpdateWorkspaceRequest request, jakarta.servlet.http.HttpServletRequest http) {
         workspaces.update(actor, workspaceId, request, kr.ac.pusan.pickle.common.web.ClientIps.clientIp(http), true);
-        return adminWorkspaceQueryService.get(actor, workspaceId);
+        return adminWorkspaceQueryService.commandReference(actor, workspaceId,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_INFO_UPDATE, request.isDescriptionSet());
     }
     @org.springframework.web.bind.annotation.PostMapping("/{workspaceId}/members/{userId}/preview")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public kr.ac.pusan.pickle.access.dto.ActorAccessImpact previewAdminWorkspaceMemberRole(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID workspaceId, @PathVariable UUID userId, @jakarta.validation.Valid
             @org.springframework.web.bind.annotation.RequestBody kr.ac.pusan.pickle.workspace.dto.UpdateWorkspaceMemberRequest request) {
         return workspaces.previewMemberRole(actor, workspaceId, userId, request);
     }
     @org.springframework.web.bind.annotation.PatchMapping("/{workspaceId}/members/{userId}")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public kr.ac.pusan.pickle.workspace.dto.WorkspaceMemberResponse updateAdminWorkspaceMemberRole(
             @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID workspaceId, @PathVariable UUID userId,
             @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody kr.ac.pusan.pickle.workspace.dto.UpdateWorkspaceMemberRequest request,
@@ -89,20 +90,20 @@ public class AdminWorkspaceController {
     }
     @org.springframework.web.bind.annotation.DeleteMapping("/{workspaceId}/members/{userId}")
     @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public void removeAdminWorkspaceMember(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID workspaceId,
             @PathVariable UUID userId, jakarta.servlet.http.HttpServletRequest http) {
         workspaces.removeMember(actor, workspaceId, userId, kr.ac.pusan.pickle.common.web.ClientIps.clientIp(http), true);
     }
     @org.springframework.web.bind.annotation.PostMapping("/{workspaceId}/invitations/preview")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public kr.ac.pusan.pickle.access.dto.ActorAccessImpact previewAdminWorkspaceInvitations(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID workspaceId, @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
             kr.ac.pusan.pickle.workspace.dto.InviteWorkspaceMembersRequest request) {
         return invitations.previewInvite(actor, workspaceId, request, true);
     }
     @org.springframework.web.bind.annotation.PostMapping("/{workspaceId}/invitations")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public kr.ac.pusan.pickle.workspace.dto.InviteWorkspaceMembersResponse inviteAdminWorkspaceMembers(
             @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID workspaceId, @jakarta.validation.Valid
             @org.springframework.web.bind.annotation.RequestBody kr.ac.pusan.pickle.workspace.dto.InviteWorkspaceMembersRequest request,
@@ -111,17 +112,19 @@ public class AdminWorkspaceController {
     }
     @org.springframework.web.bind.annotation.DeleteMapping("/{workspaceId}/invitations/{invitationId}")
     @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public void cancelAdminWorkspaceInvitation(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID workspaceId,
-            @PathVariable UUID invitationId, jakarta.servlet.http.HttpServletRequest http) {
-        invitations.cancel(actor, workspaceId, invitationId, kr.ac.pusan.pickle.common.web.ClientIps.clientIp(http), true);
+            @PathVariable UUID invitationId, @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
+            kr.ac.pusan.pickle.workspace.dto.ConfirmTerminationRequest request, jakarta.servlet.http.HttpServletRequest http) {
+        invitations.cancel(actor, workspaceId, invitationId, kr.ac.pusan.pickle.common.web.ClientIps.clientIp(http), true, request.confirmation());
     }
     @org.springframework.web.bind.annotation.DeleteMapping("/{workspaceId}")
     @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public void deleteAdminWorkspace(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID workspaceId,
-            jakarta.servlet.http.HttpServletRequest http) {
-        workspaces.delete(actor, workspaceId, kr.ac.pusan.pickle.common.web.ClientIps.clientIp(http), true);
+            @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
+            kr.ac.pusan.pickle.workspace.dto.ConfirmTerminationRequest request, jakarta.servlet.http.HttpServletRequest http) {
+        workspaces.delete(actor, workspaceId, kr.ac.pusan.pickle.common.web.ClientIps.clientIp(http), true, request.confirmation());
     }
 
 }

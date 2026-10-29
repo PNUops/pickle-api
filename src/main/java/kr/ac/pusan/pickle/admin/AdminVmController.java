@@ -46,7 +46,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/vms")
-@PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+@PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
 public class AdminVmController {
 
     private final AdminVmQueryService adminVmQueryService;
@@ -104,7 +104,7 @@ public class AdminVmController {
     }
 
     @PostMapping("/{vmId}/start")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN', 'SYS_MANAGER')")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse adminStartVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
@@ -113,7 +113,7 @@ public class AdminVmController {
     }
 
     @PostMapping("/{vmId}/shutdown")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN', 'SYS_MANAGER')")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse adminShutdownVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
@@ -122,7 +122,7 @@ public class AdminVmController {
     }
 
     @PostMapping("/{vmId}/reboot")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN', 'SYS_MANAGER')")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse adminRebootVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
@@ -131,7 +131,7 @@ public class AdminVmController {
     }
 
     @PostMapping("/{vmId}/force-stop")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN', 'SYS_MANAGER')")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse adminForceStopVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
@@ -141,7 +141,7 @@ public class AdminVmController {
 
     /** Synchronous DB update per contract (200 + full detail, not 202). */
     @PatchMapping("/{vmId}/period")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN', 'SYS_MANAGER')")
     public VmDetailResponse updateVmPeriod(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID vmId,

@@ -15,6 +15,10 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.config.ClockConfig;
+import kr.ac.pusan.pickle.llm.LlmQuotaService;
+import kr.ac.pusan.pickle.llm.LlmSyncService;
+import kr.ac.pusan.pickle.llm.dto.LlmSyncRequest;
+import kr.ac.pusan.pickle.llm.dto.LlmSyncResponse;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterManagementCredentialCipher;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -30,6 +34,8 @@ import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -63,6 +69,10 @@ class AdminLlmKeyTest {
     private WorkspaceRepository workspaceRepository;
     @Autowired
     private OpenRouterManagementCredentialCipher managementCipher;
+    @Autowired
+    private LlmQuotaService quotaService;
+    @Autowired
+    private LlmSyncService syncService;
 
     private Org orgA;
     private Org orgB;
@@ -172,7 +182,10 @@ class AdminLlmKeyTest {
                         .header("Authorization", "Bearer " + requesterToken))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        assertThat(byReviewer).isEqualTo(byHolder);
+        var reviewerJson = objectMapper.readTree(byReviewer);
+        assertThat(reviewerJson.get("financeVisible").asBoolean()).isTrue();
+        ((tools.jackson.databind.node.ObjectNode) reviewerJson).remove("financeVisible");
+        assertThat(reviewerJson).isEqualTo(objectMapper.readTree(byHolder));
     }
 
     /**
@@ -293,7 +306,7 @@ class AdminLlmKeyTest {
         long generation = generation();
 
         putLimits(active.publicId(), orgViewerToken, limits(90, "1.00"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         putLimits(active.publicId(), sysManagerToken, limits(90, "1.00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rpm").value(90));
@@ -368,6 +381,78 @@ class AdminLlmKeyTest {
         return jdbcTemplate.queryForObject(
                 "select openrouter_attempt_count from llm_api_keys where public_id = ?",
                 Integer.class, publicId);
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0, 10_000})
+    void removingAnExhaustedDailyLimitReleasesTheKeyOnTheNextSweep(long initialLimit)
+            throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "unlimited-quota-single", "ACTIVE", null);
+        jdbcTemplate.update("update llm_api_keys set daily_tokens = ? where public_id = ?",
+                initialLimit, key.publicId());
+        jdbcTemplate.update("""
+                insert into llm_usage_events (event_id, key_id, public_model_name, budget_axis,
+                        status, input_tokens, output_tokens, requested_at)
+                values (?, (select id from llm_api_keys where public_id = ?),
+                        'quota-test', 'TOKEN', 'OK', 11000, 0, now())
+                """, UUID.randomUUID().toString(), key.publicId());
+        quotaService.refresh();
+        assertThat(jdbcTemplate.queryForObject(
+                "select quota_exhausted from llm_api_keys where public_id = ?",
+                Boolean.class, key.publicId())).isTrue();
+
+        Map<String, Object> unlimited = new java.util.LinkedHashMap<>();
+        unlimited.put("dailyTokens", null);
+        putLimits(key.publicId(), sysAdminToken, unlimited)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dailyTokens").doesNotExist());
+        long beforeSweep = generation();
+        int changed = quotaService.refresh();
+        var document = (LlmSyncResponse.Document) syncService.sync(objectMapper.convertValue(
+                Map.of("appliedGeneration", 0, "supportedFormat", 1, "inFlight", 0),
+                LlmSyncRequest.class));
+        var synced = document.keys().stream()
+                .filter(entry -> entry.keyId().equals(key.publicId().toString()))
+                .findFirst().orElseThrow();
+        org.assertj.core.api.SoftAssertions.assertSoftly(soft -> {
+            soft.assertThat(changed).as("the sweep clears the old finite refusal").isEqualTo(1);
+            soft.assertThat(jdbcTemplate.queryForObject(
+                    "select quota_exhausted from llm_api_keys where public_id = ?",
+                    Boolean.class, key.publicId())).as("stored unlimited key").isFalse();
+            soft.assertThat(synced.quotaExhausted()).as("gateway unlimited key").isFalse();
+            soft.assertThat(document.generation()).as("one changed quota generation")
+                    .isEqualTo(beforeSweep + 1);
+        });
+        assertThat(quotaService.refresh()).isZero();
+        assertThat(generation()).isEqualTo(document.generation());
+    }
+
+    @Test
+    void omittedDailyLimitsPreserveExhaustionAndFiniteValuesRemainExact() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "finite-quota-single", "ACTIVE", null);
+        jdbcTemplate.update("""
+                insert into llm_usage_events (event_id, key_id, public_model_name, budget_axis,
+                        status, input_tokens, output_tokens, requested_at)
+                values (?, (select id from llm_api_keys where public_id = ?),
+                        'quota-test', 'TOKEN', 'OK', 11000, 0, now())
+                """, UUID.randomUUID().toString(), key.publicId());
+        quotaService.refresh();
+        putLimits(key.publicId(), sysAdminToken, Map.of("rpm", 61))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dailyTokens").value(10000))
+                .andExpect(jsonPath("$.quotaExhausted").value(true));
+        assertThat(quotaService.refresh()).isZero();
+
+        long exactLimit = 9_007_199_254_740_991L;
+        putLimits(key.publicId(), sysAdminToken, Map.of("dailyTokens", exactLimit))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "select daily_tokens from llm_api_keys where public_id = ?",
+                Long.class, key.publicId())).isEqualTo(exactLimit);
+        assertThat(quotaService.refresh()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select quota_exhausted from llm_api_keys where public_id = ?",
+                Boolean.class, key.publicId())).isFalse();
     }
 
     /**
@@ -523,34 +608,27 @@ class AdminLlmKeyTest {
     }
 
     @Test
-    void fullReplacementRequiresEveryLimitProperty() throws Exception {
-        Key key = key(orgA.getId(), workspaceA, "완전 교체 키", "ACTIVE", null);
+    void omittedLimitPropertiesRetainTheirLockedCurrentValues() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "부분 변경 키", "ACTIVE", null);
         putLimits(key.publicId(), sysAdminToken, Map.of("rpm", 10))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("creditLimit"));
-        putLimits(key.publicId(), sysAdminToken, Map.of("rpm", 10, "creditLimit", 0))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.rpm").value(10))
+                .andExpect(jsonPath("$.creditLimit").value(1.00)).andExpect(jsonPath("$.tpm").value(1000));
+        putLimits(key.publicId(), sysAdminToken, Map.of())
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.errors[0].field").value("limits"));
     }
 
-    // Both money-axis lists join the full replacement, so a request that omits
-    // either replaces nothing — the same rule the other six already follow.
-    // Without the deny half in isComplete() a body missing it saves quietly with
-    // the list emptied, which is the direction that opens a blocked model.
     @Test
-    void creditModelListsArePartOfTheFullReplacement() throws Exception {
+    void omittedCreditModelListsRetainTheirCurrentValues() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "허용 목록 키", "ACTIVE", null);
         Map<String, Object> withoutList = limits(60, "5.00");
         withoutList.remove("creditAllowedModels");
         putLimits(key.publicId(), sysAdminToken, withoutList)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.creditAllowedModels.length()").value(0));
 
         Map<String, Object> withoutDenyList = limits(60, "5.00");
         withoutDenyList.remove("creditDeniedModels");
         putLimits(key.publicId(), sysAdminToken, withoutDenyList)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.creditDeniedModels.length()").value(0));
 
         // Stored normalized: lower-cased, trimmed, duplicates gone, order kept.
         Map<String, Object> messy = limits(60, "5.00");
@@ -949,7 +1027,7 @@ class AdminLlmKeyTest {
      * means the opposite of theirs.
      */
     @Test
-    void passthroughEndpointsAreRequiredAndDefaultToNone() throws Exception {
+    void omittedPassthroughEndpointsRetainTheirCurrentValue() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "기능 권한 키", "ACTIVE", null);
 
         // A key that nobody granted anything reaches no passthrough path. The
@@ -959,8 +1037,7 @@ class AdminLlmKeyTest {
         Map<String, Object> without = limits(60, "5.00");
         without.remove("passthroughEndpoints");
         putLimits(key.publicId(), sysAdminToken, without)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.passthroughEndpoints.length()").value(0));
 
         // null and the empty array are the same value here, as they are for the
         // two model lists, and all three spell it as an empty stored array. What
@@ -1127,7 +1204,7 @@ class AdminLlmKeyTest {
                 .andExpect(jsonPath("$.errors[0].field").value("llmKey.reqPassthroughEndpoints"));
 
         Map<String, Object> notYet = new java.util.LinkedHashMap<>(base);
-        notYet.put("llmKey", Map.of("reqPassthroughEndpoints", java.util.List.of("rerank")));
+        notYet.put("llmKey", Map.of("reqPassthroughEndpoints", java.util.List.of("videos")));
         postJson("/api/v1/requests", requesterToken, notYet)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field")

@@ -45,6 +45,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ApprovalContextService {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private StudentSupportPolicy studentSupportPolicy;
+
     // Aliases kept for existing callers/tests; the single home of the
     // headroom math and guidance wording is OrgHeadroomService.
     static final String GUIDANCE_AMPLE = OrgHeadroomService.GUIDANCE_AMPLE;
@@ -65,13 +68,17 @@ public class ApprovalContextService {
     private final OrgRepository orgRepository;
     private final AdminRequestGeneratedResources generatedResources;
     private final Clock clock;
+    private final kr.ac.pusan.pickle.request.InstitutionRequestAccess institutionRequests;
+    private final kr.ac.pusan.pickle.security.institution.InstitutionAuthorization authorization;
 
     public ApprovalContextService(ApprovalService approvalService, RequestRepository requestRepository,
             RequestReviewRepository reviewRepository,
             WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
             UserRepository userRepository, List<ApprovalContextContributor> contributors,
             VmApprovalContextContributor vmContributor, OrgRepository orgRepository,
-            AdminRequestGeneratedResources generatedResources, Clock clock) {
+            AdminRequestGeneratedResources generatedResources, Clock clock, kr.ac.pusan.pickle.request.InstitutionRequestAccess institutionRequests,
+            kr.ac.pusan.pickle.security.institution.InstitutionAuthorization authorization) {
+        this.institutionRequests = institutionRequests; this.authorization = authorization;
         this.approvalService = approvalService;
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
@@ -90,8 +97,8 @@ public class ApprovalContextService {
     public ApprovalContextResponse context(AuthenticatedUser actor, UUID requestId) {
         Request request = approvalService.findReadable(actor, requestId);
         // The requester row always exists: accounts are soft-deleted only
-        // (WITHDRAWN + later anonymization keep the row), so
-        // applicant.signupAt/email are always non-null per contract.
+        // (WITHDRAWN + later anonymization keep the row). The requester identity
+        // is a request reference; broader profile fields have their own work check.
         User applicant = userRepository.findById(request.getRequesterId()).orElseThrow();
         Workspace workspace = workspaceRepository.findById(request.getWorkspaceId()).orElseThrow();
 
@@ -117,7 +124,7 @@ public class ApprovalContextService {
                 legacyVm.guidance(),
                 contribution.vm(),
                 contribution.llmKey(), contribution.gpu(), contribution.domain(), org.getPublicId(), org.getName(),
-                observedAt, generatedResources.of(request, observedAt),
+                observedAt, generatedResources.of(request, observedAt, actor),
                 generatedResources.recipientUserReadFlags(request, actor));
     }
 
@@ -126,10 +133,15 @@ public class ApprovalContextService {
                 applicant.getPublicId(),
                 applicant.getName(),
                 applicant.getEmail(),
-                applicant.getCreatedAt(),
-                requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), RequestStatus.APPROVED),
-                requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), RequestStatus.REJECTED),
+                canReadUser(actor, applicant) ? applicant.getCreatedAt() : null,
+                authorizedCount(actor, request.getRequesterId(), RequestStatus.APPROVED),
+                authorizedCount(actor, request.getRequesterId(), RequestStatus.REJECTED),
                 canReadUser(actor, applicant));
+    }
+
+    private long authorizedCount(AuthenticatedUser actor, long requester, RequestStatus status) {
+        return requestRepository.count(institutionRequests.readScope(actor).and((root, query, cb) -> cb.and(
+                cb.equal(root.get("requesterId"), requester), cb.equal(root.get("status"), status))));
     }
 
     private List<Long> applicantWorkspaceIds(Long userId) {
@@ -151,7 +163,8 @@ public class ApprovalContextService {
                         users.containsKey(m.getUserId()) && canReadUser(actor, users.get(m.getUserId()))))
                 .toList();
         return new WorkspacePanel(workspace.getPublicId(), workspace.getName(), workspace.getKind(), memberBriefs,
-                resources.activeVms(), resources.totals(), workspace.getDeletedAt() == null);
+                resources.activeVms(), resources.totals(), workspace.getDeletedAt() == null && (InstitutionLlmAccess.systemRead(actor) || authorization.workspaceTarget(workspace.getId()).map(target -> authorization.decision(actor,
+                        kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_SUPPORT_READ, target).allowed()).orElse(false)));
     }
 
     /** The same three states the request detail reports, for the history panel. */
@@ -166,8 +179,9 @@ public class ApprovalContextService {
     }
 
     private List<HistoryEntry> history(Request request, AuthenticatedUser actor) {
-        List<Request> prior = requestRepository.findHistory(request.getRequesterId(), request.getWorkspaceId(),
-                request.getId(), PageRequest.of(0, HISTORY_LIMIT, Sort.by(Sort.Direction.DESC, "id")));
+        List<Request> prior = requestRepository.findAll(institutionRequests.readScope(actor).and((root, query, cb) -> cb.and(
+                cb.equal(root.get("requesterId"), request.getRequesterId()), cb.equal(root.get("workspaceId"), request.getWorkspaceId()),
+                cb.notEqual(root.get("id"), request.getId()))), PageRequest.of(0, HISTORY_LIMIT, Sort.by(Sort.Direction.DESC, "id"))).getContent();
         if (prior.isEmpty()) {
             return List.of();
         }
@@ -193,12 +207,12 @@ public class ApprovalContextService {
                             review != null ? review.getDecision() : null,
                             review != null ? review.getComment() : null,
                             reviewerName(review, reviewer), orgs.get(r.getOrgId()).getPublicId(),
-                            StudentSupportPolicy.canRead(actor));
+                            institutionRequests.read(actor, r));
                 })
                 .toList();
     }
 
-    private static boolean canReadUser(AuthenticatedUser actor, User user) {
-        return StudentSupportPolicy.canReadUser(actor, user.getRole());
+    private boolean canReadUser(AuthenticatedUser actor, User user) {
+        return studentSupportPolicy.canReadStudentSupport(actor) && (actor.role().isSysTier() || !user.getRole().isSysTier());
     }
 }

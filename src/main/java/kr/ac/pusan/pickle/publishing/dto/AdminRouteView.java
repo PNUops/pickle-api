@@ -18,11 +18,13 @@ public record AdminRouteView(
         String workspaceName,
         UUID orgId,
         String orgName,
-        int targetPort,
-        String protocol,
+        @Nullable Integer targetPort,
+        @Nullable String protocol,
         RouteStatus status,
         @Nullable Long appliedGeneration,
         @Nullable Instant appliedAt,
         @Nullable String lastError,
-        @Nullable Instant updatedAt) {
+        @Nullable Instant updatedAt,
+        boolean metadataVisible,
+        java.util.Set<String> allowedWorkIds) {
 }

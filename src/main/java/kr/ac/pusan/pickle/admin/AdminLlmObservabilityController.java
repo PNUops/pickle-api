@@ -40,13 +40,15 @@ public class AdminLlmObservabilityController {
                     + "모델 이름을 직접 입력해 승인할 수 있습니다. 목록이 빈 이유는 신선도 하나로 갈리지 "
                     + "않습니다. 한 번도 못 가져온 것과 계속 실패하는 것이 둘 다 UNKNOWN이므로, "
                     + "lastError와 consecutiveFailures를 함께 읽어야 구분됩니다.")
-    public OpenRouterCatalogueResponse openRouterModels() {
-        return catalogue.catalogue();
+    public OpenRouterCatalogueResponse openRouterModels(@AuthenticationPrincipal AuthenticatedUser actor) {
+        return catalogue.catalogue(actor);
     }
 
     @GetMapping("/status")
     @Operation(operationId = "getAdminLlmStatus", summary = "관리자 LLM 서비스 상태",
             description = "게이트웨이 자기보고와 upstream별 passive·active·catalog 현재 상태를 조회합니다. "
+                    + "현재 범위에서 읽을 수 있는 공급원에 연결된 공개 TOKEN 모델의 주·대체 구성 관계도 제공하며 "
+                    + "전체 모델 목록이나 실제 처리 경로를 뜻하지 않습니다. "
                     + "조회 과정에서 gateway나 upstream을 직접 호출하지 않으며 변경 작업도 제공하지 않습니다.")
     public LlmStatusResponse status(
             @AuthenticationPrincipal AuthenticatedUser principal,

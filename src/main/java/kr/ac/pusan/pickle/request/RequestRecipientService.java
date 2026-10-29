@@ -34,6 +34,7 @@ import kr.ac.pusan.pickle.workspace.WorkspaceInvitationOutcome;
 import kr.ac.pusan.pickle.workspace.WorkspaceInvitationStatus;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -78,10 +79,13 @@ public class RequestRecipientService {
     public record Settlement(int queued, int pendingJoin, int skipped) {
     }
 
+    private final jakarta.persistence.EntityManager entityManager;
+    private final RequestRecipientCancellationService cancellations;
     private final RequestRecipientRepository recipientRepository;
     private final RequestRepository requestRepository;
     private final RequestReviewRepository reviewRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final WorkspaceInvitationRepository invitationRepository;
     private final UserRepository userRepository;
     private final RequestRecipientMaterializer materializer;
@@ -92,14 +96,18 @@ public class RequestRecipientService {
     public RequestRecipientService(RequestRecipientRepository recipientRepository,
             RequestRepository requestRepository, RequestReviewRepository reviewRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
+            WorkspaceRepository workspaceRepository,
             WorkspaceInvitationRepository invitationRepository, UserRepository userRepository,
             RequestRecipientMaterializer materializer, InvitationWriter invitationWriter,
-            JdbcTemplate jdbcTemplate, Clock clock) {
+            JdbcTemplate jdbcTemplate, Clock clock, jakarta.persistence.EntityManager entityManager,
+            RequestRecipientCancellationService cancellations) {
+        this.entityManager = entityManager; this.cancellations = cancellations;
         this.invitationWriter = invitationWriter;
         this.recipientRepository = recipientRepository;
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
+        this.workspaceRepository = workspaceRepository;
         this.invitationRepository = invitationRepository;
         this.userRepository = userRepository;
         this.materializer = materializer;
@@ -403,6 +411,22 @@ public class RequestRecipientService {
         return new Settlement(queued, pending, skipped);
     }
 
+    public void lockUndecided(Request request) {
+        recipientRepository.findWithLockByRequestId(request.getId()).forEach(entityManager::refresh);
+    }
+
+    public void lockForWorkspaceTermination(long workspaceId) {
+        recipientRepository.findWithLockByWorkspaceIdAndStatusIn(workspaceId,
+                List.of(RequestRecipientStatus.QUEUED, RequestRecipientStatus.PENDING_JOIN, RequestRecipientStatus.FAILED))
+                .forEach(entityManager::refresh);
+    }
+
+    public void lockForInvitationTermination(long invitationId) {
+        for (RequestRecipientStatus status : List.of(RequestRecipientStatus.PENDING_JOIN, RequestRecipientStatus.FAILED)) {
+            recipientRepository.findWithLockByInvitationIdAndStatus(invitationId, status).forEach(entityManager::refresh);
+        }
+    }
+
     /** A request that ends undecided (canceled or rejected) creates nothing for anyone. */
     public void closeUndecided(Request request) {
         for (RequestRecipient recipient : recipientRepository.findWithLockByRequestId(request.getId())) {
@@ -478,12 +502,23 @@ public class RequestRecipientService {
 
     // ── retry ──────────────────────────────────────────────────────────────
 
-    /** Queues a failed recipient again. Only a failure can be retried. */
+    /** Queues a failed recipient again while its workspace still exists. */
     public RequestRecipient retry(Request request, UUID recipientId) {
-        RequestRecipient recipient = recipientRepository.findByPublicIdAndRequestId(recipientId, request.getId())
-                .flatMap(found -> recipientRepository.findWithLockById(found.getId()))
+        RequestRecipient found = recipientRepository.findByPublicIdAndRequestId(recipientId, request.getId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                         "리소스를 찾을 수 없습니다", "해당 대상자가 존재하지 않습니다."));
+        // Match deletion and materialization: workspace before recipient.
+        // Refresh also replaces an earlier managed copy after the row lock waits.
+        Workspace workspace = workspaceRepository.findByIdForUpdate(request.getWorkspaceId()).orElse(null);
+        if (workspace != null) entityManager.refresh(workspace);
+        if (workspace == null || workspace.isDeleted()) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_RECIPIENT_NOT_RETRYABLE,
+                    "다시 시도할 수 없는 대상자입니다", "워크스페이스가 삭제되어 다시 시도할 수 없습니다.");
+        }
+        RequestRecipient recipient = recipientRepository.findWithLockById(found.getId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                        "리소스를 찾을 수 없습니다", "해당 대상자가 존재하지 않습니다."));
+        entityManager.refresh(recipient);
         if (recipient.getStatus() != RequestRecipientStatus.FAILED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_RECIPIENT_NOT_RETRYABLE,
                     "다시 시도할 수 없는 대상자입니다", "생성에 실패한 대상자만 다시 시도할 수 있습니다.");
@@ -502,7 +537,7 @@ public class RequestRecipientService {
      * request, as the member list already does.
      */
     public Map<Long, List<RequestRecipientResponse>> responses(List<Request> requests,
-            Predicate<Request> showInvitee) {
+            Predicate<Request> showInvitee, @Nullable AuthenticatedUser actor) {
         if (requests.isEmpty()) {
             return Map.of();
         }
@@ -527,6 +562,8 @@ public class RequestRecipientService {
                     .map(RequestRecipient::getResourceId).toList();
             resources.put(type, publicIds(type == ResourceType.VM ? "vms" : "llm_api_keys", ids));
         }
+        var cancellationCapabilities = cancellations.capabilities(requests, rows, actor);
+        var cancellationReceipts = cancellations.receipts(rows);
         Map<Long, Boolean> inviteeVisible = new HashMap<>();
         Map<Long, List<RequestRecipientResponse>> out = new LinkedHashMap<>();
         for (RequestRecipient row : rows) {
@@ -546,7 +583,7 @@ public class RequestRecipientService {
                     invitee,
                     row.getStatus(),
                     row.getResourceId() == null ? null : typeResources.get(row.getResourceId()),
-                    row.getReason()));
+                    row.getReason(), cancellationCapabilities.get(row.getPublicId()), cancellationReceipts.get(row.getPublicId())));
         }
         return out;
     }

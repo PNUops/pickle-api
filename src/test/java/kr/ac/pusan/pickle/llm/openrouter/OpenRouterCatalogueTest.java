@@ -51,7 +51,7 @@ class OpenRouterCatalogueTest {
 
         refreshJob.refresh();
 
-        OpenRouterCatalogueResponse response = service.catalogue();
+        OpenRouterCatalogueResponse response = service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of()));
         assertThat(response.models()).extracting(OpenRouterCatalogueResponse.OpenRouterCatalogueModel::id)
                 .containsExactly("openai/gpt-4o-mini", "~anthropic/claude-sonnet-latest");
         assertThat(response.freshness()).isEqualTo(OpenRouterCreditsFreshness.FRESH);
@@ -69,7 +69,7 @@ class OpenRouterCatalogueTest {
         when(client.catalogue()).thenReturn(List.of(model("openai/gpt-4o-mini", "0.0000006")));
         refreshJob.refresh();
 
-        assertThat(service.catalogue().models().getFirst().completionPricePerMillion())
+        assertThat(service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).models().getFirst().completionPricePerMillion())
                 .isEqualByComparingTo("0.6");
     }
 
@@ -91,7 +91,7 @@ class OpenRouterCatalogueTest {
         refreshJob.refresh();
 
         List<OpenRouterCatalogueResponse.OpenRouterCatalogueModel> models =
-                service.catalogue().models();
+                service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).models();
         OpenRouterCatalogueResponse.OpenRouterCatalogueModel sonnet = models.stream()
                 .filter(m -> m.id().equals("anthropic/claude-sonnet-4.5")).findFirst().orElseThrow();
         assertThat(sonnet.pricing()).isNotNull();
@@ -116,7 +116,7 @@ class OpenRouterCatalogueTest {
         when(client.catalogue()).thenReturn(List.of(model("openai/gpt-4o-mini", "0.0000006")));
         refreshJob.refresh();
 
-        assertThat(service.catalogue().models())
+        assertThat(service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).models())
                 .extracting(OpenRouterCatalogueResponse.OpenRouterCatalogueModel::id)
                 .containsExactly("openai/gpt-4o-mini");
         assertThat(jdbcTemplate.queryForObject(
@@ -143,7 +143,7 @@ class OpenRouterCatalogueTest {
         assertThatThrownBy(() -> catalogue.replaceListing(List.of(), Instant.now()))
                 .hasMessageContaining("refusing to apply an empty catalogue")
                 .hasRootCauseInstanceOf(IllegalArgumentException.class);
-        assertThat(service.catalogue().models()).hasSize(1);
+        assertThat(service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).models()).hasSize(1);
     }
 
     /**
@@ -154,12 +154,12 @@ class OpenRouterCatalogueTest {
     void aFailedRefreshKeepsTheListingAndDoesNotRefreshTheClock() {
         when(client.catalogue()).thenReturn(List.of(model("openai/gpt-4o-mini", "0.0000006")));
         refreshJob.refresh();
-        Instant firstSuccess = service.catalogue().lastSuccessAt();
+        Instant firstSuccess = service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).lastSuccessAt();
 
         when(client.catalogue()).thenThrow(new OpenRouterException(503, "vendor down"));
         refreshJob.refresh();
 
-        OpenRouterCatalogueResponse after = service.catalogue();
+        OpenRouterCatalogueResponse after = service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of()));
         assertThat(after.models()).hasSize(1);
         assertThat(after.lastSuccessAt()).isEqualTo(firstSuccess);
         assertThat(after.consecutiveFailures()).isEqualTo(1);
@@ -174,7 +174,7 @@ class OpenRouterCatalogueTest {
      */
     @Test
     void neverRefreshedReadsAsUnknownRatherThanStale() {
-        OpenRouterCatalogueResponse response = service.catalogue();
+        OpenRouterCatalogueResponse response = service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of()));
 
         assertThat(response.models()).isEmpty();
         assertThat(response.freshness()).isEqualTo(OpenRouterCreditsFreshness.UNKNOWN);
@@ -200,7 +200,7 @@ class OpenRouterCatalogueTest {
 
         refreshJob.refresh();
 
-        OpenRouterCatalogueResponse response = service.catalogue();
+        OpenRouterCatalogueResponse response = service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of()));
         assertThat(response.consecutiveFailures())
                 .describedAs("a write that throws must leave a recorded failure, not silence")
                 .isEqualTo(1);
@@ -219,7 +219,7 @@ class OpenRouterCatalogueTest {
         when(client.catalogue()).thenThrow(new OpenRouterException(403, "forbidden"));
         refreshJob.refresh();
 
-        assertThat(service.catalogue().lastError())
+        assertThat(service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).lastError())
                 .isEqualTo("BLOCKED (HTTP 403)")
                 .doesNotContain("CREDENTIAL");
     }
@@ -241,13 +241,13 @@ class OpenRouterCatalogueTest {
         // The first two stay quiet: one vendor blip an hour apart is ordinary.
         refreshJob.refresh();
         refreshJob.refresh();
-        assertThat(service.catalogue().consecutiveFailures()).isEqualTo(2);
+        assertThat(service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).consecutiveFailures()).isEqualTo(2);
 
         assertThatThrownBy(() -> refreshJob.refresh())
                 .describedAs("the third in a row must escape so a watched counter moves")
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("3 times in a row");
-        assertThat(service.catalogue().consecutiveFailures()).isEqualTo(3);
+        assertThat(service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).consecutiveFailures()).isEqualTo(3);
     }
 
     /** A success clears the count, so a recovered vendor stops raising. */
@@ -262,8 +262,8 @@ class OpenRouterCatalogueTest {
         doReturn(List.of(model("openai/gpt-4o-mini", "0.0000006"))).when(client).catalogue();
         refreshJob.refresh();
 
-        assertThat(service.catalogue().consecutiveFailures()).isZero();
-        assertThat(service.catalogue().lastError()).isNull();
+        assertThat(service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).consecutiveFailures()).isZero();
+        assertThat(service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).lastError()).isNull();
     }
 
     /** The vendor's error body is not stored; the classification is. */
@@ -273,7 +273,7 @@ class OpenRouterCatalogueTest {
                 .thenThrow(new OpenRouterException(429, "slow down, quota is 1234 for tenant x"));
         refreshJob.refresh();
 
-        assertThat(service.catalogue().lastError())
+        assertThat(service.catalogue(new kr.ac.pusan.pickle.security.AuthenticatedUser(-1L, java.util.UUID.randomUUID(), "catalogue@example.invalid", kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN, java.util.Map.of())).lastError())
                 .isEqualTo("THROTTLED (HTTP 429)")
                 .doesNotContain("tenant");
     }

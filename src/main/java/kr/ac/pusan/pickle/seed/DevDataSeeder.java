@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle.seed;
 
+import java.util.UUID;
+
 import java.time.Instant;
 import kr.ac.pusan.pickle.consent.TermsService;
 import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
@@ -496,6 +498,7 @@ public class DevDataSeeder implements ApplicationRunner {
                     + "PICKLE_SEED_SYSADMIN_PASSWORD / PICKLE_SEED_ORGADMIN_PASSWORD via "
                     + "/etc/pickle/api.env (there is no default: it would be public in git).");
         }
+        boolean newSeedAccount = userRepository.findByEmail(email).isEmpty();
         userRepository.findByEmail(email).ifPresentOrElse(existing -> {
             // Accounts seeded before the profile existed would meet the gate on
             // every dev login. Filled only when empty, so a value set by hand in
@@ -522,15 +525,19 @@ public class DevDataSeeder implements ApplicationRunner {
             user = userRepository.save(user);
             personalWorkspaceService.ensurePersonalWorkspace(user);
         });
-        // The org an org-tier seed account administers lives in user_org_roles
-        // since V90, and is written idempotently so re-running the seeder over
-        // an existing account still lands it.
-        if (role.isOrgTier() && orgId != null) {
-            userRepository.findByEmail(email).ifPresent(user ->
-                    jdbcTemplate.update("insert into user_org_roles (user_id, org_id, role)"
-                            + " values (?, ?, ?::user_role)"
-                            + " on conflict (user_id, org_id) do update set role = excluded.role",
-                            user.getId(), orgId, role.name()));
+        // Only a newly created development account receives an explicit initial grant.
+        // Restarting never restores a revoked membership or replaces selected authority.
+        if (newSeedAccount && role.isOrgTier() && orgId != null) {
+            userRepository.findByEmail(email).ifPresent(user -> {
+                UUID institution = jdbcTemplate.queryForObject("select public_id from orgs where id=?", UUID.class, orgId);
+                var assignment = kr.ac.pusan.pickle.security.institution.InstitutionLegacyPresets.create(user.getPublicId(), institution, role);
+                var encoded = new kr.ac.pusan.pickle.security.institution.InstitutionAssignmentCodec().encode(assignment);
+                jdbcTemplate.update("""
+                        insert into user_org_roles(user_id,org_id,role,permission_mode,permission_payload,permission_revision)
+                        values(?,?,?::user_role,?,?::jsonb,nextval('institution_permission_revision_seq'))
+                        on conflict(user_id,org_id) do nothing
+                        """, user.getId(), orgId, assignment.displayRole().name(), encoded.mode(), encoded.payload());
+            });
         }
         // Seed accounts bypass signup, so grant consent to the current documents
         // idempotently: no migration grants consent, so a seeded account starts with

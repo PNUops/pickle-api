@@ -16,6 +16,7 @@ import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeApplyResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeKind;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmAccountImpactProjection;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeReason;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminBulkChangeResult;
@@ -50,6 +51,9 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class AdminBulkChangeService {
 
+    private record PreviewProjection(List<AdminBulkChangePreviewItem> items, Map<UUID, Boolean> fingerprintVisibility,
+            @org.jspecify.annotations.Nullable LlmAccountImpactProjection accountImpact) { }
+
     private final Map<AdminBulkChangeKind, BulkChangeHandler<?>> handlers =
             new EnumMap<>(AdminBulkChangeKind.class);
     private final LlmGatewayGenerations generations;
@@ -58,11 +62,12 @@ public class AdminBulkChangeService {
     private final Clock clock;
     private final AdminBulkChangeStore store;
     private final OrgAdministrationLock administrationLock;
+    private final kr.ac.pusan.pickle.workspace.LifecycleActors lifecycleActors;
 
     public AdminBulkChangeService(List<BulkChangeHandler<?>> handlers,
             LlmGatewayGenerations generations, AuditService auditService,
             ObjectMapper objectMapper, Clock clock, AdminBulkChangeStore store,
-            OrgAdministrationLock administrationLock) {
+            OrgAdministrationLock administrationLock, kr.ac.pusan.pickle.workspace.LifecycleActors lifecycleActors) {
         for (BulkChangeHandler<?> handler : handlers) {
             for (AdminBulkChangeKind kind : handler.kinds()) {
                 this.handlers.put(kind, handler);
@@ -74,17 +79,20 @@ public class AdminBulkChangeService {
         this.clock = clock;
         this.store = store;
         this.administrationLock = administrationLock;
+        this.lifecycleActors = lifecycleActors;
     }
 
     @Transactional
     public AdminBulkChangePreviewResponse preview(AuthenticatedUser actor,
             AdminBulkChangeRequest request) {
+        actor = lifecycleActors.current(actor);
         Instant now = clock.instant();
         BulkChangeHandler<?> handler = validate(request, false, now);
         if (request.previewId() != null || request.operationId() != null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("previewId", "새 미리보기에는 적용 식별자를 보내지 마세요.")));
         }
-        return store.savePreview(actor.id(), request, preview(handler, actor, request, now));
+        PreviewProjection projection = preview(handler, actor, request, now);
+        return store.savePreview(actor.id(), request, projection.items(), projection.fingerprintVisibility(), projection.accountImpact());
     }
 
     @Transactional
@@ -94,6 +102,10 @@ public class AdminBulkChangeService {
             throw ApiException.validationFailed(List.of(new FieldValidationError("operationId", "미리보기 식별자와 이 적용의 고유 식별자를 보내 주세요.")));
         }
         administrationLock.acquire();
+        return applyCurrent(lifecycleActors.currentAfterAdministrationLock(actor), request, ip);
+    }
+
+    private AdminBulkChangeApplyResponse applyCurrent(AuthenticatedUser actor, AdminBulkChangeRequest request, String ip) {
         String binding = store.binding(request);
         AdminBulkChangeStore.Operation previous = store.existing(actor.id(), request.operationId());
         if (previous != null) { return repeat(actor, request, binding, previous); }
@@ -176,14 +188,25 @@ public class AdminBulkChangeService {
             T target = targets.get(item.targetId());
             AdminBulkChangeReason refusal = target == null ? AdminBulkChangeReason.NOT_FOUND
                     : handler.accessRefusal(actor, target, saved.request().change());
-            if (refusal == null) { items.add(item); } else {
+            if (refusal == null) {
+                boolean changeReadable = handler.canReadChange(actor, target, saved.request().change());
+                boolean fingerprintReadable = !handler.requiresLimitedPreviewFingerprint(actor, target, saved.request().change())
+                        || Boolean.FALSE.equals(saved.fingerprintVisibility().get(item.targetId()));
+                if (!changeReadable) { masked = true; }
+                boolean readable = changeReadable && fingerprintReadable;
+                items.add(new AdminBulkChangePreviewItem(item.targetId(), item.name(), item.applicable() && readable,
+                        item.reason() != null ? item.reason() : readable ? null : AdminBulkChangeReason.FORBIDDEN,
+                        handler.projectFields(actor, target, saved.request().change(), item.fields()),
+                        fingerprintReadable ? item.fingerprint() : "", readable ? item.actorAccessImpact() : null));
+            } else {
                 masked = true;
                 items.add(new AdminBulkChangePreviewItem(item.targetId(), null, false, refusal, List.of(), "", null));
             }
         }
         AdminBulkChangePreviewResponse response = saved.response();
         return new AdminBulkChangePreviewResponse(response.previewId(), response.createdAt(), response.expiresAt(),
-                response.targetType(), masked ? null : response.change(), items, response.consumedOperationId());
+                response.targetType(), masked ? null : response.change(), items, response.consumedOperationId(),
+                handler.projectAccountImpact(actor, saved.request(), targets, saved.response().items(), response.accountImpact()));
     }
 
     private AdminBulkChangeApplyResponse maskResult(AuthenticatedUser actor, AdminBulkChangeRequest request,
@@ -198,8 +221,9 @@ public class AdminBulkChangeService {
             T target = targets.get(item.targetId());
             AdminBulkChangeReason refusal = target == null ? AdminBulkChangeReason.NOT_FOUND
                     : handler.accessRefusal(actor, target, request.change());
-            return refusal == null ? item : new AdminBulkChangeApplyItem(item.targetId(), null,
-                    item.result(), item.reason(), List.of());
+            return refusal == null ? new AdminBulkChangeApplyItem(item.targetId(), item.name(), item.result(), item.reason(),
+                    handler.projectFields(actor, target, request.change(), item.fields()))
+                    : new AdminBulkChangeApplyItem(item.targetId(), null, item.result(), item.reason(), List.of());
         }).toList());
     }
 
@@ -207,30 +231,43 @@ public class AdminBulkChangeService {
             AdminBulkChangeStore.Preview saved, AdminBulkChangeStore.Operation operation) {
         Map<UUID, T> targets = handler.load(saved.request());
         Set<UUID> allowed = new HashSet<>();
+        boolean changeVisible = true;
         List<AdminBulkChangeOperationResponse.AdminBulkChangeCurrentObservation> observations = new ArrayList<>();
         for (UUID id : saved.request().targetIds()) {
             T target = targets.get(id);
             AdminBulkChangeReason refusal = target == null ? AdminBulkChangeReason.NOT_FOUND
                     : handler.accessRefusal(actor, target, saved.request().change());
-            if (refusal == null) { allowed.add(id); }
+            if (refusal == null) {
+                allowed.add(id);
+                changeVisible &= handler.canReadChange(actor, target, saved.request().change());
+            }
             observations.add(new AdminBulkChangeOperationResponse.AdminBulkChangeCurrentObservation(id, clock.instant(),
-                    refusal, refusal == null ? handler.observationValues(target, saved.request().change()) : Map.of()));
+                    refusal, refusal == null ? handler.observationValues(actor, target, saved.request().change()) : Map.of()));
         }
         var effects = store.effects(operation.id()).stream().map(effect ->
                 effect.targetId() == null || allowed.contains(effect.targetId()) ? store.observeQueue(effect)
                         : new AdminBulkChangeOperationResponse.AdminBulkChangeEffect(effect.id(), effect.targetId(),
                                 effect.kind(), effect.outcome(), null, effect.registeredAt(), effect.observedAt(), null, null)).toList();
         return new AdminBulkChangeOperationResponse(operation.id(), operation.previewId(), operation.committedAt(),
-                "COMMITTED", saved.request().targetType(), allowed.size() == saved.request().targetIds().size()
+                "COMMITTED", saved.request().targetType(), changeVisible && allowed.size() == saved.request().targetIds().size()
                         ? saved.request().change() : null,
                 maskResult(handler, actor, saved.request(), operation.result()), effects, observations);
     }
 
-    private <T> List<AdminBulkChangePreviewItem> preview(BulkChangeHandler<T> handler,
+    private <T> String fingerprint(BulkChangeHandler<T> handler, AuthenticatedUser actor,
+            T target, AdminBulkChangeSpec change) {
+        return BulkFingerprints.of(objectMapper, Map.of(
+                "authorityContext", kr.ac.pusan.pickle.access.ActorAccessImpacts.authorityContext(actor),
+                "target", handler.fingerprintValues(actor, target, change)));
+    }
+
+    private <T> PreviewProjection preview(BulkChangeHandler<T> handler,
             AuthenticatedUser actor, AdminBulkChangeRequest request, Instant now) {
         AdminBulkChangeSpec change = request.change();
         Map<UUID, T> targets = handler.load(request);
         List<AdminBulkChangePreviewItem> items = new ArrayList<>();
+        Map<UUID, Boolean> fingerprintVisibility = new LinkedHashMap<>();
+        Map<UUID, BulkChangeHandler.Judgement> changes = new LinkedHashMap<>();
         for (UUID targetId : request.targetIds()) {
             T target = targets.get(targetId);
             AdminBulkChangeReason reach = target == null ? AdminBulkChangeReason.NOT_FOUND
@@ -243,14 +280,16 @@ public class AdminBulkChangeService {
                         false, reach, List.of(), BulkFingerprints.of(objectMapper, Map.of())));
                 continue;
             }
-            String fingerprint = BulkFingerprints.of(objectMapper,
-                    handler.fingerprintValues(actor, target, change));
+            String fingerprint = fingerprint(handler, actor, target, change);
+            fingerprintVisibility.put(targetId, handler.fingerprintContainsRestrictedFields(actor, target, change));
             BulkChangeHandler.Judgement judgement = handler.judge(actor, target, change, now);
+            if (judgement.writes()) { changes.put(targetId, judgement); }
             items.add(new AdminBulkChangePreviewItem(targetId, handler.name(target),
-                    judgement.reason() == null, judgement.reason(), judgement.fields(),
+                    judgement.reason() == null, judgement.reason(), handler.projectFields(actor, target, change, judgement.fields()),
                     fingerprint, judgement.writes() ? handler.actorAccessImpact(actor, target, change) : null));
         }
-        return items;
+        return new PreviewProjection(List.copyOf(items), Map.copyOf(fingerprintVisibility),
+                handler.accountImpact(actor, request, targets, Map.copyOf(changes), now));
     }
 
     private <T> List<AdminBulkChangeApplyItem> apply(BulkChangeHandler<T> handler,
@@ -279,8 +318,7 @@ public class AdminBulkChangeService {
             boolean anyWrite = false;
             for (UUID targetId : reachable) {
                 T target = targets.get(targetId);
-                if (!fingerprints.get(targetId).equals(BulkFingerprints.of(objectMapper,
-                        handler.fingerprintValues(actor, target, change)))) {
+                if (!fingerprints.get(targetId).equals(fingerprint(handler, actor, target, change))) {
                     continue;
                 }
                 if (handler.judge(actor, target, change, validatedAt).writes()) {
@@ -310,8 +348,7 @@ public class AdminBulkChangeService {
                 continue;
             }
             String name = handler.name(target);
-            String fingerprint = BulkFingerprints.of(objectMapper,
-                    handler.fingerprintValues(actor, target, change));
+            String fingerprint = fingerprint(handler, actor, target, change);
             if (!fingerprint.equals(fingerprints.get(targetId))) {
                 results.put(targetId, new AdminBulkChangeApplyItem(targetId, name,
                         AdminBulkChangeResult.STALE, null, List.of()));
@@ -333,7 +370,7 @@ public class AdminBulkChangeService {
                             request.accessConfirmations() == null ? null : request.accessConfirmations().get(targetId)));
             results.put(targetId, refused == null
                     ? new AdminBulkChangeApplyItem(targetId, name, AdminBulkChangeResult.APPLIED,
-                            null, judgement.fields())
+                            null, handler.projectFields(actor, target, change, judgement.fields()))
                     : new AdminBulkChangeApplyItem(targetId, name, AdminBulkChangeResult.SKIPPED,
                             refused, List.of()));
         }

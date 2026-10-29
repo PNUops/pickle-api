@@ -89,6 +89,8 @@ public final class ErrorCodes {
     /** Naming other people as a request's recipients is for workspace owners and approvers. */
     public static final String REQUEST_RECIPIENTS_FORBIDDEN = "REQUEST_RECIPIENTS_FORBIDDEN";
     /** Only a recipient whose creation failed can be queued again. */
+    public static final String TERMINATION_IMPACT_CHANGED = "TERMINATION_IMPACT_CHANGED";
+    public static final String REQUEST_RECIPIENT_NOT_CANCELABLE = "REQUEST_RECIPIENT_NOT_CANCELABLE";
     public static final String REQUEST_RECIPIENT_NOT_RETRYABLE = "REQUEST_RECIPIENT_NOT_RETRYABLE";
     public static final String VM_INVALID_STATE = "VM_INVALID_STATE";
     public static final String VM_CONFIRM_NAME_MISMATCH = "VM_CONFIRM_NAME_MISMATCH";

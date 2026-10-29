@@ -36,13 +36,21 @@ public class AdminOpenRouterCatalogueService {
 
     private final OpenRouterCatalogueRepository catalogue;
     private final Clock clock;
+    private final kr.ac.pusan.pickle.security.institution.InstitutionAuthorization authorization;
 
-    public AdminOpenRouterCatalogueService(OpenRouterCatalogueRepository catalogue, Clock clock) {
+    public AdminOpenRouterCatalogueService(OpenRouterCatalogueRepository catalogue, Clock clock, kr.ac.pusan.pickle.security.institution.InstitutionAuthorization authorization) {
+        this.authorization = authorization;
         this.catalogue = catalogue;
         this.clock = clock;
     }
 
-    public OpenRouterCatalogueResponse catalogue() {
+    public OpenRouterCatalogueResponse catalogue(kr.ac.pusan.pickle.security.AuthenticatedUser actor) {
+        if (!InstitutionLlmAccess.systemRead(actor) && !authorization.decision(actor,
+                kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_MODEL_CATALOGUE_READ,
+                kr.ac.pusan.pickle.security.institution.InstitutionWorkTarget.global()).allowed()) {
+            throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "모델 카탈로그를 읽을 권한이 없습니다.");
+        }
         OpenRouterCatalogueRepository.CatalogueState state = catalogue.state();
         List<OpenRouterCatalogueResponse.OpenRouterCatalogueModel> models = catalogue.listed().stream()
                 .map(row -> new OpenRouterCatalogueResponse.OpenRouterCatalogueModel(

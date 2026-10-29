@@ -43,18 +43,20 @@ import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCredentialError;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCredentialStatus;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterException;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterManagementCredentialCipher;
-import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgScope;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
 import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
+import kr.ac.pusan.pickle.admin.dto.LlmConsumerSort;
+import kr.ac.pusan.pickle.admin.dto.LlmAccountKeyNavigation;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
@@ -73,12 +75,15 @@ public class AdminOpenRouterAccountService {
     private final AuditService auditService;
     private final EntityManager entityManager;
     private final TransactionTemplate tx;
+    private final InstitutionAccountAccess institutionAccess;
+    private final InstitutionLlmAccess actors;
     private final OpenRouterAccountSelectionService accountSelection;
     private final OpenRouterAccountCreditsQueryService creditsQuery;
     private final OpenRouterAllocationQuery allocationQuery;
     private final OpenRouterCreditRefreshScheduler creditRefreshScheduler;
     private final ObjectMapper objectMapper;
     private final AdminLlmAccountUsageService accountUsageService;
+    private final AdminLlmKeyExplorationQuery keyExploration;
 
     public AdminOpenRouterAccountService(OpenRouterAccountRepository accountRepository,
             OpenRouterAccountCredentialRepository credentialRepository,
@@ -90,7 +95,9 @@ public class AdminOpenRouterAccountService {
             OpenRouterAccountCreditsQueryService creditsQuery,
             OpenRouterAllocationQuery allocationQuery,
             OpenRouterCreditRefreshScheduler creditRefreshScheduler, ObjectMapper objectMapper,
-            AdminLlmAccountUsageService accountUsageService) {
+            AdminLlmAccountUsageService accountUsageService, InstitutionAccountAccess institutionAccess,
+            InstitutionLlmAccess actors, AdminLlmKeyExplorationQuery keyExploration) {
+        this.institutionAccess = institutionAccess; this.actors = actors;
         this.accountRepository = accountRepository;
         this.credentialRepository = credentialRepository;
         this.keyRepository = keyRepository;
@@ -106,31 +113,35 @@ public class AdminOpenRouterAccountService {
         this.creditRefreshScheduler = creditRefreshScheduler;
         this.objectMapper = objectMapper;
         this.accountUsageService = accountUsageService;
+        this.keyExploration = keyExploration;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<OpenRouterAccountResponse> list(AuthenticatedUser actor, @Nullable UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        OrgScope scope = AdminOrgScope.read(actor, orgId, requested);
+        OrgScope scope = orgId != null && requested == null ? OrgScope.nothing() : OrgScope.of(requested);
         if (!scope.isUnrestricted() && scope.orgIds().isEmpty()) {
             return List.of();
         }
         List<OpenRouterAccount> accounts = accountRepository.findAll().stream()
+                .filter(account -> institutionAccess.selectable(actor, account.getOrgId()))
                 .filter(account -> scope.isUnrestricted() || scope.orgIds().contains(account.getOrgId()))
                 .sorted(Comparator.comparing(OpenRouterAccount::getName,
                         String.CASE_INSENSITIVE_ORDER))
                 .toList();
         Map<Long, OpenRouterAllocationQuery.Allocation> allocations = allocationQuery.forAccounts(
                 accounts.stream().map(OpenRouterAccount::getId).toList());
+        Map<Long, LlmAccountKeyNavigation> navigation = keyExploration.navigation(actor, accounts);
         return accounts.stream()
-                .map(account -> response(account, allocations.get(account.getId())))
+                .map(account -> response(actor, account, allocations.get(account.getId()))
+                        .withKeyNavigation(navigation.get(account.getId())))
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public OpenRouterAccountResponse get(AuthenticatedUser actor, UUID accountId) {
-        return response(requireReadable(actor, accountId));
+        return response(actor, requireReadable(actor, accountId));
     }
 
     /**
@@ -142,9 +153,17 @@ public class AdminOpenRouterAccountService {
      * the account response: this one attributes, that one states. They are read
      * side by side on the screen and are never subtracted from each other.
      */
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminLlmAccountUsageResponse usage(AuthenticatedUser actor, UUID accountId, int days) {
-        return accountUsageService.usage(requireReadable(actor, accountId).getId(), days);
+        return usage(actor, accountId, days, 0, 20, LlmConsumerSort.REPORTED_COST_DESC);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public AdminLlmAccountUsageResponse usage(AuthenticatedUser actor, UUID accountId, int days,
+            int page, int size, LlmConsumerSort sort) {
+        OpenRouterAccount account = requireReadable(actor, accountId);
+        if (!institutionAccess.work(actor, InstitutionWork.INSTITUTION_ACCOUNT_FINANCE_READ, account.getOrgId())) { throw notFound(); }
+        return accountUsageService.usage(account.getId(), days, page, size, sort);
     }
 
     public OpenRouterAccountResponse create(AuthenticatedUser actor,
@@ -168,11 +187,13 @@ public class AdminOpenRouterAccountService {
                 CreditModelPatterns.toJson(objectMapper, defaultDeniedModels), Instant.now());
         try {
             return tx.execute(status -> {
+                AuthenticatedUser current = actors.currentForWrite(actor);
+                if (!institutionAccess.work(current, InstitutionWork.INSTITUTION_ACCOUNT_MANAGE, org.getId())) { throw notFound(); }
                 OpenRouterAccount saved = accountRepository.saveAndFlush(account);
                 auditService.recordAfterCommit(actor.id(), actor.role().name(),
                         AuditService.OPENROUTER_ACCOUNT_CREATE, "openrouter_account",
                         saved.getPublicId(), Map.of("orgId", org.getPublicId()), ip);
-                return response(saved);
+                return response(actor, saved);
             });
         } catch (DataIntegrityViolationException e) {
             throw invalidState("같은 기관에 동일한 이름 또는 vendor workspace의 account가 이미 있습니다.");
@@ -182,7 +203,7 @@ public class AdminOpenRouterAccountService {
     @Transactional
     public OpenRouterAccountResponse update(AuthenticatedUser actor, UUID accountId,
             UpdateOpenRouterAccountRequest form, String ip) {
-        OpenRouterAccount account = requireWritableWithLock(actor, accountId);
+        OpenRouterAccount account = requireWritableWithLock(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_MANAGE);
         if (!form.hasAny()) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("account",
                     "변경할 항목을 하나 이상 보내 주세요.")));
@@ -255,7 +276,7 @@ public class AdminOpenRouterAccountService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.OPENROUTER_ACCOUNT_UPDATE, "openrouter_account",
                 account.getPublicId(), auditArgs, ip);
-        return response(account);
+        return response(actor, account);
     }
 
     /**
@@ -274,7 +295,7 @@ public class AdminOpenRouterAccountService {
      */
     public OpenRouterAccountResponse registerCredential(AuthenticatedUser actor, UUID accountId,
             RegisterOpenRouterCredentialRequest form, String ip) {
-        OpenRouterAccount snapshot = requireWritable(actor, accountId);
+        OpenRouterAccount snapshot = requireWritable(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
         confirm(snapshot.getName(), form.confirmName());
         requireActive(snapshot);
         requireNoCredential(snapshot);
@@ -300,7 +321,12 @@ public class AdminOpenRouterAccountService {
                 // No same-secret guard and no cross-management probe: both
                 // compare against an ACTIVE secret, and there is none. Their
                 // absence here is the shape of the path, not an omission.
-                OpenRouterAccount locked = requireWritableWithLock(actor, accountId);
+                resolveVendorWorkspace(snapshot, workspaceId);
+                if (snapshot.getVendorIdentityKeyHash() == null) {
+                    OpenRouterClient.CreatedKey marker = createIdentityMarker(snapshot, secret);
+                    identityMarker.set(marker); identitySecret.set(secret);
+                }
+                OpenRouterAccount locked = requireWritableWithLock(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
                 requireActive(locked);
                 requireNoCredential(locked);
                 // Before the marker, never after: createIdentityMarker reads the
@@ -314,11 +340,9 @@ public class AdminOpenRouterAccountService {
                 // the account with no credential row. Minting a second marker
                 // there would be rejected by the immutability rule, so the
                 // account would have no way back to a usable state.
-                if (locked.getVendorIdentityKeyHash() == null) {
-                    OpenRouterClient.CreatedKey marker = createIdentityMarker(locked, secret);
-                    identityMarker.set(marker);
-                    identitySecret.set(secret);
-                    locked.establishVendorIdentityKey(marker.hash(), now);
+                if (identityMarker.get() != null) {
+                    if (locked.getVendorIdentityKeyHash() != null) { throw credentialState("검증 뒤 account 식별 상태가 바뀌었습니다."); }
+                    locked.establishVendorIdentityKey(identityMarker.get().hash(), now);
                 }
                 OpenRouterAccountCredential credential = new OpenRouterAccountCredential(
                         locked.getId(), credentialCipher.encrypt(locked.getPublicId(), secret),
@@ -333,7 +357,7 @@ public class AdminOpenRouterAccountService {
                         locked.getPublicId(),
                         Map.of("verified", true, "identityEstablished", identityMarker.get() != null),
                         ip);
-                return response(locked);
+                return response(actor, locked);
             });
             // Committed: the marker is live and must survive. Clearing the
             // refs is what stops a later failure from deleting it.
@@ -357,7 +381,7 @@ public class AdminOpenRouterAccountService {
 
     public OpenRouterAccountResponse stage(AuthenticatedUser actor, UUID accountId,
             StageOpenRouterCredentialRequest form, String ip) {
-        OpenRouterAccount snapshot = requireWritable(actor, accountId);
+        OpenRouterAccount snapshot = requireWritable(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
         confirm(snapshot.getName(), form.confirmName());
         requireActive(snapshot);
         requireRotatableCredential(snapshot);
@@ -369,7 +393,7 @@ public class AdminOpenRouterAccountService {
                 .ifPresent(other -> { throw workspaceConflict(); });
         try {
             return tx.execute(status -> {
-                OpenRouterAccount locked = requireWritableWithLock(actor, accountId);
+                OpenRouterAccount locked = requireWritableWithLock(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
                 requireActive(locked);
                 List<OpenRouterAccountCredential> existing =
                         credentialRepository.findByAccountIdOrderByIdAsc(locked.getId());
@@ -392,7 +416,7 @@ public class AdminOpenRouterAccountService {
                 auditService.recordAfterCommit(actor.id(), actor.role().name(),
                         AuditService.OPENROUTER_CREDENTIAL_STAGE, "openrouter_account",
                         locked.getPublicId(), Map.of("verified", true), ip);
-                return response(locked);
+                return response(actor, locked);
             });
         } catch (DataIntegrityViolationException e) {
             if (accountRepository.findByVendorWorkspaceId(workspaceId)
@@ -437,7 +461,11 @@ public class AdminOpenRouterAccountService {
                     crossManagementProbe(snapshot.account(), activeSecret, stagedSecret);
                 }
 
-                OpenRouterAccount locked = requireWritableWithLock(actor, accountId);
+                if (snapshot.account().getVendorIdentityKeyHash() == null) {
+                    OpenRouterClient.CreatedKey marker = createIdentityMarker(snapshot.account(), stagedSecret);
+                    identityMarker.set(marker); identitySecret.set(stagedSecret);
+                }
+                OpenRouterAccount locked = requireWritableWithLock(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
                 requireActive(locked);
                 List<OpenRouterAccountCredential> credentials =
                         credentialRepository.findAllWithLockByAccountId(locked.getId());
@@ -451,12 +479,9 @@ public class AdminOpenRouterAccountService {
                     throw credentialState(
                             "검증 뒤 credential 상태가 바뀌었습니다. 다시 시도해 주세요.");
                 }
-                if (locked.getVendorIdentityKeyHash() == null) {
-                    OpenRouterClient.CreatedKey marker = createIdentityMarker(
-                            locked, stagedSecret);
-                    identityMarker.set(marker);
-                    identitySecret.set(stagedSecret);
-                    locked.establishVendorIdentityKey(marker.hash(), Instant.now());
+                if (identityMarker.get() != null) {
+                    if (locked.getVendorIdentityKeyHash() != null) { throw credentialState("검증 뒤 account 식별 상태가 바뀌었습니다."); }
+                    locked.establishVendorIdentityKey(identityMarker.get().hash(), Instant.now());
                 }
                 entityManager.createNativeQuery(
                         "set constraints openrouter_account_credentials_slot_uq deferred")
@@ -471,14 +496,14 @@ public class AdminOpenRouterAccountService {
                 auditService.recordAfterCommit(actor.id(), actor.role().name(),
                         AuditService.OPENROUTER_CREDENTIAL_ACTIVATE, "openrouter_account",
                         locked.getPublicId(), Map.of("rotation", active != null), ip);
-                return response(locked);
+                return response(actor, locked);
             });
             identityMarker.set(null);
             identitySecret.set(null);
         } catch (CredentialVerificationException e) {
             cleanupIdentityMarker(snapshot.account(), identitySecret.get(),
                     identityMarker.get());
-            recordActivationVerificationFailure(snapshot, e.category());
+            recordActivationVerificationFailure(actor, snapshot, e.category());
             throw e;
         } catch (RuntimeException e) {
             cleanupIdentityMarker(snapshot.account(), identitySecret.get(),
@@ -500,7 +525,7 @@ public class AdminOpenRouterAccountService {
     @Transactional
     public OpenRouterAccountResponse cancel(AuthenticatedUser actor, UUID accountId,
             ConfirmOpenRouterAccountRequest form, String ip) {
-        OpenRouterAccount account = requireWritableWithLock(actor, accountId);
+        OpenRouterAccount account = requireWritableWithLock(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
         confirm(account.getName(), form.confirmName());
         OpenRouterAccountCredential staged = credentialRepository
                 .findByAccountIdAndStatus(account.getId(), OpenRouterCredentialStatus.STAGED)
@@ -509,16 +534,16 @@ public class AdminOpenRouterAccountService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.OPENROUTER_CREDENTIAL_CANCEL, "openrouter_account",
                 account.getPublicId(), Map.of(), ip);
-        return response(account);
+        return response(actor, account);
     }
 
     public OpenRouterAccountResponse rollback(AuthenticatedUser actor, UUID accountId,
             ConfirmOpenRouterAccountRequest form, String ip) {
         RotationSnapshot snapshot = rotationSnapshot(actor, accountId, form.confirmName());
-        validateCredentialNow(snapshot.account(), snapshot.retiring(),
+        validateCredentialNow(actor, snapshot.account(), snapshot.retiring(),
                 OpenRouterCredentialStatus.RETIRING);
         OpenRouterAccountResponse result = tx.execute(status -> {
-            OpenRouterAccount account = requireWritableWithLock(actor, accountId);
+            OpenRouterAccount account = requireWritableWithLock(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
             List<OpenRouterAccountCredential> credentials =
                     credentialRepository.findAllWithLockByAccountId(account.getId());
             OpenRouterAccountCredential active = byId(credentials, snapshot.active().getId());
@@ -537,7 +562,7 @@ public class AdminOpenRouterAccountService {
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
                     AuditService.OPENROUTER_CREDENTIAL_ROLLBACK, "openrouter_account",
                     account.getPublicId(), Map.of(), ip);
-            return response(account);
+            return response(actor, account);
         });
         // Every key funded by this account fails to provision while the
         // account has no usable management credential, and each failure
@@ -556,11 +581,11 @@ public class AdminOpenRouterAccountService {
         requireVendorRevocation(form);
         RotationSnapshot snapshot = rotationSnapshot(actor, accountId, form.confirmName());
         requireReconciledAfterActivation(snapshot.active());
-        validateCredentialNow(snapshot.account(), snapshot.active(),
+        validateCredentialNow(actor, snapshot.account(), snapshot.active(),
                 OpenRouterCredentialStatus.ACTIVE);
         assertVendorCredentialRevoked(snapshot.account(), snapshot.retiring());
         return tx.execute(status -> {
-            OpenRouterAccount account = requireWritableWithLock(actor, accountId);
+            OpenRouterAccount account = requireWritableWithLock(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
             List<OpenRouterAccountCredential> credentials =
                     credentialRepository.findAllWithLockByAccountId(account.getId());
             OpenRouterAccountCredential active = byId(credentials, snapshot.active().getId());
@@ -575,7 +600,7 @@ public class AdminOpenRouterAccountService {
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
                     AuditService.OPENROUTER_CREDENTIAL_FINALIZE, "openrouter_account",
                     account.getPublicId(), Map.of("vendorRevocationConfirmed", true), ip);
-            return response(account);
+            return response(actor, account);
         });
     }
 
@@ -586,7 +611,7 @@ public class AdminOpenRouterAccountService {
                 actor, accountId, form.confirmName());
         assertVendorCredentialRevoked(snapshot.account(), snapshot.active());
         return tx.execute(status -> {
-            OpenRouterAccount account = requireWritableWithLock(actor, accountId);
+            OpenRouterAccount account = requireWritableWithLock(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
             List<OpenRouterAccountCredential> credentials =
                     credentialRepository.findAllWithLockByAccountId(account.getId());
             requireActiveDeletionSafe(account, credentials);
@@ -598,7 +623,7 @@ public class AdminOpenRouterAccountService {
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
                     AuditService.OPENROUTER_CREDENTIAL_DELETE, "openrouter_account",
                     account.getPublicId(), Map.of("vendorRevocationConfirmed", true), ip);
-            return response(account);
+            return response(actor, account);
         });
     }
 
@@ -764,11 +789,10 @@ public class AdminOpenRouterAccountService {
         }
     }
 
-    private void recordActivationVerificationFailure(CredentialSnapshot snapshot,
+    private void recordActivationVerificationFailure(AuthenticatedUser actor, CredentialSnapshot snapshot,
             OpenRouterCredentialError error) {
         tx.executeWithoutResult(status -> {
-            OpenRouterAccount locked = accountRepository
-                    .findWithLockByPublicId(snapshot.account().getPublicId()).orElse(null);
+            OpenRouterAccount locked = requireWritableWithLock(actor, snapshot.account().getPublicId(), InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
             if (locked == null) {
                 return;
             }
@@ -793,7 +817,7 @@ public class AdminOpenRouterAccountService {
     private CredentialSnapshot credentialSnapshot(AuthenticatedUser actor, UUID accountId,
             String confirmName) {
         return tx.execute(status -> {
-            OpenRouterAccount account = requireWritable(actor, accountId);
+            OpenRouterAccount account = requireWritable(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
             confirm(account.getName(), confirmName);
             List<OpenRouterAccountCredential> credentials =
                     credentialRepository.findByAccountIdOrderByIdAsc(account.getId());
@@ -806,7 +830,7 @@ public class AdminOpenRouterAccountService {
     private RotationSnapshot rotationSnapshot(AuthenticatedUser actor, UUID accountId,
             String confirmName) {
         return tx.execute(status -> {
-            OpenRouterAccount account = requireWritableWithLock(actor, accountId);
+            OpenRouterAccount account = requireWritableWithLock(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
             confirm(account.getName(), confirmName);
             List<OpenRouterAccountCredential> credentials =
                     credentialRepository.findAllWithLockByAccountId(account.getId());
@@ -819,7 +843,7 @@ public class AdminOpenRouterAccountService {
     private ActiveDeletionSnapshot activeDeletionSnapshot(AuthenticatedUser actor, UUID accountId,
             String confirmName) {
         return tx.execute(status -> {
-            OpenRouterAccount account = requireWritableWithLock(actor, accountId);
+            OpenRouterAccount account = requireWritableWithLock(actor, accountId, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
             confirm(account.getName(), confirmName);
             List<OpenRouterAccountCredential> credentials =
                     credentialRepository.findAllWithLockByAccountId(account.getId());
@@ -829,26 +853,25 @@ public class AdminOpenRouterAccountService {
         });
     }
 
-    private String validateCredentialNow(OpenRouterAccount account,
+    private String validateCredentialNow(AuthenticatedUser actor, OpenRouterAccount account,
             OpenRouterAccountCredential credential, OpenRouterCredentialStatus expectedStatus) {
         String secret = decrypt(account, credential);
         try {
             client.credits(secret);
-            recordCredentialVerification(account, credential.getId(), expectedStatus, null);
+            recordCredentialVerification(actor, account, credential.getId(), expectedStatus, null);
             return secret;
         } catch (OpenRouterException | IllegalStateException e) {
             OpenRouterCredentialError error = classifyVerificationError(e);
-            recordCredentialVerification(account, credential.getId(), expectedStatus, error);
+            recordCredentialVerification(actor, account, credential.getId(), expectedStatus, error);
             throw verificationFailed(error);
         }
     }
 
-    private void recordCredentialVerification(OpenRouterAccount account, long credentialId,
+    private void recordCredentialVerification(AuthenticatedUser actor, OpenRouterAccount account, long credentialId,
             OpenRouterCredentialStatus expectedStatus,
             @Nullable OpenRouterCredentialError error) {
         tx.executeWithoutResult(status -> {
-            OpenRouterAccount locked = accountRepository
-                    .findWithLockByPublicId(account.getPublicId()).orElse(null);
+            OpenRouterAccount locked = requireWritableWithLock(actor, account.getPublicId(), InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE);
             if (locked == null) {
                 return;
             }
@@ -924,62 +947,42 @@ public class AdminOpenRouterAccountService {
     }
 
     private OpenRouterAccount requireReadable(AuthenticatedUser actor, UUID accountId) {
-        OpenRouterAccount account = accountRepository.findByPublicId(accountId)
-                .orElseThrow(AdminOpenRouterAccountService::notFound);
-        if (actor.role().isOrgTier() && !actor.reads(account.getOrgId())) {
-            throw notFound();
-        }
+        OpenRouterAccount account = accountRepository.findByPublicId(accountId).orElseThrow(AdminOpenRouterAccountService::notFound);
+        if (!institutionAccess.selectable(actor, account.getOrgId())) { throw notFound(); }
         return account;
     }
 
-    private OpenRouterAccount requireWritable(AuthenticatedUser actor, UUID accountId) {
-        OpenRouterAccount account = requireReadable(actor, accountId);
-        if (actor.role().isOrgTier()) {
-            if (!actor.operates(account.getOrgId())) {
-                throw notFound();
-            }
-            return account;
-        }
-        if (actor.role() == UserRole.SYS_ADMIN) {
-            return account;
-        }
-        throw denied("이 account를 변경할 권한이 없습니다.");
+    private OpenRouterAccount requireWritable(AuthenticatedUser actor, UUID accountId, InstitutionWork work) {
+        OpenRouterAccount account = accountRepository.findByPublicId(accountId).orElseThrow(AdminOpenRouterAccountService::notFound);
+        if (!institutionAccess.work(actors.currentForRead(actor), work, account.getOrgId())) { throw notFound(); }
+        return account;
     }
 
-    private OpenRouterAccount requireWritableWithLock(AuthenticatedUser actor, UUID accountId) {
-        OpenRouterAccount account = accountRepository.findWithLockByPublicId(accountId)
-                .orElseThrow(AdminOpenRouterAccountService::notFound);
-        if (actor.role().isOrgTier() && !actor.operates(account.getOrgId())) {
-            throw notFound();
-        }
-        if (!actor.role().isOrgTier() && actor.role() != UserRole.SYS_ADMIN) {
-            throw denied("이 account를 변경할 권한이 없습니다.");
-        }
+    private OpenRouterAccount requireWritableWithLock(AuthenticatedUser actor, UUID accountId, InstitutionWork work) {
+        AuthenticatedUser current = actors.currentForWrite(actor);
+        OpenRouterAccount account = accountRepository.findWithLockByPublicId(accountId).orElseThrow(AdminOpenRouterAccountService::notFound);
+        if (!institutionAccess.work(current, work, account.getOrgId())) { throw notFound(); }
         return account;
     }
 
     private Org requireWritableOrg(AuthenticatedUser actor, UUID orgId) {
-        Org org = orgRepository.findByPublicId(orgId)
-                .orElseThrow(AdminOpenRouterAccountService::notFound);
-        if (actor.role().isOrgTier() && !actor.operates(org.getId())) {
-            throw notFound();
-        }
-        if (!actor.role().isOrgTier() && actor.role() != UserRole.SYS_ADMIN) {
-            throw denied("이 기관에 account를 만들 권한이 없습니다.");
-        }
+        Org org = orgRepository.findByPublicId(orgId).orElseThrow(AdminOpenRouterAccountService::notFound);
+        if (!institutionAccess.work(actor, InstitutionWork.INSTITUTION_ACCOUNT_MANAGE, org.getId())) { throw notFound(); }
         return org;
     }
 
-    private OpenRouterAccountResponse response(OpenRouterAccount account) {
-        return response(account, allocationQuery.forAccount(account.getId()));
+    private OpenRouterAccountResponse response(AuthenticatedUser actor, OpenRouterAccount account) {
+        return response(actor, account, allocationQuery.forAccount(account.getId()))
+                .withKeyNavigation(keyExploration.navigation(actor, List.of(account)).get(account.getId()));
     }
 
     /**
      * The list path gathers every account's allocation in one pass and hands it
      * in; every other path asks about the single account it is answering about.
      */
-    private OpenRouterAccountResponse response(OpenRouterAccount account,
+    private OpenRouterAccountResponse response(AuthenticatedUser actor, OpenRouterAccount account,
             OpenRouterAllocationQuery.Allocation allocation) {
+        AuthenticatedUser current = actors.currentForRead(actor);
         Org org = orgRepository.findById(account.getOrgId()).orElseThrow();
         List<OpenRouterAccountCredential> credentials =
                 credentialRepository.findByAccountIdOrderByIdAsc(account.getId());
@@ -1000,7 +1003,13 @@ public class AdminOpenRouterAccountService {
                 CreditModelPatterns.fromJson(objectMapper,
                         account.getDefaultCreditDeniedModels(),
                         "openrouter account " + account.getPublicId()),
-                account.getCreatedAt(), account.getUpdatedAt());
+                account.getCreatedAt(), account.getUpdatedAt(), true, true, true, null).project(
+                        institutionAccess.work(current, InstitutionWork.INSTITUTION_ACCOUNT_FINANCE_READ, account.getOrgId()),
+                        (institutionAccess.work(current, InstitutionWork.INSTITUTION_ACCOUNT_READ, account.getOrgId())
+                            || institutionAccess.work(current, InstitutionWork.INSTITUTION_ACCOUNT_CREDENTIAL_MANAGE, account.getOrgId())),
+                        institutionAccess.work(current, InstitutionWork.INSTITUTION_ACCOUNT_READ, account.getOrgId())
+                            || institutionAccess.work(current, InstitutionWork.INSTITUTION_ACCOUNT_MANAGE, account.getOrgId()),
+                        institutionAccess.work(current, InstitutionWork.INSTITUTION_ACCOUNT_MANAGE, account.getOrgId()));
     }
 
     private static OpenRouterAccountAllocationResponse allocationResponse(

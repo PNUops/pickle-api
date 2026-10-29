@@ -6,7 +6,6 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.util.List;
@@ -17,7 +16,7 @@ import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Full replacement of the nine limits on an administered LLM key.
+ * Presence-aware changes to an administered key; omitted values retain locked current values.
  *
  * <p>Three of them spell "unset" in different directions, which is the trap in
  * this class: {@code creditLimit} refuses null because money has no unlimited,
@@ -55,8 +54,8 @@ public class AdminLlmKeyLimitsRequest {
 
     @DecimalMin(value = "0", message = "금액 한도는 0 이상이어야 합니다.")
     @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.")
-    @NotNull(message = "금액 한도는 필수입니다. 유료 모델을 닫으려면 0을 보내 주세요.")
-    private BigDecimal creditLimit;
+    @kr.ac.pusan.pickle.common.openapi.NonNullWhenPresent
+    private @Nullable BigDecimal creditLimit;
     private boolean creditLimitSet;
 
     private @Nullable CreditLimitReset creditLimitReset;
@@ -75,8 +74,11 @@ public class AdminLlmKeyLimitsRequest {
     private boolean passthroughEndpointsSet;
 
     private @Nullable UUID openrouterAccountId;
+    @kr.ac.pusan.pickle.common.openapi.NonNullWhenPresent
+    private @Nullable Boolean chatEnabled;
+    private boolean chatEnabledSet;
 
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+    @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
             description = "분당 요청 한도. null이면 서비스 기본값을 따릅니다.")
     public @Nullable Integer getRpm() {
         return rpm;
@@ -87,7 +89,7 @@ public class AdminLlmKeyLimitsRequest {
         this.rpmSet = true;
     }
 
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+    @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
             description = "분당 토큰 한도. null이면 서비스 기본값을 따릅니다.")
     public @Nullable Integer getTpm() {
         return tpm;
@@ -98,7 +100,7 @@ public class AdminLlmKeyLimitsRequest {
         this.tpmSet = true;
     }
 
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+    @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
             description = "동시 요청 한도. null이면 서비스 기본값을 따릅니다.")
     public @Nullable Integer getConcurrency() {
         return concurrency;
@@ -109,7 +111,7 @@ public class AdminLlmKeyLimitsRequest {
         this.concurrencySet = true;
     }
 
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+    @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
             description = "일일 토큰 한도. null이면 무제한이고 0이면 토큰 축을 닫습니다.")
     public @Nullable Long getDailyTokens() {
         return dailyTokens;
@@ -120,9 +122,10 @@ public class AdminLlmKeyLimitsRequest {
         this.dailyTokensSet = true;
     }
 
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-            description = "금액 한도(USD 크레딧). 0이면 유료 모델을 닫습니다.")
-    public BigDecimal getCreditLimit() {
+    @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
+            nullable = false, implementation = BigDecimal.class,
+            description = "금액 한도(USD 크레딧). 생략하면 유지하고 null은 허용하지 않습니다. 0이면 유료 모델을 닫습니다.")
+    public @Nullable BigDecimal getCreditLimit() {
         return creditLimit;
     }
 
@@ -131,7 +134,7 @@ public class AdminLlmKeyLimitsRequest {
         this.creditLimitSet = true;
     }
 
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+    @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
             description = "금액 한도 리셋 창. null이면 리셋 없는 총액 상한입니다.")
     public @Nullable CreditLimitReset getCreditLimitReset() {
         return creditLimitReset;
@@ -142,7 +145,7 @@ public class AdminLlmKeyLimitsRequest {
         this.creditLimitResetSet = true;
     }
 
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+    @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
             description = "유료 모델 허용 목록. 빈 배열이나 null이면 제한이 없습니다. 금액 "
                     + "한도와 달리 null이 0을 뜻하지 않습니다. 자체 서빙 모델은 이 값에 "
                     + "영향을 받지 않습니다."
@@ -156,7 +159,7 @@ public class AdminLlmKeyLimitsRequest {
         this.creditAllowedModelsSet = true;
     }
 
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+    @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
             description = "유료 모델 차단 목록. 빈 배열이나 null이면 차단하는 모델이 없습니다. "
                     + "허용 목록과 함께 걸리면 차단이 이깁니다. 허용 목록과 달리 금액 한도가 "
                     + "0이어도 남습니다. 자체 서빙 모델은 이 값에 영향을 받지 않습니다."
@@ -177,11 +180,11 @@ public class AdminLlmKeyLimitsRequest {
             PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
             PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
             PassthroughEndpoints.FILES}),
-            arraySchema = @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+            arraySchema = @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
                     description = "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 "
                             + "하나도 쓸 수 없습니다(chat 포함). 모델 목록 둘과 반대로 이 목록은 "
                             + "채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, "
-                            + "pdf_ocr, images, embeddings이고, web_search와 pdf_ocr은 chat과 "
+                            + "pdf_ocr, images, embeddings, rerank, speech, transcriptions이고, web_search와 pdf_ocr은 chat과 "
                             + "함께 부여해야 합니다. 모델 조회는 이 값에 영향을 받지 않습니다."))
     public @Nullable List<String> getPassthroughEndpoints() {
         return passthroughEndpoints;
@@ -202,9 +205,23 @@ public class AdminLlmKeyLimitsRequest {
     }
 
     @Schema(hidden = true)
-    public boolean isComplete() {
-        return rpmSet && tpmSet && concurrencySet && dailyTokensSet
-                && creditLimitSet && creditLimitResetSet && creditAllowedModelsSet
-                && creditDeniedModelsSet && passthroughEndpointsSet;
+    public boolean hasAny() {
+        return rpmSet || tpmSet || concurrencySet || dailyTokensSet || creditLimitSet || creditLimitResetSet
+                || creditAllowedModelsSet || creditDeniedModelsSet || passthroughEndpointsSet || chatEnabledSet || openrouterAccountId != null;
     }
+
+    @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = false, implementation = Boolean.class,
+            description = "chat 기능만 변경합니다. 생략하면 유지하고 null은 허용하지 않습니다.")
+    public @Nullable Boolean getChatEnabled() { return chatEnabled; }
+    public void setChatEnabled(@Nullable Boolean value) { chatEnabled = value; chatEnabledSet = true; }
+    @Schema(hidden = true) public boolean hasChatEnabled() { return chatEnabledSet; }
+    @Schema(hidden = true) public boolean hasRpm() { return rpmSet; }
+    @Schema(hidden = true) public boolean hasTpm() { return tpmSet; }
+    @Schema(hidden = true) public boolean hasConcurrency() { return concurrencySet; }
+    @Schema(hidden = true) public boolean hasDailyTokens() { return dailyTokensSet; }
+    @Schema(hidden = true) public boolean hasCreditLimit() { return creditLimitSet; }
+    @Schema(hidden = true) public boolean hasCreditLimitReset() { return creditLimitResetSet; }
+    @Schema(hidden = true) public boolean hasCreditAllowedModels() { return creditAllowedModelsSet; }
+    @Schema(hidden = true) public boolean hasCreditDeniedModels() { return creditDeniedModelsSet; }
+    @Schema(hidden = true) public boolean hasPassthroughEndpoints() { return passthroughEndpointsSet; }
 }

@@ -6,7 +6,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -36,6 +35,8 @@ import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.workspace.InvitationClaimService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -633,6 +634,49 @@ class RequestRecipientsTest {
                 Long.class, SeedFixtures.publicId(jdbcTemplate, "requests", requestId).toString())).isEqualTo(1);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"VM", "LLM_API_KEY"})
+    void aDeletedWorkspaceDoesNotAcceptAnotherCreationAttempt(String type) throws Exception {
+        UUID workspace = createWorkspace(ownerToken);
+        User member = addMember(workspace, "closed-retry-" + type.toLowerCase(java.util.Locale.ROOT));
+        long requestId = "VM".equals(type)
+                ? approvedVmRequest(workspace, List.of(member), 2048)
+                : approvedKeyRequest(workspace, List.of(member));
+        jdbcTemplate.update("""
+                update request_recipients set status='FAILED', reason='synthetic creation failure', attempts=2
+                 where request_id=?
+                """, requestId);
+        UUID recipientId = jdbcTemplate.queryForObject(
+                "select public_id from request_recipients where request_id=?", UUID.class, requestId);
+
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper,
+                ownerToken, "/api/v1/workspaces/" + workspace)).andExpect(status().is2xxSuccessful());
+        int jobsBefore = jdbcTemplate.queryForObject(
+                "select count(*) from jobrunr_jobs where jobsignature like '%RequestRecipientMaterializer.run(%'",
+                Integer.class);
+        postJson("/api/v1/admin/requests/" + SeedFixtures.publicId(jdbcTemplate, "requests", requestId)
+                        + "/recipients/" + recipientId + "/retry", orgAdminToken, Map.of())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("REQUEST_RECIPIENT_NOT_RETRYABLE"));
+
+        assertThat(jdbcTemplate.queryForMap(
+                "select status, reason, attempts from request_recipients where request_id=?", requestId))
+                .containsEntry("status", "FAILED").containsEntry("reason", "synthetic creation failure")
+                .containsEntry("attempts", 2);
+        assertThat(jdbcTemplate.queryForObject("select status from requests where id=?", String.class, requestId))
+                .isEqualTo("APPROVED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from audit_logs where action='request.recipient_retry' and target_id=?",
+                Long.class, SeedFixtures.publicId(jdbcTemplate, "requests", requestId).toString())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from jobrunr_jobs where jobsignature like '%RequestRecipientMaterializer.run(%'",
+                Integer.class)).isEqualTo(jobsBefore);
+        materializer.run();
+        assertThat(vmCount(requestId)).isZero();
+        assertThat(keyCount(requestId)).isZero();
+        assertThat(recipientStatus(requestId, member.getId())).isEqualTo("FAILED");
+    }
+
     // ---------------------------------------------------------------- joining
 
     @Test
@@ -677,7 +721,7 @@ class RequestRecipientsTest {
         long requestId = approvedKeyRequestFor(workspace, List.of(
                 Map.of("userId", member.getPublicId()), Map.of("invitationId", invitation)));
 
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspace).header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + workspace))
                 .andExpect(status().is2xxSuccessful());
         assertThat(jdbcTemplate.queryForList(
                 "select status from request_recipients where request_id = ? order by id", String.class, requestId))
@@ -739,8 +783,7 @@ class RequestRecipientsTest {
         UUID invitation = invite(workspace, email("canceled-invitee"));
         long requestId = approvedKeyRequestFor(workspace, List.of(Map.of("invitationId", invitation)));
 
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspace + "/invitations/" + invitation)
-                        .header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + workspace + "/invitations/" + invitation))
                 .andExpect(status().is2xxSuccessful());
         assertThat(recipientStatusByInvitation(requestId, invitation)).isEqualTo("CANCELED");
         assertThat(jdbcTemplate.queryForObject(

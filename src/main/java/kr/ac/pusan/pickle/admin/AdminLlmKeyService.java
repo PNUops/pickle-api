@@ -17,6 +17,13 @@ import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyLimitsRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeySummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyUsageResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmKeyCohort;
+import kr.ac.pusan.pickle.admin.dto.LlmKeySort;
+import kr.ac.pusan.pickle.admin.dto.LlmTokenObservation;
+import kr.ac.pusan.pickle.admin.dto.LlmKeyLimitsDraft;
+import kr.ac.pusan.pickle.admin.dto.LlmKeyLimitsProjection;
+import kr.ac.pusan.pickle.admin.dto.LlmAccountImpactProjection;
+import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -33,7 +40,9 @@ import kr.ac.pusan.pickle.llm.LlmGatewayGenerations;
 import kr.ac.pusan.pickle.llm.LlmKeyLimitRules;
 import kr.ac.pusan.pickle.llm.LlmKeyModelService;
 import kr.ac.pusan.pickle.llm.LlmKeyUsageService;
-import kr.ac.pusan.pickle.llm.dto.LlmKeyModelsResponse;
+import kr.ac.pusan.pickle.admin.dto.InstitutionAdminLlmModelsResponse;
+import kr.ac.pusan.pickle.admin.dto.InstitutionAdminLlmTrendResponse;
+import kr.ac.pusan.pickle.admin.dto.InstitutionAdminLlmEndpointUsageResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyUsageTrendResponse;
 import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
@@ -46,7 +55,7 @@ import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
+import kr.ac.pusan.pickle.security.institution.InstitutionWork;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import org.jobrunr.scheduling.JobScheduler;
@@ -54,13 +63,13 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import tools.jackson.databind.ObjectMapper;
 
 /** Administrator reads and state changes for LLM API keys. */
@@ -85,6 +94,11 @@ public class AdminLlmKeyService {
     private final LlmKeyModelService modelService;
     private final LlmKeyUsageService keyUsageService;
     private final Clock clock;
+    private final InstitutionLlmAccess access;
+    private final InstitutionLlmAccountReferences accountReferences;
+    private final AdminLlmKeyExplorationQuery exploration;
+    private final AdminLlmAccountImpactService accountImpacts;
+    private final InstitutionAccountAccess accountAccess;
 
     public AdminLlmKeyService(LlmApiKeyRepository keyRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
@@ -94,7 +108,10 @@ public class AdminLlmKeyService {
             OpenRouterAccountSelectionService accountSelection,
             OpenRouterAllocationQuery allocationQuery, ObjectMapper objectMapper,
             JobScheduler jobScheduler, LlmKeyModelService modelService,
-            LlmKeyUsageService keyUsageService, Clock clock) {
+            LlmKeyUsageService keyUsageService, Clock clock, InstitutionLlmAccess access,
+            InstitutionLlmAccountReferences accountReferences, AdminLlmKeyExplorationQuery exploration,
+            AdminLlmAccountImpactService accountImpacts, InstitutionAccountAccess accountAccess) {
+        this.accountReferences = accountReferences;
         this.keyRepository = keyRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
@@ -111,15 +128,29 @@ public class AdminLlmKeyService {
         this.modelService = modelService;
         this.keyUsageService = keyUsageService;
         this.clock = clock;
+        this.access = access;
+        this.exploration = exploration;
+        this.accountImpacts = accountImpacts;
+        this.accountAccess = accountAccess;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResponse<AdminLlmKeySummaryResponse> list(AuthenticatedUser actor, UUID orgId,
             UUID workspaceId, UUID requestId, UUID openrouterAccountId,
             LlmApiKeyStatus status, String query, int page, int size) {
+        return list(actor, orgId, workspaceId, requestId, openrouterAccountId, status, query,
+                page, size, LlmKeyCohort.ALL, LlmKeySort.NEWEST, null, PassthroughEndpoints.CHAT);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public PageResponse<AdminLlmKeySummaryResponse> list(AuthenticatedUser actor, UUID orgId,
+            UUID workspaceId, UUID requestId, UUID openrouterAccountId,
+            LlmApiKeyStatus status, String query, int page, int size,
+            LlmKeyCohort cohort, LlmKeySort sort, @Nullable String policyModel, String policyFeature) {
+        if (!access.collectionReader(actor)) { throw forbidden(); }
         Long requestedOrgId = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        OrgScope scope = StudentSupportPolicy.filterScope(actor, orgId, requestedOrgId);
+        OrgScope scope = orgId != null && requestedOrgId == null ? OrgScope.nothing() : OrgScope.of(requestedOrgId);
         Long requestedWorkspaceId = workspaceId == null ? null
                 : workspaceRepository.findByPublicId(workspaceId).map(Workspace::getId).orElse(null);
         Long requestedRequestId = requestId == null ? null
@@ -127,7 +158,7 @@ public class AdminLlmKeyService {
         Long requestedAccountId = openrouterAccountId == null ? null
                 : accountRepository.findByPublicId(openrouterAccountId)
                         .map(OpenRouterAccount::getId).orElse(null);
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
+        Pageable pageable = PageRequest.of(page, size);
         if ((!scope.isUnrestricted() && scope.orgIds().isEmpty())
                 || (workspaceId != null && requestedWorkspaceId == null)
                 || (requestId != null && requestedRequestId == null)
@@ -135,46 +166,18 @@ public class AdminLlmKeyService {
             return PageResponse.of(List.of(), Page.empty(pageable));
         }
 
-        Instant now = Instant.now();
-        Specification<LlmApiKey> spec = (root, ignored, cb) -> cb.conjunction();
-        if (!scope.isUnrestricted()) {
-            spec = spec.and((root, ignored, cb) -> root.get("orgId").in(scope.orgIds()));
-        }
-        if (requestedWorkspaceId != null) {
-            spec = spec.and((root, ignored, cb) -> cb.equal(root.get("workspaceId"),
-                    requestedWorkspaceId));
-        }
-        if (requestedRequestId != null) {
-            spec = spec.and((root, ignored, cb) -> cb.equal(root.get("requestId"),
-                    requestedRequestId));
-        }
-        if (requestedAccountId != null) {
-            spec = spec.and((root, ignored, cb) -> cb.equal(root.get("openrouterAccountId"),
-                    requestedAccountId));
-        }
-        if (status != null) {
-            if (status == LlmApiKeyStatus.EXPIRED) {
-                spec = spec.and((root, ignored, cb) -> cb.or(
-                        cb.equal(root.get("status"), LlmApiKeyStatus.EXPIRED),
-                        cb.and(cb.notEqual(root.get("status"), LlmApiKeyStatus.REVOKED),
-                                cb.lessThanOrEqualTo(root.get("expiresAt"), now))));
-            } else if (status == LlmApiKeyStatus.REVOKED) {
-                spec = spec.and((root, ignored, cb) -> cb.equal(root.get("status"), status));
-            } else {
-                spec = spec.and((root, ignored, cb) -> cb.and(
-                        cb.equal(root.get("status"), status),
-                        cb.or(cb.isNull(root.get("expiresAt")),
-                                cb.greaterThan(root.get("expiresAt"), now))));
-            }
-        }
-        if (query != null && !query.isBlank()) {
-            String pattern = "%" + escapeLike(query.strip().toLowerCase()) + "%";
-            spec = spec.and((root, ignored, cb) -> cb.or(
-                    cb.like(cb.lower(root.get("name")), pattern, '\\'),
-                    cb.like(cb.lower(root.get("purpose")), pattern, '\\')));
-        }
-
-        Page<LlmApiKey> result = keyRepository.findAll(spec, pageable);
+        AdminLlmKeyExplorationQuery.Selection selection = exploration.page(actor,
+                new AdminLlmKeyExplorationQuery.Filters(scope, requestedWorkspaceId, requestedRequestId,
+                        requestedAccountId, status, query), cohort, sort, policyModel, policyFeature, page, size);
+        Map<Long, LlmApiKey> loaded = keyRepository.findAllById(selection.ids()).stream()
+                .collect(Collectors.toMap(LlmApiKey::getId, Function.identity()));
+        List<LlmApiKey> ordered = selection.ids().stream().map(id -> {
+            LlmApiKey key = loaded.get(id);
+            if (key == null) { throw new IllegalStateException("selected key disappeared inside read snapshot"); }
+            return key;
+        }).toList();
+        Page<LlmApiKey> result = new PageImpl<>(ordered, pageable, selection.total());
+        Instant now = selection.observedAt();
         References refs = references(result.getContent());
         List<AdminLlmKeySummaryResponse> content = result.getContent().stream()
                 .map(key -> {
@@ -190,7 +193,11 @@ public class AdminLlmKeyService {
                                     ? refs.requests().get(key.getRequestId()).getPublicId() : null,
                             account == null ? null : account.getPublicId(),
                             account == null ? null : account.getName(),
-                            now);
+                            now).project(access.metadata(actor, key), access.observation(actor, key), access.cost(actor, key))
+                            .withAllowedWorkIds(access.allowedWorkIds(actor, key))
+                            .withTokenObservation(new LlmTokenObservation(now, selection.tokenDay(), "RETAINED_TOKEN_EVENTS",
+                                    selection.todayTokens().getOrDefault(key.getId(), 0L), key.getDailyTokens() == null ? null
+                                    : Math.max(0, key.getDailyTokens() - selection.todayTokens().getOrDefault(key.getId(), 0L))));
                 })
                 .toList();
         return PageResponse.of(content, result);
@@ -198,7 +205,16 @@ public class AdminLlmKeyService {
 
     @Transactional(readOnly = true)
     public AdminLlmKeyDetailResponse get(AuthenticatedUser actor, UUID keyId) {
-        LlmApiKey key = requireReadable(actor, keyId);
+        LlmApiKey key = keyRepository.findByPublicId(keyId).orElseThrow(AdminLlmKeyService::notFound);
+        boolean tokenReference = access.mutation(actor, InstitutionWork.LLM_TOKEN_OPERATE, key);
+        boolean budgetReference = access.mutation(actor, InstitutionWork.LLM_KEY_BUDGET, key);
+        if (!access.selectable(actor, key) && !access.aclReference(actor, key) && !tokenReference && !budgetReference
+                && !access.mutation(actor, InstitutionWork.LLM_STATE_OPERATE, key) && !access.mutation(actor, InstitutionWork.LLM_PERIOD, key)
+                && !access.mutation(actor, InstitutionWork.LLM_REVOKE, key)) { throw notFound(); }
+        return detail(actor, key, tokenReference, budgetReference);
+    }
+
+    private AdminLlmKeyDetailResponse detail(AuthenticatedUser actor, LlmApiKey key, boolean tokenReference, boolean budgetReference) {
         Workspace workspace = workspaceRepository.findById(key.getWorkspaceId()).orElse(null);
         Org org = orgRepository.findById(key.getOrgId()).orElse(null);
         UUID requestId = requestRepository.findById(key.getRequestId())
@@ -217,40 +233,148 @@ public class AdminLlmKeyService {
                         "llm key " + key.getPublicId()),
                 PassthroughEndpoints.fromJson(objectMapper, key.getPassthroughEndpoints(),
                         "llm key " + key.getPublicId()),
-                Instant.now());
+                Instant.now()).project(access.metadata(actor, key), access.observation(actor, key),
+                        access.cost(actor, key), tokenReference, budgetReference).withAccountReferences(accountReferences.forKey(actor, key))
+                        .withAllowedWorkIds(access.allowedWorkIds(actor, key))
+                        .withInitialAccountBindingAllowed(budgetReference ? key.getOpenrouterAccountId()==null && firstBindingEligible(key) : null);
+    }
+
+    /** A draft read shares no write, generation, credential-use or enqueue path. */
+    @Transactional(readOnly = true)
+    public AdminLlmKeyDetailResponse get(AuthenticatedUser actor, UUID keyId, boolean project,
+            boolean anyDraftParameter, boolean amountSet, @Nullable BigDecimal amount,
+            boolean resetSet, boolean resetParameter, @Nullable CreditLimitReset reset,
+            boolean accountParameter, @Nullable UUID requestedAccount) {
+        actor = access.currentForRead(actor);
+        if (!project && anyDraftParameter) { throw projectionInvalid("projectLimits", "제안 값을 보내려면 금액 projection을 요청해 주세요."); }
+        if (amountSet && amount == null) { throw projectionInvalid("proposedCreditLimit", "제안 금액은 빈 값이나 null일 수 없습니다."); }
+        if (amount != null && (amount.signum() < 0 || amount.precision() - amount.scale() > 10 || amount.scale() > 2)) {
+            throw projectionInvalid("proposedCreditLimit", "금액은 0 이상, 정수 10자리와 소수 2자리까지 입력해 주세요.");
+        }
+        if (!resetSet && resetParameter) { throw projectionInvalid("proposedCreditLimitResetSet", "리셋 제안 여부와 값을 함께 확인해 주세요."); }
+        if (accountParameter && requestedAccount == null) { throw projectionInvalid("proposedOpenrouterAccountId", "제안 계정의 공개 ID를 확인해 주세요."); }
+        AdminLlmKeyDetailResponse response = get(actor, keyId);
+        if (!project || !response.financeVisible() && !response.budgetReferenceVisible()) { return response; }
+        LlmApiKey key = keyRepository.findByPublicId(keyId).orElseThrow(AdminLlmKeyService::notFound);
+        LlmKeyLimitRules.Normalized current = currentLimits(key);
+        BigDecimal nextAmount = amountSet ? Objects.requireNonNull(amount) : current.creditLimit();
+        CreditLimitReset nextReset = resetSet ? reset : current.creditLimitReset();
+        if (nextReset != null && nextAmount.signum() <= 0) {
+            throw projectionInvalid("proposedCreditLimit", "리셋 창을 두려면 0보다 큰 금액 한도가 필요합니다.");
+        }
+        LlmKeyLimitsDraft draft = new LlmKeyLimitsDraft(amountSet, amountSet ? amount : null,
+                resetSet, resetSet ? reset : null, requestedAccount);
+        // Individual-key financial standing is not account discovery standing.
+        // Refuse no existing command: only this optional information read stops.
+        if (key.getOpenrouterAccountId() == null && (key.getOrgId() == null
+                || !response.budgetReferenceVisible() && !accountAccess.selectable(actor, key.getOrgId()))) {
+            return response.withLimitsProjection(new LlmKeyLimitsProjection(clock.instant(), draft,
+                    LlmAccountImpactProjection.notProvided(clock.instant())));
+        }
+        OpenRouterAccount account = peekLimitAccount(key, requestedAccount, nextAmount);
+        LlmKeyLimitRules.Normalized next = new LlmKeyLimitRules.Normalized(current.rpm(), current.tpm(),
+                current.concurrency(), current.dailyTokens(), nextAmount, nextReset, current.creditAllowedModels(),
+                current.creditDeniedModels(), current.passthroughEndpoints());
+        boolean changed = current.creditLimit().compareTo(nextAmount) != 0 || current.creditLimitReset() != nextReset
+                || key.getOpenrouterAccountId() == null && account != null;
+        var impact = accountImpacts.evaluate(actor, List.of(new AdminLlmAccountImpactService.Plan(key, next, account, changed)));
+        return response.withLimitsProjection(new LlmKeyLimitsProjection(clock.instant(), draft, impact));
+    }
+
+    private @Nullable OpenRouterAccount peekLimitAccount(LlmApiKey key, @Nullable UUID requested, BigDecimal amount) {
+        if (key.getOpenrouterAccountId() != null) {
+            OpenRouterAccount current = accountRepository.findById(key.getOpenrouterAccountId()).orElseThrow(AdminLlmKeyService::notFound);
+            if (requested != null && !current.getPublicId().equals(requested)) {
+                throw projectionInvalid("proposedOpenrouterAccountId", "이미 연결된 계정은 이 제안으로 바꿀 수 없습니다.");
+            }
+            return current;
+        }
+        if (!firstBindingEligible(key)) {
+            if (requested != null || amount.signum() > 0) {
+                throw projectionInvalid("proposedOpenrouterAccountId", "기존 최초 계정 연결 조건을 만족하는 키만 평가할 수 있습니다.");
+            }
+            return null;
+        }
+        if (amount.signum() <= 0) {
+            if (requested != null) { throw projectionInvalid("proposedOpenrouterAccountId", "금액이 0보다 클 때만 계정을 제안할 수 있습니다."); }
+            return null;
+        }
+        if (requested != null) {
+            OpenRouterAccount account = accountRepository.findByPublicId(requested).orElse(null);
+            if (account == null || !Objects.equals(account.getOrgId(), key.getOrgId()) || !accountSelection.eligible(account)) {
+                throw projectionInvalid("proposedOpenrouterAccountId", "기존 연결 규칙이 허용한 활성 계정을 선택해 주세요.");
+            }
+            return account;
+        }
+        List<FieldValidationError> errors = new ArrayList<>();
+        OpenRouterAccount account = accountSelection.peekDefault(key.getOrgId(), amount, errors);
+        if (!errors.isEmpty()) { throw projectionInvalid("proposedOpenrouterAccountId", errors.getFirst().message()); }
+        return account;
+    }
+
+    private static ApiException projectionInvalid(String field, String detail) {
+        return ApiException.validationFailed(List.of(new FieldValidationError(field, detail)));
     }
 
     @Transactional
     public AdminLlmKeyDetailResponse replaceLimits(AuthenticatedUser actor, UUID keyId,
             AdminLlmKeyLimitsRequest form, String ip) {
-        if (!form.isComplete()) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("limits",
-                    "아홉 한도 값을 모두 보내 주세요. 한도를 비우려면 null을 명시해 주세요.")));
+        actor = access.currentForWrite(actor);
+        LlmApiKey key = keyRepository.findByPublicId(keyId).orElseThrow(AdminLlmKeyService::notFound);
+        boolean tokenAuthority = access.mutation(actor, InstitutionWork.LLM_TOKEN_OPERATE, key);
+        boolean budgetAuthority = access.mutation(actor, InstitutionWork.LLM_KEY_BUDGET, key);
+        if (!tokenAuthority && !budgetAuthority) { throw notFound(); }
+        if (form.hasCreditLimit() && form.getCreditLimit() == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit", "금액 한도에 null을 보낼 수 없습니다.")));
         }
-        LlmKeyLimitRules.Outcome outcome = LlmKeyLimitRules.check(new LlmKeyLimitRules.Limits(
-                form.getRpm(), form.getTpm(), form.getConcurrency(), form.getDailyTokens(),
-                form.getCreditLimit(), form.getCreditLimitReset(), form.getCreditAllowedModels(),
-                form.getCreditDeniedModels(), form.getPassthroughEndpoints()));
-        if (!outcome.valid()) {
-            throw ApiException.validationFailed(outcome.errors());
+        if (form.hasChatEnabled() && form.getChatEnabled() == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("chatEnabled", "chat 허용 상태에 null을 보낼 수 없습니다.")));
         }
-        LlmKeyLimitRules.Normalized next = outcome.normalized();
-        LlmApiKey key = requireWritable(actor, keyId);
+        if (form.hasChatEnabled() && form.hasPassthroughEndpoints() && form.getPassthroughEndpoints() != null
+                && form.getPassthroughEndpoints().contains(PassthroughEndpoints.CHAT) != form.getChatEnabled()) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("chatEnabled", "기능 목록의 chat 상태와 일치해야 합니다.")));
+        }
+        boolean financialInput = form.hasCreditLimit() || form.hasCreditLimitReset() || form.hasCreditAllowedModels()
+                || form.hasCreditDeniedModels() || form.hasPassthroughEndpoints() || form.getOpenrouterAccountId() != null;
+        if (financialInput && !budgetAuthority && !access.cost(actor, key)) { throw forbidden(); }
+        boolean tokenInput = form.hasRpm() || form.hasTpm() || form.hasConcurrency() || form.hasDailyTokens();
+        if (tokenInput && !tokenAuthority && !access.metadata(actor, key) && !access.observation(actor, key)) { throw forbidden(); }
+        if (!form.hasAny()) { throw ApiException.validationFailed(List.of(new FieldValidationError("limits", "변경할 항목을 하나 이상 보내 주세요."))); }
         generations.bump();
         entityManager.refresh(key);
         requireMutableStatus(key, "한도를 변경할");
         LlmKeyLimitRules.Normalized current = currentLimits(key);
-        boolean moneyChanged = moneyChanged(current, next);
-        boolean bindingRequested = form.getOpenrouterAccountId() != null
-                && key.getOpenrouterAccountId() == null;
-        if (actor.role() == UserRole.SYS_MANAGER && (moneyChanged || bindingRequested)) {
-            throw sysManagerMoneyGate();
+        List<String> endpoints = form.hasPassthroughEndpoints()
+                ? form.getPassthroughEndpoints() == null ? List.of() : form.getPassthroughEndpoints() : current.passthroughEndpoints();
+        if (form.hasChatEnabled()) {
+            if (form.hasPassthroughEndpoints() && endpoints.contains(PassthroughEndpoints.CHAT) != form.getChatEnabled()) {
+                throw ApiException.validationFailed(List.of(new FieldValidationError("chatEnabled", "기능 목록의 chat 상태와 일치해야 합니다.")));
+            }
+            List<String> merged = new ArrayList<>(endpoints);
+            merged.remove(PassthroughEndpoints.CHAT);
+            if (form.getChatEnabled()) { merged.add(PassthroughEndpoints.CHAT); }
+            endpoints = merged;
         }
+        LlmKeyLimitRules.Outcome outcome = LlmKeyLimitRules.check(new LlmKeyLimitRules.Limits(
+                form.hasRpm() ? form.getRpm() : current.rpm(), form.hasTpm() ? form.getTpm() : current.tpm(),
+                form.hasConcurrency() ? form.getConcurrency() : current.concurrency(),
+                form.hasDailyTokens() ? form.getDailyTokens() : current.dailyTokens(),
+                form.hasCreditLimit() ? form.getCreditLimit() : current.creditLimit(),
+                form.hasCreditLimitReset() ? form.getCreditLimitReset() : current.creditLimitReset(),
+                form.hasCreditAllowedModels() ? form.getCreditAllowedModels() : current.creditAllowedModels(),
+                form.hasCreditDeniedModels() ? form.getCreditDeniedModels() : current.creditDeniedModels(), endpoints));
+        if (!outcome.valid()) { throw ApiException.validationFailed(outcome.errors()); }
+        LlmKeyLimitRules.Normalized next = outcome.normalized();
+        boolean bindingRequested = form.getOpenrouterAccountId() != null && key.getOpenrouterAccountId() == null;
+        boolean tokenChanged = !Objects.equals(current.rpm(), next.rpm()) || !Objects.equals(current.tpm(), next.tpm())
+                || !Objects.equals(current.concurrency(), next.concurrency()) || !Objects.equals(current.dailyTokens(), next.dailyTokens())
+                || current.passthroughEndpoints().contains(PassthroughEndpoints.CHAT) != next.passthroughEndpoints().contains(PassthroughEndpoints.CHAT);
+        if (tokenChanged && !tokenAuthority || (moneyChanged(current, next) || bindingRequested) && !budgetAuthority) { throw forbidden(); }
         OpenRouterAccount account = resolveLimitAccount(key, form.getOpenrouterAccountId(),
                 next.creditLimit());
         boolean bindingChanged = key.getOpenrouterAccountId() == null && account != null;
         writeLimits(actor, key, current, next, account, bindingChanged, null, ip);
-        return get(actor, keyId);
+        return detail(actor, key, tokenAuthority, budgetAuthority);
     }
 
     /**
@@ -313,18 +437,24 @@ public class AdminLlmKeyService {
             LlmKeyLimitRules.Normalized current, LlmKeyLimitRules.Normalized next,
             @Nullable OpenRouterAccount account, boolean bindingChanged, @Nullable UUID batchId,
             String ip) {
+        actor = access.currentAfterLock(actor);
+        if (!access.mutation(actor, InstitutionWork.LLM_TOKEN_OPERATE, key) && !access.mutation(actor, InstitutionWork.LLM_KEY_BUDGET, key)) { throw forbidden(); }
+        boolean tokenChanged = !Objects.equals(current.rpm(), next.rpm()) || !Objects.equals(current.tpm(), next.tpm())
+                || !Objects.equals(current.concurrency(), next.concurrency()) || !Objects.equals(current.dailyTokens(), next.dailyTokens())
+                || current.passthroughEndpoints().contains(PassthroughEndpoints.CHAT) != next.passthroughEndpoints().contains(PassthroughEndpoints.CHAT);
+        if (tokenChanged && !access.mutation(actor, InstitutionWork.LLM_TOKEN_OPERATE, key)
+                || (moneyChanged(current, next) || bindingChanged) && !access.mutation(actor, InstitutionWork.LLM_KEY_BUDGET, key)) {
+            throw forbidden();
+        }
         boolean moneyChanged = moneyChanged(current, next);
-        // Read the account's standing commitment before the key is mutated. The
-        // key's own old limit is already inside that sum when it is bound to the
-        // same account (the key is live, or the caller would not be here), so
-        // what this write changes is the difference, not the new figure. A key
-        // binding for the first time is not in the sum yet and adds all of it.
+        // Replace this key's clamped drawable part in the cached account sum.
+        // Nominal cap deltas differ once usage approaches or exceeds a cap.
+        // A first binding contributes its full grant; changing a reported
+        // vendor window cannot reuse the previous window's usage.
         Map<String, Object> allocationRecord = Map.of();
         if (account != null) {
-            BigDecimal counted = Objects.equals(key.getOpenrouterAccountId(), account.getId())
-                    ? key.getCreditLimit() : BigDecimal.ZERO;
-            allocationRecord = allocationQuery.grantRecord(account.getId(),
-                    next.creditLimit().subtract(counted));
+            allocationRecord = allocationQuery.replacementGrantRecord(account.getId(), key,
+                    next.creditLimit(), next.creditLimitReset());
         }
         Instant now = Instant.now();
         key.replaceLimits(next.rpm(), next.tpm(), next.concurrency(), next.dailyTokens(),
@@ -392,26 +522,28 @@ public class AdminLlmKeyService {
     @Transactional
     public AdminLlmKeyDetailResponse suspend(AuthenticatedUser actor, UUID keyId, String reason,
             String ip) {
-        LlmApiKey key = requireWritable(actor, keyId);
+        actor = access.currentForWrite(actor);
+        LlmApiKey key = requireWritable(actor, keyId, InstitutionWork.LLM_STATE_OPERATE);
         generations.bump();
         entityManager.refresh(key);
         if (key.effectiveStatus(Instant.now()) != LlmApiKeyStatus.ACTIVE) {
             throw invalidState("활성 상태의 키만 정지할 수 있습니다.");
         }
         writeSuspend(actor, key, reason, null, ip);
-        return get(actor, keyId);
+        return detail(actor, key, false, false);
     }
 
     @Transactional
     public AdminLlmKeyDetailResponse resume(AuthenticatedUser actor, UUID keyId, String ip) {
-        LlmApiKey key = requireWritable(actor, keyId);
+        actor = access.currentForWrite(actor);
+        LlmApiKey key = requireWritable(actor, keyId, InstitutionWork.LLM_STATE_OPERATE);
         generations.bump();
         entityManager.refresh(key);
         if (key.effectiveStatus(Instant.now()) != LlmApiKeyStatus.SUSPENDED) {
             throw invalidState("정지 상태의 키만 다시 활성화할 수 있습니다.");
         }
         writeResume(actor, key, null, ip);
-        return get(actor, keyId);
+        return detail(actor, key, false, false);
     }
 
     /**
@@ -436,7 +568,8 @@ public class AdminLlmKeyService {
     public AdminLlmKeyDetailResponse updateExpiry(AuthenticatedUser actor, UUID keyId,
             LocalDate endDate, String ip) {
         Instant newExpiresAt = expiresAtFor(endDate, clock);
-        LlmApiKey key = requireWritable(actor, keyId);
+        actor = access.currentForWrite(actor);
+        LlmApiKey key = requireWritable(actor, keyId, InstitutionWork.LLM_PERIOD);
         generations.bump();
         entityManager.refresh(key);
         ApiException refusal = expiryRefusal(key, newExpiresAt);
@@ -444,7 +577,7 @@ public class AdminLlmKeyService {
             throw refusal;
         }
         writeExpiry(actor, key, newExpiresAt, null, ip);
-        return get(actor, keyId);
+        return detail(actor, key, false, false);
     }
 
     /**
@@ -484,6 +617,8 @@ public class AdminLlmKeyService {
     /** Lands a new expiry on a key the caller has locked and cleared. */
     public void writeExpiry(AuthenticatedUser actor, LlmApiKey key, Instant newExpiresAt,
             @Nullable UUID batchId, String ip) {
+        actor = access.currentAfterLock(actor);
+        if (!access.mutation(actor, InstitutionWork.LLM_PERIOD, key)) { throw forbidden(); }
         Instant old = key.getExpiresAt();
         key.changeExpiry(newExpiresAt, Instant.now());
         Map<String, Object> before = new LinkedHashMap<>();
@@ -517,6 +652,8 @@ public class AdminLlmKeyService {
     /** Suspends a key the caller has locked and found ACTIVE. */
     public void writeSuspend(AuthenticatedUser actor, LlmApiKey key, String reason,
             @Nullable UUID batchId, String ip) {
+        actor = access.currentAfterLock(actor);
+        if (!access.mutation(actor, InstitutionWork.LLM_STATE_OPERATE, key)) { throw forbidden(); }
         LlmApiKeyStatus old = key.getStatus();
         key.suspend(Instant.now());
         Map<String, Object> args = new LinkedHashMap<>();
@@ -540,6 +677,8 @@ public class AdminLlmKeyService {
     /** Resumes a key the caller has locked and found SUSPENDED. */
     public void writeResume(AuthenticatedUser actor, LlmApiKey key, @Nullable UUID batchId,
             String ip) {
+        actor = access.currentAfterLock(actor);
+        if (!access.mutation(actor, InstitutionWork.LLM_STATE_OPERATE, key)) { throw forbidden(); }
         LlmApiKeyStatus old = key.getStatus();
         key.resume(Instant.now());
         Map<String, Object> args = new LinkedHashMap<>();
@@ -567,6 +706,8 @@ public class AdminLlmKeyService {
      */
     public void writeRevoke(AuthenticatedUser actor, LlmApiKey key, @Nullable UUID batchId,
             String ip) {
+        actor = access.currentAfterLock(actor);
+        if (!access.mutation(actor, InstitutionWork.LLM_REVOKE, key)) { throw forbidden(); }
         LlmApiKeyStatus old = key.getStatus();
         key.revoke(Instant.now());
         Map<String, Object> args = new LinkedHashMap<>();
@@ -598,8 +739,11 @@ public class AdminLlmKeyService {
      * path rather than a widening of the holder's.
      */
     @Transactional(readOnly = true)
-    public LlmKeyModelsResponse models(AuthenticatedUser actor, UUID keyId) {
-        return modelService.of(requireReadable(actor, keyId));
+    public InstitutionAdminLlmModelsResponse models(AuthenticatedUser actor, UUID keyId) {
+        LlmApiKey key = keyRepository.findByPublicId(keyId).orElseThrow(AdminLlmKeyService::notFound);
+        if (!access.metadata(actor, key) && !access.observation(actor, key) && !access.cost(actor, key)
+                && !access.mutation(actor, InstitutionWork.LLM_TOKEN_OPERATE, key) && !access.mutation(actor, InstitutionWork.LLM_KEY_BUDGET, key)) { throw notFound(); }
+        return InstitutionAdminLlmModelsResponse.of(modelService.of(key), access.cost(actor, key) || access.mutation(actor, InstitutionWork.LLM_KEY_BUDGET, key));
     }
 
     /**
@@ -624,32 +768,31 @@ public class AdminLlmKeyService {
     @Transactional(readOnly = true)
     public AdminLlmKeyUsageResponse usage(AuthenticatedUser actor, UUID keyId, int days) {
         LlmApiKey key = requireReadable(actor, keyId);
+        boolean observation = access.observation(actor, key);
+        if (!observation && !access.cost(actor, key)) { throw notFound(); }
+        boolean finance = access.cost(actor, key);
         LlmKeyUsageTrendResponse trend = keyUsageService.trendOf(key, days);
-        return new AdminLlmKeyUsageResponse(trend,
-                keyUsageService.costPoints(key.getId(), trend.from(), trend.to()),
-                keyUsageService.endpointKinds(key.getId(), trend.from(), trend.to()),
-                keyUsageService.servedModels(key.getId(), trend.from(), trend.to()));
+        return new AdminLlmKeyUsageResponse(InstitutionAdminLlmTrendResponse.of(trend, observation, finance),
+                finance ? keyUsageService.costPoints(key.getId(), trend.from(), trend.to()) : null,
+                observation ? keyUsageService.endpointKinds(key.getId(), trend.from(), trend.to()).stream()
+                        .map(item -> InstitutionAdminLlmEndpointUsageResponse.of(item, finance)).toList() : null,
+                observation ? keyUsageService.servedModels(key.getId(), trend.from(), trend.to()) : null, finance);
     }
 
     private LlmApiKey requireReadable(AuthenticatedUser actor, UUID keyId) {
         LlmApiKey key = keyRepository.findByPublicId(keyId).orElseThrow(AdminLlmKeyService::notFound);
-        StudentSupportPolicy.requireRead(actor);
+        if (!access.selectable(actor, key)) { throw notFound(); }
         return key;
     }
 
-    private LlmApiKey requireWritable(AuthenticatedUser actor, UUID keyId) {
-        LlmApiKey key = requireReadable(actor, keyId);
-        if (actor.role().isOrgTier()) {
-            if (!actor.operates(key.getOrgId())) {
-                throw notFound();
-            }
-            return key;
-        }
-        if (actor.role() == UserRole.SYS_MANAGER || actor.role() == UserRole.SYS_ADMIN) {
-            return key;
-        }
-        throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                "접근 권한이 없습니다", "이 키를 변경할 권한이 없습니다.");
+    private LlmApiKey requireWritable(AuthenticatedUser actor, UUID keyId, InstitutionWork work) {
+        LlmApiKey key = keyRepository.findByPublicId(keyId).orElseThrow(AdminLlmKeyService::notFound);
+        if (!access.mutation(actor, work, key)) { throw notFound(); }
+        return key;
+    }
+
+    private static ApiException forbidden() {
+        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "이 변경에 필요한 업무 권한이 없습니다.");
     }
 
     private static void requireMutableStatus(LlmApiKey key, String action) {
@@ -694,10 +837,6 @@ public class AdminLlmKeyService {
     private static ApiException invalidState(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.LLM_KEY_INVALID_STATE,
                 "키 상태가 올바르지 않습니다", detail);
-    }
-
-    private static String escapeLike(String value) {
-        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     private OpenRouterAccount resolveLimitAccount(LlmApiKey key, @Nullable UUID requested,

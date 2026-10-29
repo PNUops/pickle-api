@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin.dto;
 
 import java.time.Instant;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 
 /**
@@ -9,6 +10,6 @@ import kr.ac.pusan.pickle.workspace.WorkspaceKind;
  * doubling as the admin workspace-list row since v0.19.0 ({@code kind} and
  * {@code createdAt} added — additive, picker consumers unaffected).
  */
-public record AdminWorkspaceOptionResponse(UUID id, String name, long memberCount,
-        WorkspaceKind kind, Instant createdAt) {
+public record AdminWorkspaceOptionResponse(UUID id, String name, @Nullable Long memberCount,
+        WorkspaceKind kind, @Nullable Instant createdAt, boolean metadataVisible, java.util.Set<String> allowedWorkIds) {
 }

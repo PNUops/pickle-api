@@ -26,6 +26,8 @@ import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.orgs.OrgAdministrationLock;
+import kr.ac.pusan.pickle.workspace.LifecycleActors;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestAssembler;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -72,6 +74,10 @@ public class ApprovalService {
     private final AuditIds auditIds;
     private final NotificationService notificationService;
     private final kr.ac.pusan.pickle.request.RequestRecipientService recipientService;
+    private final OrgAdministrationLock administrationLock;
+    private final LifecycleActors lifecycleActors;
+    private final kr.ac.pusan.pickle.request.InstitutionRequestAccess access;
+    private final kr.ac.pusan.pickle.llm.LlmKeyRequestSupport llmSupport;
 
     public ApprovalService(RequestRepository requestRepository, RequestReviewRepository reviewRepository,
             kr.ac.pusan.pickle.request.RequestApproval requestApproval,
@@ -81,8 +87,13 @@ public class ApprovalService {
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
             OrgRepository orgRepository,
             AuditService auditService, AuditIds auditIds, NotificationService notificationService,
-            kr.ac.pusan.pickle.request.RequestRecipientService recipientService) {
+            kr.ac.pusan.pickle.request.RequestRecipientService recipientService,
+            OrgAdministrationLock administrationLock, LifecycleActors lifecycleActors,
+            kr.ac.pusan.pickle.request.InstitutionRequestAccess access, kr.ac.pusan.pickle.llm.LlmKeyRequestSupport llmSupport) {
+        this.access = access; this.llmSupport = llmSupport;
         this.recipientService = recipientService;
+        this.administrationLock = administrationLock;
+        this.lifecycleActors = lifecycleActors;
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
         this.requestApproval = requestApproval;
@@ -105,7 +116,7 @@ public class ApprovalService {
             java.time.LocalDate requestedEndTo, Boolean reqIndefinite, UUID relatedUserId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
         OrgScope scope = listScopeOrgId(actor, orgId);
-        Specification<Request> spec = Specification.unrestricted();
+        Specification<Request> spec = access.readScope(actor);
         if (!scope.isUnrestricted()) {
             spec = spec.and(RequestSpecs.orgIn(scope.orgIds()));
         }
@@ -147,8 +158,10 @@ public class ApprovalService {
     @Transactional
     public RequestDetailResponse approve(AuthenticatedUser actor, UUID requestId,
             ApproveRequestRequest form, String ip) {
+        administrationLock.acquire();
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
         Request request = findWritableWithLock(actor, requestId);
-        decide(actor, request, form, ip, false, "");
+        decide(actor, request, form, ip, false, "", false);
         return assembler.toDetail(request, actor);
     }
 
@@ -165,7 +178,11 @@ public class ApprovalService {
     @Transactional
     public void approveOnSubmission(AuthenticatedUser actor, Request request,
             ApproveRequestRequest form, String ip) {
-        decide(actor, request, form, ip, true, "approval.");
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
+        boolean rosterCommand = recipientService.hasRecipients(request)
+                && access.roster(actor, request.getResourceType(), request.getOrgId(), request.getWorkspaceId());
+        if (!rosterCommand && !access.decide(actor, request.getResourceType(), request.getOrgId(), request.getWorkspaceId())) { throw requestNotFound(); }
+        decide(actor, request, form, ip, true, "approval.", rosterCommand);
     }
 
     /**
@@ -173,7 +190,7 @@ public class ApprovalService {
      * created in this transaction).
      */
     private void decide(AuthenticatedUser actor, Request request, ApproveRequestRequest form,
-            String ip, boolean submittedByReviewer, String fieldPrefix) {
+            String ip, boolean submittedByReviewer, String fieldPrefix, boolean rosterCommand) {
         requireSubmitted(request);
         // Approval creates a resource inside the workspace, so the workspace has
         // to still be there. Deleting a workspace cancels its in-flight requests,
@@ -219,6 +236,12 @@ public class ApprovalService {
             throw ApiException.validationFailed(fieldPrefix.isEmpty() ? errors : errors.stream()
                     .map(error -> new FieldValidationError(fieldPrefix + error.field(), error.message()))
                     .toList());
+        }
+
+        if (request.getResourceType() == ResourceType.LLM_API_KEY && llmSupport.requiresBudget(request, form)
+                && !access.paidDecision(actor, request, rosterCommand)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "유료 정책을 승인하려면 같은 권한 원천의 키 예산 업무가 필요합니다.");
         }
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
@@ -286,6 +309,8 @@ public class ApprovalService {
     @Transactional
     public RequestDetailResponse reject(AuthenticatedUser actor, UUID requestId,
             RejectRequestRequest form, String ip) {
+        administrationLock.acquire();
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
         Request request = findWritableWithLock(actor, requestId);
         requireSubmitted(request);
         reviewRepository.save(RequestReview.reject(request.getId(), actor.id(), form.comment().strip()));
@@ -308,7 +333,11 @@ public class ApprovalService {
     @Transactional
     public RequestDetailResponse retryRecipient(AuthenticatedUser actor, UUID requestId,
             UUID recipientId, String ip) {
-        Request request = findWritableWithLock(actor, requestId);
+        // Authority changes serialize before any request/workspace/recipient wait.
+        administrationLock.acquire();
+        actor = lifecycleActors.currentAfterAdministrationLock(actor);
+        Request request = requestRepository.findWithLockByPublicId(requestId).orElseThrow(ApprovalService::requestNotFound);
+        if (!access.retry(actor, request)) { throw requestNotFound(); }
         kr.ac.pusan.pickle.request.RequestRecipient recipient = recipientService.retry(request, recipientId);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_RECIPIENT_RETRY,
                 "request", request.getPublicId(),
@@ -320,7 +349,7 @@ public class ApprovalService {
     private OrgScope listScopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        return StudentSupportPolicy.filterScope(actor, orgId, requested);
+        return orgId != null && requested == null ? OrgScope.nothing() : OrgScope.of(requested);
     }
 
     /**
@@ -335,7 +364,7 @@ public class ApprovalService {
         if (request == null) {
             throw requestNotFound();
         }
-        StudentSupportPolicy.requireRead(actor);
+        if (!access.read(actor, request)) { throw requestNotFound(); }
         return request;
     }
 
@@ -346,9 +375,9 @@ public class ApprovalService {
         return request;
     }
 
-    private static void requireSameOrg(AuthenticatedUser actor, Request request) {
+    private void requireSameOrg(AuthenticatedUser actor, Request request) {
         if (request == null
-                || (actor.role().isOrgTier() && !actor.operates(request.getOrgId()))) {
+                || !access.decide(actor, request.getResourceType(), request.getOrgId(), request.getWorkspaceId())) {
             throw requestNotFound();
         }
     }

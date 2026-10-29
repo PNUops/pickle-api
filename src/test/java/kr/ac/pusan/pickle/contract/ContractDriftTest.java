@@ -61,6 +61,18 @@ class ContractDriftTest {
 
     /** The implemented surface ("METHOD path") — runtime must expose exactly this. */
     private static final Set<String> IMPLEMENTED = Set.of(
+            "GET /me/institution-authority",
+            "GET /admin/llm/roster-account-references",
+            "PUT /admin/orgs/{orgId}/operations/request-mail",
+            "POST /admin/orgs/{orgId}/operations/request-mail/preview",
+            "GET /requests/{requestId}/recipients/{recipientId}/cancellation-impact",
+            "POST /requests/{requestId}/recipients/{recipientId}/cancel",
+            "GET /admin/requests/{requestId}/recipients/{recipientId}/cancellation-impact",
+            "POST /admin/requests/{requestId}/recipients/{recipientId}/cancel",
+            "GET /workspaces/{workspaceId}/termination-impact",
+            "GET /admin/workspaces/{workspaceId}/termination-impact",
+            "GET /workspaces/{workspaceId}/invitations/{invitationId}/termination-impact",
+            "GET /admin/workspaces/{workspaceId}/invitations/{invitationId}/termination-impact",
             "GET /admin/bulk-changes/previews/{previewId}",
             "GET /admin/bulk-changes/operations/{operationId}",
             "GET /admin/bulk-changes/operations",
@@ -176,6 +188,7 @@ class ContractDriftTest {
             "GET /admin/llm/status",
             "GET /admin/llm/metrics",
             "GET /admin/llm/usage",
+            "GET /admin/llm/capacity",
             "GET /admin/llm/openrouter-models",
             "GET /admin/llm/accounts",
             "POST /admin/llm/accounts",
@@ -409,10 +422,39 @@ class ContractDriftTest {
     }
 
     @Test
-    void accountCreditsPublishUnknownAsNullsAndKeepFreshnessRequired() throws Exception {
+    void capacityWindowBoundsRemainRequiredDateTimeQueryParameters() throws Exception {
+        JsonNode parameters = fetchRuntimeSpec().path("paths").path("/api/v1/admin/llm/capacity")
+                .path("get").path("parameters");
+        Map<String, JsonNode> byName = new TreeMap<>();
+        parameters.forEach(parameter -> byName.put(parameter.path("name").asText(), parameter));
+        assertThat(byName).containsKeys("from", "to");
+        for (String name : List.of("from", "to")) {
+            JsonNode parameter = byName.get(name);
+            assertThat(parameter.path("in").asText()).isEqualTo("query");
+            assertThat(parameter.path("required").asBoolean()).isTrue();
+            assertThat(parameter.path("schema").path("type").asText()).isEqualTo("string");
+            assertThat(parameter.path("schema").path("format").asText()).isEqualTo("date-time");
+        }
+    }
+
+    @Test
+    void presenceAwareFinancialAndChatChangesAllowOmissionButRejectNullInTheirPublishedTypes() throws Exception {
+        JsonNode schemas=fetchRuntimeSpec().path("components").path("schemas");
+        JsonNode limits=schemas.path("AdminLlmKeyLimitsRequest");
+        assertThat(limits.path("required").toString()).doesNotContain("creditLimit","chatEnabled");
+        assertThat(limits.path("properties").path("creditLimit").path("type").toString()).doesNotContain("null");
+        assertThat(limits.path("properties").path("chatEnabled").path("type").toString()).doesNotContain("null");
+        assertThat(schemas.path("AdminBulkLlmKeyLimitsChange").path("properties").path("creditLimit").path("type").toString()).doesNotContain("null");
+        assertThat(limits.path("properties").path("rpm").path("type").toString()).contains("null");
+        assertThat(limits.path("properties").path("passthroughEndpoints").path("type").toString()).contains("null");
+    }
+
+    @Test
+    void accountFinanceProjectionIsOptionalButAvailableCreditsKeepRequiredFreshness() throws Exception {
         JsonNode schemas = fetchRuntimeSpec().path("components").path("schemas");
         JsonNode account = schemas.path("OpenRouterAccountResponse");
-        assertThat(account.path("required").toString()).contains("credits");
+        assertThat(account.path("required").toString()).contains("financeVisible").doesNotContain("credits");
+        assertThat(account.path("properties").path("credits").toString()).contains("OpenRouterAccountCreditsResponse","null");
         JsonNode credits = schemas.path("OpenRouterAccountCreditsResponse");
         assertThat(credits.path("required").toString())
                 .contains("freshness", "keysFreshness");

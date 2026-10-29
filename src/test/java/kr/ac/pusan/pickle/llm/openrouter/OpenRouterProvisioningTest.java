@@ -23,9 +23,9 @@ import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKeyService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.institution.InstitutionActorProvider;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
-import kr.ac.pusan.pickle.user.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -62,6 +62,8 @@ class OpenRouterProvisioningTest {
     private kr.ac.pusan.pickle.llm.LlmApiKeyRepository keyRepository;
     @Autowired
     private org.springframework.transaction.PlatformTransactionManager transactionManager;
+    @Autowired
+    private InstitutionActorProvider actors;
     @MockitoBean
     private OpenRouterClient client;
 
@@ -408,8 +410,10 @@ class OpenRouterProvisioningTest {
                 """, credentialCipher.encrypt("sk-or-r"), keyId);
         UUID publicId = jdbcTemplate.queryForObject(
                 "select public_id from llm_api_keys where id = ?", UUID.class, keyId);
-        AuthenticatedUser admin = new AuthenticatedUser(SeedFixtures.orgadminId(jdbcTemplate),
-                UUID.randomUUID(), "admin@test", UserRole.SYS_ADMIN, java.util.Map.of());
+        long adminId = SeedFixtures.sysadminId(jdbcTemplate);
+        UUID adminPublicId = SeedFixtures.publicId(jdbcTemplate, "users", adminId);
+        int tokenVersion = jdbcTemplate.queryForObject("select token_version from users where id = ?", Integer.class, adminId);
+        AuthenticatedUser admin = actors.authenticate(adminPublicId, tokenVersion).orElseThrow();
 
         keyService.revoke(admin, publicId);
 

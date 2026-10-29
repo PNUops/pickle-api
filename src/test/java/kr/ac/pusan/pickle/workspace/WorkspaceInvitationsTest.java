@@ -214,7 +214,7 @@ class WorkspaceInvitationsTest {
         mockMvc.perform(get(invitations(workspace)).header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
-        mockMvc.perform(delete(invitations(workspace) + "/" + invitationId)
+        mockMvc.perform(delete(invitations(workspace) + "/" + invitationId).contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{\"confirmation\":{\"fingerprint\":\"unauthorized-boundary\",\"confirmed\":true}}")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
@@ -287,23 +287,23 @@ class WorkspaceInvitationsTest {
                 .andExpect(jsonPath("$[1].studentNo").value(second));
 
         String firstId = invitedId(workspace, first);
-        mockMvc.perform(delete(invitations(workspace) + "/" + firstId).header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, invitations(workspace) + "/" + firstId))
                 .andExpect(status().isNoContent());
         // canceled is no longer an open invitation: a second cancel is 404
-        mockMvc.perform(delete(invitations(workspace) + "/" + firstId).header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(delete(invitations(workspace) + "/" + firstId).contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{\"confirmation\":{\"fingerprint\":\"unauthorized-boundary\",\"confirmed\":true}}").header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_INVITATION_NOT_FOUND"));
         // so is an accepted one, an unknown id, and one from another workspace
         String acceptedId = jdbcTemplate.queryForObject(
                 "select public_id::text from workspace_invitations where lower(invitee_email) = lower(?)",
                 String.class, accepted);
-        mockMvc.perform(delete(invitations(workspace) + "/" + acceptedId).header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(delete(invitations(workspace) + "/" + acceptedId).contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{\"confirmation\":{\"fingerprint\":\"unauthorized-boundary\",\"confirmed\":true}}").header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(delete(invitations(workspace) + "/" + SeedFixtures.UNKNOWN_ID)
+        mockMvc.perform(delete(invitations(workspace) + "/" + SeedFixtures.UNKNOWN_ID).contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{\"confirmation\":{\"fingerprint\":\"unauthorized-boundary\",\"confirmed\":true}}")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound());
         UUID other = createWorkspace();
-        mockMvc.perform(delete(invitations(other) + "/" + invitedId(workspace, second.toLowerCase()))
+        mockMvc.perform(delete(invitations(other) + "/" + invitedId(workspace, second.toLowerCase())).contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{\"confirmation\":{\"fingerprint\":\"unauthorized-boundary\",\"confirmed\":true}}")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound());
 
@@ -511,7 +511,7 @@ class WorkspaceInvitationsTest {
         UUID workspace = createWorkspace();
         String address = email("deleted");
         invite(workspace, List.of(Map.of("email", address))).andExpect(status().isOk());
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspace).header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + workspace))
                 .andExpect(status().isNoContent());
 
         User person = user("deleted", UserStatus.ACTIVE);

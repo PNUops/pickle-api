@@ -1,7 +1,6 @@
 package kr.ac.pusan.pickle.request;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -148,7 +147,7 @@ class RosterRecipientsTest {
     }
 
     @Test
-    void resolveIsForOwnersAndTheOrganisationsApprovers() throws Exception {
+    void resolveIsForOwnersAndTheExplicitRosterWork() throws Exception {
         UUID workspace = createWorkspace();
         User plain = addMember(workspace, user("plain", studentNo()));
         List<String> roster = List.of(studentNo());
@@ -373,8 +372,7 @@ class RosterRecipientsTest {
         UUID droppedInvitation = jdbcTemplate.queryForObject("""
                 select public_id from workspace_invitations where workspace_id = ? and invitee_student_no = ?
                 """, UUID.class, workspaceId, dropped);
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspace + "/invitations/" + droppedInvitation)
-                        .header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(kr.ac.pusan.pickle.support.TerminationFixtures.delete(mockMvc, objectMapper, ownerToken, "/api/v1/workspaces/" + workspace + "/invitations/" + droppedInvitation))
                 .andExpect(status().isNoContent());
 
         for (JsonNode request : List.of(rejected, canceled)) {
@@ -479,6 +477,7 @@ class RosterRecipientsTest {
         body.put("studentNos", studentNos);
         if (orgId != null) {
             body.put("orgId", orgId);
+            body.put("type", "LLM_API_KEY");
         }
         return postJson("/api/v1/workspaces/" + workspace + "/roster/resolve", token, body);
     }

@@ -7,11 +7,13 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmAccountKeyUsageResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmAccountUsageResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmConsumerSort;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.llm.dto.LlmUsageCostPointResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 /**
  * What one business account was used for (contract op
@@ -70,7 +72,6 @@ public class AdminLlmAccountUsageService {
                and u.day <= ?::date
              group by k.public_id, k.name
             having sum(u.requests) > 0
-             order by sum(u.cost_usd) desc, sum(u.requests) desc, k.name
             """;
 
     private static final String LINKED_KEYS_SQL =
@@ -88,8 +89,13 @@ public class AdminLlmAccountUsageService {
      * <b>Authorization is the caller's.</b> Nothing here reads the actor, so
      * the account must already have been scoped.
      */
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminLlmAccountUsageResponse usage(long accountId, int days) {
+        return usage(accountId, days, 0, 20, LlmConsumerSort.REPORTED_COST_DESC);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public AdminLlmAccountUsageResponse usage(long accountId, int days, int page, int size, LlmConsumerSort sort) {
         LocalDate to = ClockConfig.todayKst(clock);
         LocalDate from = to.minusDays(days - 1L);
 
@@ -102,7 +108,13 @@ public class AdminLlmAccountUsageService {
                 },
                 from, to, accountId);
 
-        List<AdminLlmAccountKeyUsageResponse> keys = jdbcTemplate.query(KEY_SQL,
+        String order = switch (sort) {
+            case REQUESTS_DESC -> "sum(u.requests) desc";
+            case TOKENS_DESC -> "(sum(u.input_tokens)+sum(u.output_tokens)) desc";
+            case REPORTED_COST_DESC -> "case when sum(u.priced_requests)>0 then sum(u.cost_usd) end desc nulls last";
+        };
+        List<AdminLlmAccountKeyUsageResponse> keys = jdbcTemplate.query(KEY_SQL
+                        + " order by " + order + ",sum(u.requests) desc,k.name,k.public_id limit ? offset ?",
                 (rs, rowNum) -> {
                     long priced = rs.getLong("priced_requests");
                     return new AdminLlmAccountKeyUsageResponse(
@@ -114,21 +126,20 @@ public class AdminLlmAccountUsageService {
                             priced == 0 ? null : rs.getBigDecimal("cost_usd"),
                             priced);
                 },
-                accountId, from, to);
-
-        long requests = 0;
-        long pricedRequests = 0;
-        BigDecimal cost = BigDecimal.ZERO;
-        for (AdminLlmAccountKeyUsageResponse key : keys) {
-            requests += key.requests();
-            pricedRequests += key.pricedRequests();
-            if (key.attributedCostUsd() != null) {
-                cost = cost.add(key.attributedCostUsd());
-            }
-        }
+                accountId, from, to, size, (long) page * size);
+        Totals totals = jdbcTemplate.queryForObject("select count(*) as keys_used,"
+                        + "coalesce(sum(requests),0) as requests,coalesce(sum(priced_requests),0) as priced_requests,"
+                        + "coalesce(sum(cost_usd),0) as cost_usd from (" + KEY_SQL + ") used_keys",
+                (rs, n) -> new Totals(rs.getLong("keys_used"), rs.getLong("requests"),
+                        rs.getLong("priced_requests"), rs.getBigDecimal("cost_usd")), accountId, from, to);
+        if (totals == null) { throw new IllegalStateException("account usage totals missing"); }
         Long linked = jdbcTemplate.queryForObject(LINKED_KEYS_SQL, Long.class, accountId);
         return new AdminLlmAccountUsageResponse(from, to,
-                pricedRequests == 0 ? null : cost, requests, pricedRequests,
-                keys.size(), linked == null ? 0 : linked.intValue(), points, keys);
+                totals.priced() == 0 ? null : totals.cost(), totals.requests(), totals.priced(),
+                (int) Math.min(Integer.MAX_VALUE, totals.keys()), linked == null ? 0 : linked.intValue(),
+                points, keys, clock.instant(), "Asia/Seoul", "DAILY_ROLLUP_ATTRIBUTION_CURRENT_ACCOUNT_BINDING",
+                page, size, totals.keys(), (int) Math.min(Integer.MAX_VALUE, (totals.keys() + size - 1) / size), sort);
     }
+
+    private record Totals(long keys, long requests, long priced, BigDecimal cost) { }
 }

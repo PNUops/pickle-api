@@ -55,10 +55,11 @@ class DomainCheckConstraintsTest {
                 values (?, 'x', '학생', 'USER', 'ACTIVE') returning id
                 """, Long.class, UUID.randomUUID() + "@pusan.ac.kr");
         assertThatThrownBy(() -> jdbc.update(
-                "insert into user_org_roles (user_id, org_id, role) values (?, ?, 'USER')",
+                "insert into user_org_roles (user_id, org_id, role, permission_mode, permission_payload, permission_revision) "
+                        + "values (?, ?, 'USER', 'FULL', '{\"work\":[],\"scopes\":{}}'::jsonb, nextval('institution_permission_revision_seq'))",
                 userId, orgId))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("chk_user_org_roles_role");
+                .hasMessageContaining("check constraint");
     }
 
     /**
@@ -73,12 +74,13 @@ class DomainCheckConstraintsTest {
                 insert into users (email, password_hash, name, role, status)
                 values (?, 'x', '기관관리자', 'ORG_ADMIN', 'ACTIVE') returning id
                 """, Long.class, UUID.randomUUID() + "@pusan.ac.kr");
-        jdbc.update("insert into user_org_roles (user_id, org_id, role)"
-                + " values (?, ?, 'ORG_ADMIN')", userId, orgId);
-        assertThatThrownBy(() -> jdbc.update(
-                "insert into user_org_roles (user_id, org_id, role)"
-                        + " values (?, ?, 'ORG_MANAGER')", userId, orgId))
-                .isInstanceOf(DataIntegrityViolationException.class);
+        SeedFixtures.grantOrgRole(jdbc, userId, orgId, kr.ac.pusan.pickle.user.UserRole.ORG_ADMIN);
+        assertThatThrownBy(() -> jdbc.update("""
+                insert into user_org_roles(user_id,org_id,role,permission_mode,permission_payload,permission_revision)
+                select user_id,org_id,role,permission_mode,permission_payload,nextval('institution_permission_revision_seq')
+                  from user_org_roles where user_id=? and org_id=?
+                """, userId, orgId))
+                .isInstanceOf(DataIntegrityViolationException.class).hasMessageContaining("user_org_roles_pkey");
     }
 
     @Test

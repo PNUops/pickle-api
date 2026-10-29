@@ -20,7 +20,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -99,6 +98,7 @@ class AdminOpenRouterAccountTest {
     @Autowired private RequestRepository requestRepository;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private kr.ac.pusan.pickle.security.institution.InstitutionActorProvider actorProvider;
     @Autowired private ObjectMapper objectMapper;
     @MockitoBean private OpenRouterClient client;
 
@@ -119,8 +119,8 @@ class AdminOpenRouterAccountTest {
         orgPublicId = jdbcTemplate.queryForObject(
                 "select public_id from orgs where id = ?", UUID.class, orgId);
         long adminId = SeedFixtures.sysadminId(jdbcTemplate);
-        sysAdmin = new AuthenticatedUser(adminId, UUID.randomUUID(), "sys@test",
-                UserRole.SYS_ADMIN, Map.of());
+        sysAdmin = actorProvider.authenticate(SeedFixtures.publicId(jdbcTemplate, "users", adminId),
+                jdbcTemplate.queryForObject("select token_version from users where id=?", Integer.class, adminId)).orElseThrow();
 
         when(client.credits(anyString())).thenReturn(
                 new OpenRouterClient.Credits(BigDecimal.TEN, BigDecimal.ZERO));
@@ -957,8 +957,7 @@ class AdminOpenRouterAccountTest {
 
         UUID unbound = insertKey(workspace, request(orgId, workspace, "manager"),
                 BigDecimal.ZERO, null);
-        AuthenticatedUser sysManager = new AuthenticatedUser(sysAdmin.id(), UUID.randomUUID(),
-                "manager@test", UserRole.SYS_MANAGER, Map.of());
+        AuthenticatedUser sysManager = currentActor(UserRole.SYS_MANAGER, null);
         assertThatThrownBy(() -> adminLlmKeyService.replaceLimits(sysManager, unbound,
                 limits(BigDecimal.ONE, first.getPublicId()), "127.0.0.1"))
                 .isInstanceOfSatisfying(ApiException.class,
@@ -968,8 +967,7 @@ class AdminOpenRouterAccountTest {
                 "insert into orgs (name) values ('범위 밖 기관') returning id", Long.class);
         OpenRouterAccount outside = accountRepository.saveAndFlush(new OpenRouterAccount(
                 otherOrg, "범위 밖", null, null, sysAdmin.id()));
-        AuthenticatedUser orgViewer = new AuthenticatedUser(sysAdmin.id(), UUID.randomUUID(),
-                "viewer@test", UserRole.ORG_VIEWER, Map.of(orgId, UserRole.ORG_VIEWER));
+        AuthenticatedUser orgViewer = currentActor(UserRole.ORG_VIEWER, orgId);
         assertThatThrownBy(() -> service.get(orgViewer, outside.getPublicId()))
                 .isInstanceOfSatisfying(ApiException.class,
                         error -> assertThat(error.getStatus().value()).isEqualTo(404));
@@ -1341,5 +1339,11 @@ class AdminOpenRouterAccountTest {
                 values ('LLM_API_KEY', ?, ?, ?, '시험', ?)
                 returning id
                 """, Long.class, workspaceId, ownerOrgId, sysAdmin.id(), name + UUID.randomUUID());
+    }
+    private AuthenticatedUser currentActor(UserRole role, Long institution) {
+        long id = jdbcTemplate.queryForObject("insert into users(email,password_hash,name,role,status) values(?,'unused','권한 합성',?::user_role,'ACTIVE') returning id",
+                Long.class, UUID.randomUUID() + "@pusan.ac.kr", role.name());
+        if (institution != null) { SeedFixtures.grantOrgRole(jdbcTemplate, id, institution, role); }
+        return actorProvider.authenticate(SeedFixtures.publicId(jdbcTemplate, "users", id), 0).orElseThrow();
     }
 }

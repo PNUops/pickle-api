@@ -54,6 +54,11 @@ public class OrgHeadroomService {
         List<Vm> orgVms = vmRepository.findActiveByOrgIds(
                 scope.isUnrestricted() ? null : scope.orgIds(), VmStatus.DELETED);
         ResourceTotalsResponse allocated = ResourceTotalsResponse.of(orgVms);
+        return headroom(allocated);
+    }
+
+    /** The caller has already constrained every allocation row before aggregation. */
+    public HeadroomResult headroom(ResourceTotalsResponse allocated) {
         PlatformCapacity capacity = capacity();
         long cpuThreads = capacity.cpuThreads();
         long memoryMb = capacity.memoryMb();

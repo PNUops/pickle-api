@@ -26,7 +26,13 @@ import org.jspecify.annotations.Nullable;
 public record ResourceAccessListResponse(
         @Schema(description = "이 목록이 속한 리소스") ResourceBrief resource,
         @Schema(description = "접근 권한 항목") List<ResourceAccessGrantView> grants,
-        @Schema(description = "현재 수행자가 이 목록을 변경할 수 있는지") boolean canManageAccess) {
+        @Schema(description = "현재 수행자가 이 목록을 변경할 수 있는지") boolean canManageAccess,
+        @Nullable List<EligibleMember> eligibleMembers) {
+
+    /** A scoped command can choose a current eligible member without opening a user directory. */
+    public record EligibleMember(UUID userId, String name,
+            kr.ac.pusan.pickle.workspace.WorkspaceMemberRole workspaceRole,
+            kr.ac.pusan.pickle.user.UserStatus userStatus) { }
 
     /** Name, state and owning workspace — the same fields a restricted row shows. */
     @Schema(description = "접근 권한이 없는 사람에게도 보이는 범위의 리소스 정보")
@@ -52,6 +58,6 @@ public record ResourceAccessListResponse(
         return new ResourceAccessListResponse(
                 new ResourceBrief(resource.publicId(), type, resource.name(), resource.displayName(),
                         resource.status(), workspaceId, workspaceName),
-                grants, canManageAccess);
+                grants, canManageAccess, null);
     }
 }

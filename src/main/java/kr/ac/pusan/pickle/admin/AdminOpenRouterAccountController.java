@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmAccountUsageResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmConsumerSort;
 import kr.ac.pusan.pickle.admin.dto.ConfirmOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.CreateOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.FinalizeOpenRouterCredentialRequest;
@@ -40,7 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminOpenRouterAccountController {
 
     private static final String WRITERS =
-            "hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')";
+            "hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')";
 
     private final AdminOpenRouterAccountService service;
 
@@ -89,8 +90,11 @@ public class AdminOpenRouterAccountController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID accountId,
             @Parameter(description = "오늘을 포함해 거슬러 올라갈 일수")
-            @RequestParam(defaultValue = "30") @Min(1) @Max(90) int days) {
-        return service.usage(principal, accountId, days);
+            @RequestParam(defaultValue = "30") @Min(1) @Max(90) int days,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+            @RequestParam(defaultValue = "REPORTED_COST_DESC") LlmConsumerSort sort) {
+        return service.usage(principal, accountId, days, page, size, sort);
     }
 
     @PatchMapping("/{accountId}")

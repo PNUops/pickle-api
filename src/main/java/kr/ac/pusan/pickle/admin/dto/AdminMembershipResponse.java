@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code AdminMembershipResponse} — one workspace this account
@@ -19,5 +20,5 @@ public record AdminMembershipResponse(
         String workspaceName,
         WorkspaceKind workspaceKind,
         WorkspaceMemberRole role,
-        List<UUID> vmOrgIds) {
+        @Nullable List<UUID> vmOrgIds) {
 }

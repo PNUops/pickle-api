@@ -20,7 +20,6 @@ import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
-import kr.ac.pusan.pickle.vm.VmQueryService;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
@@ -47,13 +46,13 @@ public class VmPeriodService {
 
     private final VmRepository vmRepository;
     private final VmEventRepository vmEventRepository;
-    private final VmQueryService vmQueryService;
+    private final AdminVmQueryService vmQueryService;
     private final AdminVmAccess adminVmAccess;
     private final AuditService auditService;
     private final Clock clock;
 
     public VmPeriodService(VmRepository vmRepository, VmEventRepository vmEventRepository,
-            VmQueryService vmQueryService, AdminVmAccess adminVmAccess, AuditService auditService,
+            AdminVmQueryService vmQueryService, AdminVmAccess adminVmAccess, AuditService auditService,
             Clock clock) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
@@ -66,7 +65,8 @@ public class VmPeriodService {
     @Transactional
     public VmDetailResponse updatePeriod(AuthenticatedUser actor, UUID publicVmId,
             VmPeriodUpdateRequest request, String ip) {
-        Vm vm = adminVmAccess.requireWritableVm(actor, publicVmId);
+        actor = adminVmAccess.currentForWrite(actor);
+        Vm vm = adminVmAccess.requireWritableVm(actor, publicVmId, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PERIOD);
         LocalDate newStart = request.startDate() != null ? request.startDate() : vm.getStartDate();
         LocalDate newEnd = resolveEndDate(request, newStart);
         ApiException refusal = changePeriod(actor, vm, newStart, newEnd, null, ip);
@@ -75,7 +75,7 @@ public class VmPeriodService {
         }
         // Admin period edit is org-scoped, not workspace-membership-scoped, so the
         // requester holds no grant on this VM → myResourceRole null.
-        return vmQueryService.detailOf(vmRepository.findById(vm.getId()).orElseThrow(), null);
+        return vmQueryService.get(actor, vm.getPublicId());
     }
 
     /**
@@ -90,6 +90,7 @@ public class VmPeriodService {
      */
     public @Nullable ApiException changePeriod(AuthenticatedUser actor, Vm vm, LocalDate newStart,
             @Nullable LocalDate newEnd, @Nullable UUID batchId, String ip) {
+        if (!adminVmAccess.canWrite(actor, vm, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_PERIOD)) { return AdminVmAccess.vmNotFound(); }
         long vmId = vm.getId();
         if (isDeletionBound(vm)) {
             return deletionBound();

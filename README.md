@@ -30,15 +30,16 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   동시에 승인되어 결재자 없는 승인 기록이 남습니다. 이름은 사용 기한을 가지며 연장하지
   않으면 레코드가 내려가고 예약 기간 동안만 같은 워크스페이스가 되살릴 수 있습니다.
 - **LLM API 키 관리**: 승인된 신청에서 키를 만들고 발급과 한도, 정지, 재개, 폐기 상태를
-  관리합니다. 키별 metadata와 사용량 집계는 전역 학생 지원 권한으로 조회하며, 기관별
-  운영 관측은 기관 역할 범위를 따릅니다. 7·30·90일 수요와 주요 소비처,
+  관리합니다. 키별 metadata, 관측, 비용 읽기와 예산 변경은 서로 다른 기관 업무입니다.
+  부여 출처마다 실제 기관과 LLM workspace 범위를 확인합니다. 7·30·90일 수요와 주요 소비처,
   실제 한도 차단, usage 전달 신뢰도를 DB cache에서 함께 조회합니다. 키 하나와 사업
   account 하나, 모델과 호출 경로, 기능 권한별 분해를 제공합니다.
 - **usage event의 금액은 귀속이지 청구가 아닙니다**: `llm_usage_events.cost_usd`는 요청마다
   upstream이 알려 준 값이고, 한도를 견주거나 잔액을 말하는 자리는 언제나 vendor meter입니다.
   둘은 창이 다르고 이쪽에는 가격이 붙지 않은 요청이 빠져 있으므로 서로 빼거나 한 숫자로
-  합치지 않습니다. **값이 없는 것은 0이 아닙니다** — 자체 서빙 요청에는 금액이라는 것이
-  없어서, 모든 금액은 가격이 붙은 요청 수와 함께 다닙니다.
+  합치지 않습니다. **값이 없는 것은 0이 아닙니다.** 보고 금액은 가격이 붙은 요청 수와
+  함께 제공합니다. TOKEN/CREDIT 예산 축과 실제 공급 경로는 별개이며 보고 금액만으로
+  사용자나 플랫폼의 부담을 확정하지 않습니다.
 - **기관별 OpenRouter 사업 account**: 한 기관이 사업별 account를 여러 개 등록하고,
   검증된 management credential을 staged overlap으로 교체합니다. 금액 축 key는 승인 시 한
   account에 불변 binding되며, 그 account의 credential 말고 쓸 수 있는 관리 자격증명은
@@ -48,6 +49,10 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   `GET /api/v1/admin/llm/status`와 `/metrics`는 DB와 raw usage event만 읽으며 upstream을
   직접 호출하거나 routing을 바꾸지 않습니다. 지표는 event에 기록된 마지막 처리 upstream의
   최종 결과이므로 중간 retry 경로나 uptime으로 해석하지 않습니다.
+  상태 응답의 `modelRoutes`는 같은 응답에서 읽을 수 있는 공급원에 연결된 공개·활성 TOKEN
+  모델의 주·대체 구성 관계입니다. 전체 모델 목록이나 실제 처리 경로를 뜻하지 않습니다.
+  `VISIBLE`은 공개 ID와 이름을 제공하며, 기관 응답의 `NOT_PROVIDED`는 미설정·범위 밖·미등록을
+  구별하지 않습니다. 시스템 응답만 구성이 없는 참조를 `NOT_CONFIGURED`로 구분합니다.
 - **인가 판정과 감사**: 리소스마다 붙는 접근 목록으로 그 리소스의 접근을 판정하고, 되돌릴 수 없는 작업은
   영구 기록으로 보존합니다.
 - **계정과 인증**: 회원가입, 메일 인증, 2단계 인증을 담당합니다. 계정 상태가 바뀌면
@@ -68,8 +73,8 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   권한으로 현재 활성 대상 인원과 조회 가능한 명단 일부를 확인합니다. 미리보기는 발송 예산을
   쓰지 않습니다. 실제 발송은 큐 접수 때 명단과 주소를 한 번 확정하므로 예상과 달라질 수 있습니다.
   `GET /api/v1/admin/announcements/{announcementId}`는 당시 본문과 대상, 저장 인원을 제공합니다.
-- **공지 편집 조회**: `GET /api/v1/admin/notices/{noticeId}`는 관리자 목록과 같은 여섯 역할이
-  예정·게시·종료 공지를 조회하는 경로입니다. 본문 입력은 평문 20,000자까지이며 이미지 첨부는
+- **공지 편집 조회**: `GET /api/v1/admin/notices/{noticeId}`는 공지 읽기 또는 관리 업무로
+  예정·게시·종료 공지를 조회하는 경로입니다. 시스템 계층의 기존 조회 범위도 유지합니다. 본문 입력은 평문 20,000자까지이며 이미지 첨부는
   등록 후 수행합니다. `GET /api/v1/notices?popup=true`는 기존 공개 범위 안에서 팝업만 조회합니다.
 
 ## 동작 방식
@@ -92,12 +97,13 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   되돌리기 어려운 작업은 로그인 상태여도 짧은 유효기간의 재인증 토큰을 다시 요구하며,
   인터셉터가 대상 작업 전체에 일괄 적용합니다. 회원가입 비밀번호는 유출 이력 차단목록과
   대조합니다.
-- **권한 매트릭스를 테스트가 강제합니다.** 운영자가 확정한 역할×기능 매트릭스 YAML과
-  실제 엔드포인트 인가 설정을 `PermissionMatrixTest`가 1:1로 대조합니다.
+- **인가 경계를 테스트합니다.** `PermissionMatrixTest`는 YAML의 엔드포인트와 controller
+  역할 진입 범위를 1:1로 대조합니다. 실제 기관 업무와 부여 출처, workspace 범위 및 응답
+  필드의 공개 조건은 별도의 판정과 HTTP 테스트로 검증합니다.
 - **책임 경계** — 이 서버는 SSH 연결을 열지 않습니다. 웹 터미널은 별도 브리지가
   담당하고, 필요한 OpenSSH 공개키 파싱과 키쌍 생성은 와이어 포맷을 직접 다룹니다.
-- **자격증명 문제는 기동에서 걸러냅니다.** 데이터베이스 비밀번호, JWT 서명 키, 자격증명
-  암호화 키, 내부 토큰 중 하나라도 비어 있으면 서버가 실행되지 않습니다.
+- **자격증명 문제는 사용 전에 걸러냅니다.** 데이터베이스 비밀번호, JWT 서명 키, 자격증명
+  암호화 키가 비어 있으면 기동을 거부합니다. 기계 연동은 전용 토큰이 없으면 해당 경로를 거부합니다.
 - **테스트가 외부 런타임을 요구하지 않습니다.** Zonky embedded-postgres와 WireMock으로
   돌기 때문에 `mvn verify` 하나로 전체 테스트가 끝납니다.
 - **플랫폼 서브도메인의 DNS 레코드를 서버가 직접 씁니다.** 이름 하나에 A 레코드 하나를
@@ -105,6 +111,128 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   vhost보다 먼저, 내릴 때는 vhost 뒤에). SDK 대신 얇은 HTTPS 클라이언트를 쓰고, 서비스
   계정 인증은 이미 쓰고 있는 jjwt로 RS256 JWT를 서명해 토큰으로 바꿉니다. 제공자가 설정되지
   않았으면 기동은 되고 플랫폼 서브도메인 공개만 거부됩니다.
+
+## 사업 계정과 키 탐색
+
+`GET /api/v1/admin/llm/keys`는 기존 기관·workspace·신청·계정 필터에 `cohort`와 `sort`를
+적용한 뒤 전체 개수와 현재 페이지를 반환합니다. `cohort=COMMITTED|AWAITING_PROVISION|USAGE_UNREPORTED`는
+현재 live 양수 한도와 발급·vendor meter 상태를 구분합니다. 계정 상세의 `keyNavigation`은
+현재 읽을 수 있는 키 부분집합이고, `boundKeyCount`와 계정 전체 `allocation`은 별도 값입니다.
+TOKEN 사용량은 보존된 당일 TOKEN 이벤트에서 일괄 집계하며 저장된 한도, vendor meter의
+보고 잔여와 실제 gateway 적용 상태를 구분합니다. RPM·TPM·동시성의 서비스 기본값과
+실시간 처리 여유는 보고되지 않습니다.
+
+`policyModel`과 `policyFeature`는 현재 공개 모델 cache와 저장된 허용·차단 패턴, 기능 정책으로
+가능한 키를 탐색합니다. 실제 처리 성공이나 현재 공급 경로의 가용성을 보장하지 않습니다.
+금액·관측·정책에 따른 필터와 정렬은 조건 적용 전 모집단 전체에 해당 필드 읽기가 허용될 때만
+제공합니다. 권한이 있으나 관측되지 않은 행은 개수에 남고 vendor 잔여 정렬에서는 뒤에 놓입니다.
+
+`GET /api/v1/admin/llm/usage`의 소비처는 `consumerPage`, `consumerSize`, `consumerSort`로,
+현재 한도 검토는 `reviewPage`, `reviewSize`로 탐색합니다. `GET /api/v1/admin/llm/accounts/{id}/usage`는
+`days`, `page`, `size`, `sort`를 받습니다. 계정 사용량의 키 페이지와 `keysUsed`, 전체 합계는
+같은 KST 일별 rollup·현재 계정 결합 관계에서 계산합니다. 응답의 실제 일자 범위와 출처를
+함께 확인하며 보존된 원시 요청의 capacity 키 개수와 동일한 값으로 해석하지 않습니다.
+
+키 상세 GET의 `projectLimits=true`는 저장된 현재 한도와 제안 값을 같은 서버 계산으로
+비교합니다. `proposedCreditLimit`은 생략하면 변경하지 않으며 0 이상, 정수 10자리·소수 2자리까지
+받습니다. `proposedCreditLimitResetSet=true`에서 reset 값을 생략하면 명시 총액 한도이고,
+`false`이면 기존 창을 유지합니다. `proposedOpenrouterAccountId`는 기존 최초 연결 조건에만
+사용합니다. `limitsProjection.draft`는 전달한 제안을 그대로 구분해 반환하며, 이 GET은 키 연결,
+credential 사용 기록, 잡 등록이나 vendor 호출을 실행하지 않습니다.
+
+단건 제안과 공통 일괄 미리보기의 `accountImpact`는 읽기가 허용된 계정 전체의 변경 전후
+서버 cache snapshot입니다. 각 키의 사용량을 한도 안에서 clamp한 뒤 모든 적용 대상의 기여를
+교체합니다. 관측 출처·시각·stale, 미발급·미보고 키 수와 reset 창 불일치를 독립적으로 제공합니다.
+미보고 키에 현재 한도를 대입한 금액은 계정의 실측값이나 보장된 상한이 아닙니다. 창을 바꾼
+뒤의 잔여와 초과 여부는 이전 창 사용량으로 추정하지 않고 null로 둡니다. 영향 정보를 읽을 수
+없으면 `NOT_PROVIDED`이며 기존 한도 변경 권한은 유지합니다. 이 정보는 새 예약이나 금융
+잠금 조건이 아니고, 저장된 미리보기를 다시 읽을 때 현재 필드 권한으로 마스킹합니다.
+
+## LLM 수요와 현재 한도
+
+`GET /api/v1/admin/llm/capacity`는 `from`을 포함하고 `to`를 제외하는 UTC 시각 구간으로
+보존된 요청 수요를 조회합니다. 최대 기간은 90일이며 응답의 실제 기간과 `generatedAt`,
+`timezone`, `bucketSeconds`를 함께 제공합니다. 기관과 workspace, 보이는 등록 upstream의
+공개 ID, 현재 연결된 사업 계정의 공개 ID(`openrouterAccountId`), 요청 당시 공개 모델 이름과 오류 유형으로 좁힐 수 있습니다. `errorTypeMissing=true`는
+정상 응답을 제외한 오류 유형 미기록 요청이며, `errorType`과 함께 지정할 수 없습니다.
+`reasonCategory`를 함께 지정하면 같은 오류 유형의 공급 경로 결과와 전역 중계 포화도
+해당 사유 행의 정확한 소비처로 나누어 조회합니다. 시도 횟수 미기록을 실제 0으로
+간주하지 않으며, 근거가 부족한 과거 거절은 미분류로 보존합니다.
+
+요약과 시계열, 거절 사유, 기관·workspace·키 소비처 페이지는 같은 서버 조건을 적용합니다.
+소비처는 `group=ORG|WORKSPACE|KEY`, `page`, `size`로 탐색합니다. 키 행의 현재 한도는
+조회 시점의 저장된 override이며 과거 적용값이나 gateway 반영 완료를 뜻하지 않습니다.
+실제 서비스 기본값은 미보고로 표시합니다. 최소 기관·workspace 선택 참조는 관측 업무가
+허용한 키 관계만 제공하며 별도 workspace 관리 권한을 열지 않습니다.
+
+`quality`는 실제 raw 삭제 경계와 전달 상태를 제공합니다. 삭제된 전체 구간과 버킷의
+수치는 null이며 부분 삭제 구간의 숫자는 남아 있는 관측분입니다. 마지막 event 수신 시각은
+완전한 수집을 보장하는 시각이 아닙니다. 최종 upstream 소비와 TOKEN/CREDIT 예산 축,
+보고 금액은 서로 다른 정보이며 중간 재시도 부하나 개인별 GPU 점유율로 환산하지 않습니다.
+전역 장비 상태를 읽을 수 있는 기존 SYS 응답은 별도의 `telemetry.device`를 제공합니다.
+ORG 응답은 `telemetryVisible=false`, `telemetry.status=NOT_PROVIDED`, `device=null`이며
+전역 원천·장비·엔진 이름을 제공하지 않습니다. 장비 표본은 기관·workspace·원인·공개 모델의
+수요 필터와 다른 모집단입니다. `telemetrySourceId`는 서버가 설정한 단일 원천의 공개 ID이며,
+수요의 최종 upstream 필터와 독립입니다. 원천 설정이 없으면 `NOT_CONFIGURED`, 요청 기간에
+보고가 없으면 `NOT_REPORTED`, 보고가 있으면 `REPORTED`입니다. 이 상태는 실제 설치나
+장비 가용성, 기간 전체의 수집 완료를 증명하지 않습니다.
+
+### 장비 관측 표본
+
+`POST /internal/inference-observations`는 전용 보고자만 사용하는 경로입니다. 기본적으로
+비활성이고 별도 bearer·실제 TCP peer·고정 source/upstream UUID가 모두 필요합니다.
+SSH·relay·LLM gateway 토큰이나 사용자 JWT를 공유하지 않습니다. 직접 연결을 전제로
+`server.forward-headers-strategy=none`만 지원하며, request wrapper의 원래 peer를 확인합니다.
+Forwarded/X-Forwarded-For나 본문의 hostname을 인증 근거로 사용하지 않습니다.
+
+본문은 UTF-8 JSON 512 KiB 이하의 version1 표본 한 개입니다. source UUID와 producer epoch,
+안전 정수 sequence, UTC 밀리초 `observedAt`과 최초 `reporterReceivedAt`, 최소 host 측정값과
+정해진 누적 추론 지표만 받습니다. source별 UTC 분에 새 표본 한 개를 저장합니다. 같은
+source/epoch/sequence의 정확한 본문 bytes가 같으면 `DUPLICATE`, 다르면 409 충돌입니다.
+서버의 `contentSha256`은 수신 bytes의 SHA256이며 원 HTTP 본문을 중복 영구 저장하지 않습니다.
+보고자는 최초 import 시각을 포함한 불변 outbox bytes를 재전송하고, ACK의 key와 byte SHA가
+일치하는 `ACCEPTED` 또는 `DUPLICATE`만 완료로 처리해야 합니다.
+
+host는 CPU의 1분 load average(백분율이 아님), 메모리·swap bytes, GPU 사용률·온도·전력과
+지원 여부를 구분합니다. 통합 메모리와 GPU 표본을 두 용량으로 더하지 않습니다. 측정된 0,
+미지원, 미보고, source 실패를 구분하고 임의 사용자 label이나 원시 Prometheus 본문을
+저장하지 않습니다. 허용 secondary label은 빈 값과 escaped newline을 보존하지만
+PostgreSQL JSONB가 표현할 수 없는 NUL은 치환 없이 거부합니다.
+
+읽기는 같은 `[from,to)`와 실제 `bucketSeconds`를 사용합니다. gauge는 명시 측정 시각을
+존중하고, 비율·히스토그램 평균은 양끝이 요청·보존 범위 안인 완전 관측 구간만 종료 시각의
+버킷으로 묶습니다. 부분 구간을 균등 분할해 요청 분포를 추정하지 않습니다. 비율은 누적
+차분 합/실제 경과 시간 합, histogram mean은 sum 차분 합/count 차분 합입니다. min/max는
+gauge 표본값 또는 완전 구간 평균의 범위이며 분위수가 아닙니다. `intervalSeconds`는 완전
+관측 구간의 실제 초 합으로 버킷 길이를 넘을 수 있고 시간 점유율이나 연속 센싱 비율이 아닙니다.
+첫 표본·identity 변경·reset·gap·불가능한 delta의 비율은 null입니다. snapshot 행수와 개별
+metric 측정 시각·수가 다를 수 있으므로 행수 0만으로 실제 metric 0을 숨기지 않습니다.
+
+새 표본만 90일 만료를 적용합니다. `retainedFrom`은 서버의 즉시 조회 cutoff이며 물리 삭제
+완료 watermark가 아닙니다. `WITHIN|PARTIAL|OUTSIDE`와 미수집 구간을 구분하고 보존 범위 밖의
+수치는 null입니다. 최신 source의 freshness와 과거 요청 기간의 조회 성공도 구분합니다.
+물리 정리는 JobRunr가 1시간마다 1,000행씩 최대 10회 수행하며 워커가 멈추면 지연됩니다.
+ingress를 비활성화해도 이 정리는 유지하고 기존 usage·body·감사 보존 정책은 바꾸지 않습니다.
+
+조회는 fetch size128 cursor로 최대 130,000행을 순회하고 원문 목록을 메모리에 모으지 않습니다.
+최대 1,440버킷·32 engine identity·20,000 metric 집계와 device JSON 4 MiB 상한을 적용합니다.
+상한에 걸리면 `truncated=true`와 누락값으로 표시하며 관측값 0으로 채우지 않습니다.
+일반 애플리케이션 로그는 secret masking을 적용한 Logback 콘솔 출력이고, 감사 행위는
+append-only `audit_logs`, 요청 사용량과 장비 표본은 각각 별도 테이블의 데이터입니다.
+
+설정은 다음 환경 변수로 제공합니다.
+
+| 환경 변수 | 의미 |
+|---|---|
+| `PICKLE_INFERENCE_OBSERVATIONS_ENABLED` | 기본 `false`, 기계 보고 수신 활성화 |
+| `PICKLE_INFERENCE_OBSERVATIONS_TOKEN` | 보고자 전용 현재 bearer |
+| `PICKLE_INFERENCE_OBSERVATIONS_PREVIOUS_TOKEN` | 교체 중인 이전 bearer, 현재 값도 필수 |
+| `PICKLE_INFERENCE_OBSERVATIONS_SOURCE_IP` | 실제 연결의 고정 TCP peer |
+| `PICKLE_INFERENCE_OBSERVATIONS_SOURCE_ID` | 고정 관측 원천 UUID |
+| `PICKLE_INFERENCE_OBSERVATIONS_UPSTREAM_ID` | 연결된 등록 공급원의 공개 UUID |
+
+토큰·주소·UUID 기본값이나 등록 UI, 환경 seed는 없습니다. 실제 자격증명 발급·설치·네트워크
+허용·DB 배포는 별도의 운영 작업입니다.
 
 ## 유료 모델 허용·차단
 
@@ -386,44 +514,96 @@ GPU 양쪽의 편집 권한 및 중단 동의를 확인합니다. `detach`는 �
 연결 후 검토 기간이 온전히 지난 상태에서 5분 구간의 80% 이상과 최근 10분 이내 표본을
 확보해야 저사용을 판정합니다. 가상머신을 바꾸면 이전 연결의 표본을 사용하지 않습니다.
 
-## 기관 명단과 신청 알림
+## 기관 업무 권한
 
-기관 역할 명단은 해당 기관의 역할 행으로 조회합니다. 계정의 최고 역할과 구분하며,
-기관별 수신 설정과 활성 계정, 실제 수신자 및 제외 사유를 함께 제공합니다.
-`GET /admin/orgs/{orgId}/operations`는 시스템 계층 전체와 역할을 보유한 기관 계층에
-열려 있습니다. 미리보기는 같은 경로의 `POST /preview`, 전체 저장은 `PUT`입니다.
-기관 변경은 기관 관리자와 시스템 관리자에게 허용됩니다.
+`GET /api/v1/me/institution-authority`는 현재 계정의 실제 역할, 기관별 부여 출처와 revision,
+업무 목록 및 전체·선택 지정 상태를 반환합니다. `ORG_ADMIN`·`ORG_MANAGER`·`ORG_VIEWER`는
+표시 역할과 controller 진입을 나타냅니다. 실제 수행에는 해당 출처의 업무와 대상 범위가
+필요합니다. 한 출처의 업무에 다른 출처의 workspace 목록을 붙여 사용할 수 없습니다.
 
-전체 명단 저장과 단건 역할·수신 변경에는 `expectedRevision`이 필요합니다. 기관 역할
-회수는 같은 값을 query로 보냅니다. 오래된 버전은 409로 거절하며 명단과 대상 기관의
-전후 감사는 함께 저장합니다. 계정의 행 버전도 동시 변경으로 역할이나 토큰 버전이
-덮어써지는 것을 막습니다.
+`FULL`은 해당 기관의 등록 업무와 명시된 전역 지원 및 위임을 포함합니다. `SELECTED`는
+저장한 업무만 가지며 모든 선택 항목을 골라도 FULL이나 위임으로 바뀌지 않습니다.
+VM, LLM, DOMAIN, GPU, WORKSPACE 그룹마다 하나의 `ALL` 또는 `LISTED` 범위를 사용합니다.
+ALL은 이후 생기는 workspace에도 적용합니다. LISTED는 공개 UUID로 식별하며 빈 목록이나
+삭제된 항목을 전체 범위로 바꾸지 않습니다. 기관 소속이 없는 workspace의 기관 소유값을
+만들지도 않습니다.
 
-신청 메일은 활성 승인자 전체 또는 지정 명단으로 설정합니다. 지정 0명도 저장할 수
-있으며 자동 대체 발송은 없습니다. 새 기관은 지정 0명으로 시작합니다. 기존 미전환
-설정은 조회와 명시 저장으로 전환합니다. 신청자 확인 알림과 기관 승인자 알림은 별도이며,
-승인자 콘솔 알림은 메일 수신 지정과 분리됩니다.
+개별 LLM 키 비용 읽기는 실제 FULL 출처의 전역 예외를 유지합니다. SELECTED의
+`llm.key.cost.read`는 실제 기관과 LLM workspace 범위에 한정합니다. 키 예산과 사업 계정
+재무·자격증명, 별도의 기관 집계에는 이 전역 예외를 적용하지 않습니다. 유료 신청 승인과
+새 유료 명단 지급은 같은 출처가 해당 대상의 결정 또는 명단 지급 업무와 예산 업무를
+함께 가져야 합니다. 이미 승인된 대상자의 재시도는 저장된 승인안과 별도 재시도 업무를
+사용하며 승인안을 바꾸지 않습니다.
 
-큐 등록 당시 수신자와 주소를 보존합니다. 이후 기관 명단이나 계정 상태가 바뀌어도
-대기 중인 신청 메일은 재선정하거나 재검사하지 않습니다. 발송 결과의 `SENT`는 SMTP
-인계이며 메일함 도착을 뜻하지 않습니다.
+관리자 응답의 `metadataVisible`과 `allowedWorkIds`는 실제 대상에서 확인한 공개 조건과
+업무를 나타냅니다. 관측과 금융, 명령에 필요한 설정 참조도 따로 투영합니다. 읽을 수
+없는 값은 null로 구분하며 0이나 빈 목록으로 대신하지 않습니다. 명령만 가진 담당자는
+허용된 작업을 선택하고 현재 설정을 확인할 최소 참조를 받습니다. 토큰 설정은 다른 예산
+설정을 보존하고, 생략한 입력은 잠근 현재 값을 유지합니다. 금액과 `chatEnabled`는 생략할
+수 있지만 명시 null은 거절합니다.
+
+LLM 일괄 변경의 diff도 현재 읽을 수 있는 필드만 제공합니다. 토큰 담당자가 Chat만
+바꾸면 `chatEnabled`의 허용 여부만 표시하며 다른 유료 기능 목록을 함께 보내지 않습니다.
+금융 설정을 읽을 권한을 잃으면 저장된 결과와 중복 요청 응답의 금융 diff를 가리고, 읽을 수 없는
+변경 본문은 null로 반환합니다. 이전 미리보기의 확인값이 숨긴 금융 값을 포함했을 수
+있으면 그 확인값을 비우고 새 미리보기를 요구합니다. 같은 권한으로 만든 정상 토큰
+전용 변경 이력은 계속 읽을 수 있습니다.
+
+권한 상태가 없거나 서로 맞지 않으면 기관 인가를 거절합니다. 최고 역할이나 로그인,
+개발 시드로 기존 부여를 복구하지 않습니다. 개인 OWNER·ACL 및 실제 SYS 역할은 별도로
+판정합니다. 쓰기는 기존 관리 잠금 뒤 같은 트랜잭션의 변경을 반영하고 현재 계정과
+토큰 버전, 부여 출처를 다시 확인합니다. 기관 업무 편집만으로 개인 로그인 세션 전체를
+폐기하지 않습니다.
+
+V143은 기존 기관 행을 명시 FULL 또는 고정 SELECTED 목록으로 변환하고 이후 role-only
+저장을 DB 제약으로 거절합니다. 기존 명시 payload와 revision은 유지합니다. 적용 전 DB
+복구 지점이 필요하며, 변환 뒤에는 권한 payload를 이해하지 못하는 이전 jar로 복구할 수
+없습니다. 배포 복구 방식은 `fix-forward` 또는 검증한 DB 복원을 사용합니다.
+
+## 기관 담당자와 신청 알림
+
+`GET /admin/orgs/{orgId}/operations`는 실제 기관의 담당자 읽기와 신청 메일 읽기·설정 업무를
+따로 판정합니다. 권한을 읽을 수 없으면 `permission`은 null이며 메일 설정을 읽을 수
+없으면 해당 필드는 null입니다. 권한 편집은 실제 FULL의 위임 또는 SYS_ADMIN에게 허용합니다.
+전체 미리보기는 같은 경로의 `POST /preview`, 저장은 `PUT`입니다.
+
+전체 저장은 기관 `expectedRevision`과 현재 명단 전체의 `expectedPermissionRevisions`,
+각 담당자의 명시 `permission`을 받습니다. 신규 부여의 source revision은 0입니다. 단건
+부여와 회수도 기관 revision과 해당 source revision을 확인합니다. 오래된 값은 409로
+거절하며 명단과 파생 표시 역할, 새 source revision 및 감사는 같은 트랜잭션으로 저장합니다.
+마지막 활성 FULL 또는 실제 신청 결정 담당자 보호를 적용하고 종류별 담당 공백은 별도로
+안내합니다. 긴급 계정 정지는 권한 명단을 계산할 수 없어도 수행하며, 감사에 그 상태를
+기록하고 인원 수를 만들어 내지 않습니다. 이 예외는 권한 데이터 불일치에 한정하며
+DB나 감사 저장이 실패하면 정지 변경도 함께 롤백합니다.
+
+수신 설정은 `/operations/request-mail/preview`와 `/operations/request-mail`로 따로
+미리보고 저장합니다. 이 요청은 `expectedRevision`, `mailMode`, `recipientIds`를 받고 권한
+payload를 변경하지 않습니다. 담당자 GET과 메일 preview의 `requestType`·`workspaceId`는
+둘을 함께 생략하거나 함께 지정하는 조회 문맥입니다. `selectionContext`와 최소
+`selectionTargets`를 제공하며 문맥을 바꿔도 전역 수신 명단과 모드는 바꾸지 않습니다.
+실제 신청 종류와 기관, workspace에 결정 업무가 있는 활성
+담당자를 수신 후보로 확인합니다. 활성 결정 담당자 전체 또는 지정 명단을 선택할 수 있고,
+지정 0명도 저장할 수 있습니다. 새 기관은 지정 0명으로 시작하며 명시 지정에는 자동 대체
+발송이 없습니다. 신청자 확인 알림과 기관 담당자 알림은 별도입니다.
+
+큐 등록 당시 수신자와 주소, 본문 및 수신 정책을 보존합니다. 이후 권한이나 계정 상태가
+바뀌어도 대기 메일을 재선정하거나 기존 알림 본문을 다시 가리지 않습니다. 연결된 현재
+상세와 새 변경은 현재 인가를 검사합니다. 발송 결과의 `SENT`는 SMTP 인계이며 메일함
+도착을 뜻하지 않습니다.
 
 ## 사용자 관계와 접근 조건
 
-기관 열람자와 운영자, 관리자는 시스템 계층 계정을 제외한 사용자의 프로필, 워크스페이스,
-초대, 신청 결과와 자원 metadata를 전역 조회합니다. 시스템 계층은 모든 계정을 조회합니다.
-역할 부여 자체를 지원 자격으로 사용하며 직책이나 학생의 기관 연결을 추가로 요구하지 않습니다.
-`GET /api/v1/admin/users/{userId}/support`는 실제 구성원 관계와 신청 대상자 상태,
-생성된 리소스를 연결합니다. 이메일과 저장 학번으로 대기 초대를 연결하며 이미 수락된
-초대는 실제 사용자 ID를 따릅니다. 기존 종류별 관리자 목록과 단건 상세에도 같은 지원
-읽기를 적용합니다. `orgId`는 조회 필터이며 `GET /api/v1/admin/support-orgs`는 비활성
-기관을 포함한 필터 옵션의 ID와 이름, 상태를 제공합니다. 신청과 도메인 목록의
-`workspaceId`는 워크스페이스로 대상을 좁힙니다.
+학생 검색과 프로필 조회·정정은 각각의 명시 업무로 판정합니다. 전역 학생 지원을 가진
+기관 담당자도 SYS 계정의 전체 프로필을 조회하지 않으며, 실제 workspace 또는 자원 업무에
+필요한 계정 참조는 별도로 제공합니다. `GET /api/v1/admin/users/{userId}/support`의
+workspace와 초대, 신청, 자원 및 ACL 관계는 종류별 조회 업무와 범위로 다시 제한합니다.
+관계 일부를 읽을 수 없으면 `relationshipsLimited`와 null로 표시합니다. 전역 프로필 읽기만으로
+전체 관계 그래프를 열거나 제한된 관계의 수를 전체 수처럼 합산하지 않습니다.
 
-사용자 상세의 `supportCapabilities`는 프로필 조회와 정정, 계정 활성화의 가능 여부를
-구분합니다. 워크스페이스 구성원의 `supportDetailVisible`도 같은 계정 공개 기준을
-따릅니다. 자격증명과 원문 내용, 물리 인프라 조회 및 실제 기관 집행 권한은 기존 인가를
-사용합니다. LLM 키 사용량의 토큰·금액·모델별 집계는 지원 metadata에 포함합니다.
+`orgId`는 조회 조건이며 학생이나 workspace의 기관 소유를 뜻하지 않습니다.
+`GET /api/v1/admin/support-orgs`는 필요한 기관 참조의 ID와 이름, 상태를 제공합니다.
+`supportCapabilities`와 구성원의 `supportDetailVisible`은 프로필 상세와 정정, 계정 활성화의
+현재 조건을 구분합니다. 자격증명과 원문 내용, 물리 인프라는 각각의 기존 인가를 유지합니다.
 
 `GET /api/v1/admin/users/{userId}/support/access?type=VM&resourceId=...`는 지정 리소스의
 구성원 자격과 개인 부여, 워크스페이스 전체 부여 및 계정 상태를 읽습니다. 워크스페이스
@@ -432,8 +612,8 @@ LLM 호출의 성공 판정이 아니며, 이미 발급된 비밀번호와 키 �
 않습니다. 외부 도메인이 아닌 VM 연결 도메인은 해당 VM의 접근 조건과 관리자 도메인
 목록에서 확인합니다.
 
-기관 운영자와 관리자, 시스템 관리자는 `PATCH /api/v1/admin/users/{userId}/profile`로
-프로필을 정정하며 `POST /api/v1/admin/users/{userId}/profile-impact`의 `action: PROFILE`과
+프로필 정정 업무를 가진 기관 담당자와 시스템 관리자는
+`PATCH /api/v1/admin/users/{userId}/profile`로 프로필을 정정하며 `POST /api/v1/admin/users/{userId}/profile-impact`의 `action: PROFILE`과
 정정할 `profile`로 저장 전 초대 영향을 확인합니다. 계정 활성화의 `action: ENABLE`과
 실제 활성화·정지·MFA 초기화는 시스템 관리자에게만 허용합니다.
 프로필은 실제 정정과 같은 생략 및 명시 null, 학번 정규화를 적용합니다. 활성 계정에
@@ -442,17 +622,34 @@ PENDING_VERIFICATION으로 복원하면 인증을 기다립니다. 이 조회는
 작업을 접수하지 않습니다. 저장 후 지원 조회에서 실제 가입과 생성 대기, 생성된 행을
 다시 확인하며 VM 자체의 생성 완료는 VM 상태로 확인합니다.
 
-기관 운영자와 관리자, 시스템 관리자는 `/api/v1/admin/workspaces/{workspaceId}`에서 정보를
-수정하고 구성원 초대, 소유자 지정과 해제, 구성원 제거 및 삭제를 수행합니다. 응답의
+관리자 workspace 목록의 `orgId`는 현재 기관 관계에 대한 metadata 조회 조건입니다.
+그 행의 지원 읽기가 없는 명단 담당자에게는 해당 기관 업무와 workspace 범위가 허용하는
+새 지급용 최소 참조도 제공합니다. metadata를 읽는 담당자의 새 명단 선택기는
+`all=true&orgId=<실제 지급 기관>`으로 관계 조건을 해제하되 실제 지급 기관 문맥을
+유지합니다. `all`로 다른 기관의 결정·지급 업무를 빌려 오지는 않습니다.
+
+`/api/v1/admin/workspaces/{workspaceId}`는 정보 수정과 구성원, 초대, OWNER 및 종료 업무를
+각각 판정합니다. 명단 지급만 가진 담당자는 `rosterCandidates`로 실제 활성 구성원의 최소
+식별 참조를 조회할 수 있으며 전체 구성원 관계나 이메일·학번·초대 목록은 열리지 않습니다. 응답의
 기능별 capability와 구성원별 `canChangeRole`·`canRemove`는 현재 권한과 보호 조건을
 반영합니다. 개인 워크스페이스의 구성원 구조와 유형을 유지하며 마지막 소유자는 강등하거나
 제거할 수 없습니다. 마지막 소유자의 탈퇴도 자원 유무와 관계없이 차단합니다. 소유자를
 위임하거나 워크스페이스를 삭제한 뒤 탈퇴할 수 있습니다. 삭제되지 않은 자원이 남아 있으면
 워크스페이스 삭제를 거절합니다.
 
+현재 소유자와 해당 workspace의 종료 또는 초대 관리 업무를 가진 담당자는 `termination-impact`를
+조회해 자동 취소될 신청, 종료될 대상자와 남은 자원 차단 수를 확인합니다. 전체 집합의
+총계와 페이지별 실제 대상, 현재 실패 이력을 구분하며 기관 선택으로 영향을 축소하지
+않습니다. 차단 자원은 실제 ID와 종류, 기관 및 저장 상태로 확인하며 `resourcePage`로
+탐색합니다. 신청·대상자 페이지의 `page`와 자원 페이지는 같은 `size`를 사용합니다.
+자원별 기존 조회 권한을 적용하며 접근이 제한된 VM은 표시 이름 또는 공개 ID로
+표시합니다. 제한된 자원의 기관 정보는 생략하고, 현재 상세 조회 가능 여부를 별도로
+제공합니다. 워크스페이스 소유자에게 자원 상세 권한을 자동으로 부여하지 않습니다. 조회는 가입이나 생성, 취소를 실행하지 않습니다. 응답의 fingerprint는 수행자와
+현재 권한, 전체 대상 상태를 식별하고 조회 시각과 페이지에는 의존하지 않습니다.
+
 `/api/v1/admin/resource-access/{resourceType}/{resourceId}`는 VM, LLM API 키, 외부 도메인과 GPU 할당의
-접근 목록을 읽고 변경합니다. 지원 읽기 역할은 전체 목록을 조회하며 `canManageAccess`가
-true인 기관 운영자·관리자와 시스템 관리자만 지원 변경을 수행합니다. 단건과 관리자 일괄
+접근 목록을 읽고 변경합니다. 종류별 ACL 지원 읽기와 관리 업무를 따로 확인하며
+`canManageAccess`가 true인 담당자만 지원 변경을 수행합니다. 단건과 관리자 일괄
 변경은 같은 부여 로직을 사용합니다. 워크스페이스 전체에는 VIEWER 또는 MEMBER까지만
 부여합니다. 관리자 일괄 접근 변경의 REVOKE는 비활성 계정이나 워크스페이스를 떠난 사용자의
 남은 개인 부여를 회수할 수 있습니다. 새 부여와 등급 변경은 활성 구성원에게만 허용하며,
@@ -467,6 +664,41 @@ true인 기관 운영자·관리자와 시스템 관리자만 지원 변경을 �
 수락하는 경우 `actorAccessImpact`는 기존 자원의 권한 증가와 승인된 신청의 미래 OWNER
 생성 대기를 구분합니다. `QUEUED`는 생성 완료를 뜻하지 않습니다. 일반 가입과 활성화,
 첫 프로필 저장의 자동 초대 수락은 기존 흐름을 사용합니다.
+
+## 워크스페이스 종료와 생성 대기 취소
+
+워크스페이스 삭제와 대기 초대 취소는 먼저 각 대상의 `termination-impact`를 조회합니다.
+일반 경로는 현재 실제 OWNER, `/admin` 지원 경로는 대상 workspace의 종료 또는 초대 관리
+업무를 검사합니다.
+DELETE 본문에 `confirmation: { fingerprint, confirmed: true }`가 필요하며 영향이 0건이어도
+생략할 수 없습니다. 전체 워크스페이스 또는 정확한 초대 FK의 대상과 상태가 달라지면
+409로 다시 확인합니다. 조회 시각이나 페이지 변경만으로 확인값이 달라지지는 않습니다.
+확인 후 기존 신청 자동 취소와 승인 명단의 대기 종료를 같은 트랜잭션에서 수행합니다.
+PERSONAL과 남은 실제 자원의 삭제 제한은 유지합니다.
+
+승인된 VM·LLM 키 명단은 한 대상자의 `/cancellation-impact`를 조회한 뒤 `/cancel`에
+`reason`과 같은 `confirmation`을 제출해 생성 대기를 취소할 수 있습니다. 일반 신청
+경로는 현재 실제 OWNER만, 관리자 지원 경로는 실제 WORKSPACE 범위의 대상자 생성 취소
+업무 또는 기존 SYS_ADMIN 예외를 허용합니다. 신청자나 수신자라는 사실만으로는 취소할 수 없습니다. `cancellationCapability`의
+`ownerAllowed`와 `supportAllowed`는 각각 실제 호출 경로에 대응합니다.
+
+PENDING_JOIN·QUEUED와 자원 등록 전 FAILED만 취소합니다. 자원 포인터가 있거나 실제
+등록 행의 귀속이 불명확하면 기존 자원 상세와 삭제·폐기 경로를 사용합니다. CREATING VM과
+미발급 키, DELETED·REVOKED 이력도 등록 행입니다. 다른 대상자에 정상 연결된 자원은
+선택한 미등록 대상자의 취소를 막지 않습니다. 선택한 행만 CANCELED로 끝내며 승인값,
+다른 대상자, 구성원과 초대를 유지합니다.
+
+신청 상세의 `cancellation`은 취소 사유와 시각, 이전 상태·실패 이유·시도 횟수를 제공합니다.
+취소 상태와 감사 결과는 함께 커밋하거나 롤백합니다. 응답을 잃으면 기존 신청 상세에서
+같은 결과를 읽고, 같은 수행자·확인값·사유로 재요청해도 실행과 감사를 반복하지 않습니다.
+재요청도 현재 권한을 다시 검사합니다. 생성과 취소는 기존 잠금 안에서 순서를 정하며,
+취소된 대상자를 가입 처리나 생성기, 실패 기록, 재시도가 되살리지 않습니다.
+
+대상자 생성 재시도는 해당 종류의 재시도 업무와 실제 기관·workspace 범위를 다시 검사합니다. 삭제된
+워크스페이스에서는 FAILED를 QUEUED로 접수하지 않고 기존 409 오류로 거부하며,
+이전 실패 이유와 시도 횟수를 유지합니다. 생성과 삭제, 재시도는 같은 워크스페이스 행을
+잠가 승인된 명단의 대상자 상태 변경 순서를 정합니다. 삭제는 기존 SUBMITTED 신청과
+해당 명단을 먼저 잠근 뒤 워크스페이스와 남은 명단을 잠그는 두 단계 순서를 유지합니다.
 
 ## 기간 변경과 일괄 변경 결과
 
@@ -506,8 +738,8 @@ VM의 `endDate`는 KST 기준 해당 날짜까지 포함하며, 끝 날짜가 �
 
 ## 통합 자원 기한 조회
 
-`GET /api/v1/admin/resource-deadlines`는 여섯 관리자 역할이 전역 메타데이터를 자원당
-주 기한 하나로 조회하는 경로입니다. `orgId`, `workspaceId`, `type`, `deadlineKind`는
+`GET /api/v1/admin/resource-deadlines`는 종류별 metadata 읽기와 지원 읽기의 실제 기관·workspace
+범위를 적용해 자원당 주 기한 하나를 조회합니다. `orgId`, `workspaceId`, `type`, `deadlineKind`는
 선택 필터이며 없는 기관·워크스페이스 식별자는 빈 페이지로 응답합니다. `page`는 0부터,
 `size`는 기본 20·최대 100입니다. `sort=deadlineAt` 또는 `-deadlineAt`으로 정렬하고
 같은 기한은 종류와 공개 ID 순서로 유지합니다. Count와 페이지는 같은 DB snapshot입니다.
@@ -516,7 +748,8 @@ VM은 그날까지 포함하는 사용 종료일, LLM 키는 정확한 만료 �
 도메인은 해제 전에는 갱신 기한, 해제 후에는 현재 예약 설정을 적용한 예약 종료입니다.
 GPU는 대기 중이면 승인 종료일, 할당·반납 중이면 실제 임대 종료가 주 기한이며 승인
 기간과 임대 시각을 별도 날짜 문맥으로 제공합니다. 종료 상태와 주 기한 없는 자원은
-조회에서 제외합니다. 기관·워크스페이스 정보가 없는 해제 도메인도 전역 조회에 남습니다.
+조회에서 제외합니다. 필수 기관·workspace 관계를 확인할 수 없는 행은 해당 scoped 출처로
+읽지 않으며 시스템 계층의 기존 전역 조회에는 남습니다.
 
 `expiringInDays=1..365`는 KST 오늘부터 오늘+N일까지의 달력 창입니다. VM·대기 GPU는
 종료일 양끝을 포함합니다. LLM 키는 서버 관측보다 미래인 만료 시각 중 오늘+N 다음 날
@@ -535,7 +768,8 @@ LLM 키의 `status`는 현재 만료를 반영합니다. 날짜 경과는 정지
 가능 여부를 제공합니다. `recipientUserReadFlags`는 저장된 실제 대상 계정의 사용자 관리
 상세 읽기 여부를 현재 디렉터리 권한과 대조합니다. 워크스페이스를 떠난 대상도 연결하며
 가입 전 이메일이나 학번으로 새 계정 관계를 추정하지 않습니다. 생성 결과는 VM과 LLM API 키, GPU 할당, 새 발급 도메인의 `request_id`에서
-조회하며, VM은 실제 배치 노드도 함께 확인합니다. 대상자 `CREATED`는 자원 행이
+조회하며, VM 배치 노드 참조와 현재 자원 상세 링크는 각각의 실제 자원 조회 조건으로
+투영합니다. 신청자의 가입 시각은 전역 학생 지원 프로필을 읽을 수 있을 때만 제공합니다. 대상자 `CREATED`는 자원 행이
 등록됐다는 결과입니다. VM의 `CREATING`, `ERROR`, `RUNNING`은 별도로 읽고, LLM 키와
 GPU 할당은 각 종류의 상태를 유지합니다. 기록 갱신 시각은 외부 시스템 적용이나 연결
 성공을 측정한 시각이 아닙니다. 새 도메인 승인은 발급과 같은 트랜잭션에서 원래 신청
@@ -720,6 +954,10 @@ JobRunr 작업 실패로 드러납니다. 기본 보존 설정은 0으로, 원�
 
 ### 공유 워커를 끈 LLM 일일 한도 갱신
 
+일일 토큰 한도는 `null`이면 무제한이고 `0`이면 토큰 축을 차단합니다. 한도 변경에 따른
+차단 상태는 다음 갱신에서 다시 계산합니다. 유한 한도를 해제하면 이전 소진 상태도
+해제하며, 실제 차단 상태가 바뀐 경우에만 게이트웨이 generation을 갱신합니다.
+
 기존 LLM 키의 일일 토큰 한도를 유지하면서 공유 JobRunr 작업을 실행하지 않아야 하는
 후보 API에서 `PICKLE_LLM_QUOTA_DIRECT_ENABLED=true`와
 `--jobrunr.background-job-server.enabled=false`를 함께 설정합니다. 한쪽만 설정하면
@@ -864,6 +1102,8 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_LLM_GATEWAY_SOURCE_IP` | `/internal/llm` 허용 출발지 | `172.30.1.40` |
 | `PICKLE_LLM_{SYNC,USAGE,BODIES}_RATE_LIMIT` | `/internal/llm` 하위 경로별 분당 한도(버킷 분리) | `60` / `120` / `120` |
 | `PICKLE_LLM_MAX_{SYNC,USAGE,BODIES}_BODY_BYTES` | `/internal/llm` 하위 경로별 요청 본문 상한 | `65536` / `4194304` / `8388608` |
+| `PICKLE_LLM_OBJECT_{INTENTS,LOOKUP,RELEASE}_RATE_LIMIT` | 비동기 객체 소유 기록 `/internal/llm/objects/*`의 분당 한도. DB가 아니라 프로세스 메모리에서 세며, `bind`에는 한도가 없습니다 | `600` / `6000` / `600` |
+| `PICKLE_LLM_MAX_OBJECT_BODY_BYTES` / `PICKLE_LLM_MAX_OBJECT_LOOKUP_BODY_BYTES` | 소유 기록 요청 본문 상한(`intents`, `bind`, `release` / `lookup`) | `16384` / `65536` |
 | `PICKLE_OPENROUTER_URL` | OpenRouter 관리 API 주소 | `https://openrouter.ai/api/v1` |
 | `PICKLE_OPENROUTER_DIRECT_POLLING_ENABLED` | 후보 전용 GET polling 경로. 켜면 일반 JobRunr worker가 꺼져 있어야 합니다 | `false` |
 | `PICKLE_OPENROUTER_DIRECT_POLLING_ACCOUNT_PUBLIC_IDS` | 직접 polling할 account public UUID allowlist. 쉼표로 구분하며 활성화할 때 비어 있으면 기동을 거부합니다 | 없음 |

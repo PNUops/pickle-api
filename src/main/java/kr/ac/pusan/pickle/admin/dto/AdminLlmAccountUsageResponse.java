@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.List;
 import kr.ac.pusan.pickle.llm.dto.LlmUsageCostPointResponse;
 import org.jspecify.annotations.Nullable;
@@ -40,12 +41,14 @@ public record AdminLlmAccountUsageResponse(
         long requests,
         @Schema(description = "그중 공급자가 금액을 알려 준 요청 수")
         long pricedRequests,
-        @Schema(description = "이 기간에 실제로 호출된 키 수")
+        @Schema(description = "선택 KST 일자별 rollup과 현재 계정 결합에 따른 전체 소비 키 수. 현재 페이지나 보존 원문 capacity의 키 수가 아닙니다.")
         int keysUsed,
-        @Schema(description = "이 계정에 연결된 키 수. keysUsed와 견주면 놀고 있는 키가 보입니다.")
+        @Schema(description = "현재 이 계정에 연결된 모든 상태의 키 수. 기간 소비와 현재 열람 가능한 키 부분집합과 다른 모집단입니다.")
         int keysLinked,
         @Schema(description = "하루 한 점, 오래된 날부터. 호출이 없던 날도 채워집니다.")
         List<LlmUsageCostPointResponse> points,
-        @Schema(description = "이 기간에 실제로 호출된 키만, 금액이 큰 순")
-        List<AdminLlmAccountKeyUsageResponse> keys) {
+        @Schema(description = "이 기간에 실제로 호출된 키의 현재 페이지. 요청한 정렬을 따르며 기본은 공급자가 보고한 요청 금액순입니다. keysUsed는 현재 페이지 수가 아닌 전체 해당 키 수입니다.")
+        List<AdminLlmAccountKeyUsageResponse> keys,
+        Instant generatedAt, String timezone, String source,
+        int page, int size, long totalKeyElements, int totalKeyPages, LlmConsumerSort sort) {
 }

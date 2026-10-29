@@ -108,7 +108,7 @@ public record CreateRequestRequest(
          * made many times from one decision (VM, LLM API key).
          */
         @Schema(description = "리소스를 받을 대상자. 비우면 신청자 본인이 받는 일반 신청입니다. "
-                + "VM과 LLM API 키에만 쓸 수 있고, 워크스페이스 소유자나 이 기관의 신청을 승인할 수 있는 관리자만 지정할 수 있습니다. "
+                + "VM과 LLM API 키에만 쓸 수 있고, 워크스페이스 소유자나 해당 명단 발급 업무가 있는 담당자가 지정할 수 있습니다. "
                 + "대상자마다 리소스를 하나씩 만들며, 가입 전인 초대 대상자는 가입할 때 만듭니다.")
         @Size(max = 200, message = "대상자는 한 번에 200명까지 지정할 수 있습니다.")
         @Valid @Nullable List<CreateRequestRecipient> recipients,
@@ -117,7 +117,7 @@ public record CreateRequestRequest(
          * Present when the submitter is an approver who decides in the same
          * step: the same form the approve endpoint takes.
          */
-        @Schema(description = "제출과 동시에 승인할 때의 승인 내용. 이 기관의 신청을 승인할 수 있는 관리자만 보낼 수 있습니다. "
+        @Schema(description = "제출과 동시에 승인할 때의 내용. 일반 신청 승인 업무가 필요하며, 새 명단은 명단 발급 업무로 그 명령 안에서 승인할 수 있습니다. "
                 + "승인 화면에서 보내는 내용과 같습니다.")
         @Valid @Nullable ApproveRequestRequest approval) {
 

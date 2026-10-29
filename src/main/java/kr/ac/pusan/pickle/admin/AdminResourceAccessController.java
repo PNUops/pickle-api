@@ -35,13 +35,13 @@ public class AdminResourceAccessController {
     public AdminResourceAccessController(ResourceAccessGrantService service) { this.service = service; }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ORG_VIEWER','ORG_MANAGER','ORG_ADMIN','SYS_VIEWER','SYS_MANAGER','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public ResourceAccessListResponse getAdminResourceAccess(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable ResourceType resourceType, @PathVariable UUID resourceId) {
         return service.list(actor, resourceType, resourceId, true);
     }
     @PostMapping("/preview")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public ActorAccessImpact previewAdminResourceAccessChange(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable ResourceType resourceType, @PathVariable UUID resourceId,
             @Valid @RequestBody ResourceAccessChangePreviewRequest request) {
@@ -49,14 +49,14 @@ public class AdminResourceAccessController {
     }
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public ResourceAccessGrantView addAdminResourceAccessGrant(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable ResourceType resourceType, @PathVariable UUID resourceId,
             @Valid @RequestBody AddResourceAccessGrantRequest request, HttpServletRequest http) {
         return service.add(actor, resourceType, resourceId, request, clientIp(http), true);
     }
     @PatchMapping("/{grantId}")
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public ResourceAccessGrantView updateAdminResourceAccessGrant(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable ResourceType resourceType, @PathVariable UUID resourceId, @PathVariable UUID grantId,
             @Valid @RequestBody UpdateResourceAccessGrantRequest request, HttpServletRequest http) {
@@ -64,7 +64,7 @@ public class AdminResourceAccessController {
     }
     @DeleteMapping("/{grantId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('ORG_MANAGER','ORG_ADMIN','SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public void removeAdminResourceAccessGrant(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable ResourceType resourceType, @PathVariable UUID resourceId, @PathVariable UUID grantId,
             HttpServletRequest http) {

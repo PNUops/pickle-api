@@ -23,14 +23,14 @@ public record LlmLimitReviewResponse(
         @Schema(description = "요청 당시 budget axis가 보고되지 않은 오늘 입력+출력 token")
         long todayUnknownAxisTokens,
         boolean quotaExhausted,
-        BigDecimal creditLimit,
+        @Nullable BigDecimal creditLimit,
         @Nullable CreditLimitReset creditLimitReset,
         @Nullable BigDecimal creditUsage,
         @Nullable BigDecimal creditLimitRemaining,
         @Nullable Instant creditUsageAt,
-        boolean creditAxisConnected,
+        @Nullable Boolean creditAxisConnected,
         @Schema(description = "연결된 사업 계정. 연결 전이면 null")
         @Nullable UUID openrouterAccountId,
         @Nullable String openrouterAccountName,
-        List<LlmLimitPressureResponse> pressure) {
+        List<LlmLimitPressureResponse> pressure, boolean financeVisible) {
 }

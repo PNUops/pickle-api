@@ -88,14 +88,27 @@ public final class SeedFixtures {
         if (orgId == null) {
             return;
         }
-        jdbcTemplate.update("insert into user_org_roles (user_id, org_id, role)"
-                + " values (?, ?, ?::user_role)"
-                // A role that may not approve cannot keep the request-mail
-                // choice (V133's check), just as the service drops it.
-                + " on conflict (user_id, org_id) do update set role = excluded.role,"
-                + " request_mail = user_org_roles.request_mail"
-                + " and excluded.role::text in ('ORG_ADMIN', 'ORG_MANAGER')",
-                userId, orgId, role.name());
+        var assignment = kr.ac.pusan.pickle.security.institution.InstitutionLegacyPresets.create(
+                publicId(jdbcTemplate, "users", userId), publicId(jdbcTemplate, "orgs", orgId), role);
+        var encoded = new kr.ac.pusan.pickle.security.institution.InstitutionAssignmentCodec().encode(assignment);
+        jdbcTemplate.update("""
+                insert into user_org_roles(user_id,org_id,role,permission_mode,permission_payload,permission_revision)
+                values(?,?,?::user_role,?,?::jsonb,nextval('institution_permission_revision_seq'))
+                on conflict(user_id,org_id) do update set role=excluded.role,permission_mode=excluded.permission_mode,
+                    permission_payload=excluded.permission_payload,permission_revision=excluded.permission_revision,
+                    request_mail=user_org_roles.request_mail and excluded.role::text in ('ORG_ADMIN','ORG_MANAGER')
+                """, userId, orgId, assignment.displayRole().name(), encoded.mode(), encoded.payload());
+        jdbcTemplate.update("""
+                update users u set role=(select r.role from user_org_roles r where r.user_id=u.id
+                    order by case r.role when 'ORG_ADMIN' then 3 when 'ORG_MANAGER' then 2 else 1 end desc limit 1)
+                 where u.id=?
+                """, userId);
+    }
+
+    /** Explicit synthetic replacement for tests of current authority and replay masking. */
+    public static void replaceOrgRole(JdbcTemplate jdbcTemplate, Long userId, Long orgId, UserRole role) {
+        jdbcTemplate.update("delete from user_org_roles where user_id=?", userId);
+        grantOrgRole(jdbcTemplate, userId, orgId, role);
     }
 
     /** The orgs an account administers, for asserting a grant or a revoke. */

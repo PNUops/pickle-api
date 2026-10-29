@@ -182,7 +182,7 @@ class AdminBulkChangeEffectEvidenceTest {
     @Test
     void anAcceptedQueueReferenceIsMaskedWhenCurrentInstitutionScopeIsLost() throws Exception {
         new TransactionTemplate(transactions).executeWithoutResult(tx ->
-                orgRoles.replaceWithSingle(users.findById(actor.getId()).orElseThrow(), org, UserRole.ORG_ADMIN));
+                SeedFixtures.replaceOrgRole(jdbc, actor.getId(), org, UserRole.ORG_ADMIN));
         UUID target = SeedFixtures.publicId(jdbc, "domains", customDomain());
         Map<String, Object> body = prepare(target);
         long before = jobs();
@@ -193,7 +193,7 @@ class AdminBulkChangeEffectEvidenceTest {
         assertThat(accepted.get("queueState").asString()).isEqualTo("ENQUEUED");
         long other = orgs.save(new Org("합성 접수 범위 변경 " + UUID.randomUUID(), null)).getId();
         new TransactionTemplate(transactions).executeWithoutResult(tx ->
-                orgRoles.replaceWithSingle(users.findById(actor.getId()).orElseThrow(), other, UserRole.ORG_MANAGER));
+                SeedFixtures.replaceOrgRole(jdbc, actor.getId(), other, UserRole.ORG_MANAGER));
         JsonNode masked = receipt(body);
         assertThat(masked.get("change").isNull()).isTrue();
         assertThat(masked.get("result").get("items").get(0).get("result").asString()).isEqualTo("APPLIED");

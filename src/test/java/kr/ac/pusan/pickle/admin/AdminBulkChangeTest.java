@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -23,6 +24,7 @@ import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.config.ClockConfig;
+import kr.ac.pusan.pickle.llm.LlmQuotaService;
 import kr.ac.pusan.pickle.llm.LlmSyncService;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncRequest;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncResponse;
@@ -44,6 +46,8 @@ import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -52,6 +56,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
@@ -90,6 +95,8 @@ class AdminBulkChangeTest {
     private WorkspaceRepository workspaceRepository;
     @Autowired
     private LlmSyncService llmSyncService;
+    @Autowired
+    private LlmQuotaService quotaService;
     @Autowired
     private LlmOpenRouterProvisioner provisioner;
     @Autowired
@@ -686,8 +693,12 @@ class AdminBulkChangeTest {
             assertThat(item(previewJson(denied, schedule), pub("vms", plain))
                     .get("reason").asString()).isEqualTo("FORBIDDEN");
         }
-        assertThat(item(previewJson(otherOrgAdminToken, schedule), pub("vms", plain))
-                .get("reason").asString()).isEqualTo("NOT_FOUND");
+        // Global metadata support exposes the row, while deletion remains institution-scoped.
+        JsonNode foreignPreview = item(previewJson(otherOrgAdminToken, schedule), pub("vms", plain));
+        assertThat(foreignPreview.get("reason").asString()).isEqualTo("FORBIDDEN");
+        assertThat(foreignPreview.get("applicable").asBoolean()).isFalse();
+        assertThat(jdbcTemplate.queryForObject("select delete_kind from vms where id = ?",
+                String.class, plain)).isNull();
 
         JsonNode scheduled = applyJson(orgAdminToken, schedule);
         assertThat(item(scheduled, pub("vms", plain)).get("result").asString()).isEqualTo("APPLIED");
@@ -1093,9 +1104,10 @@ class AdminBulkChangeTest {
     void aFailedSummaryInsertLeavesEveryTargetsWorkInPlace() throws Exception {
         long first = customDomain(orgA.getId(), workspaceA);
         long second = customDomain(orgA.getId(), workspaceA);
-        doThrow(new IllegalStateException("audit storage unavailable"))
-                .when(auditService).record(any(), anyString(), eq(AuditService.ADMIN_BULK_CHANGE),
-                        anyString(), any(), any(), any());
+        // The captured-institution parameter is intentionally package-private.
+        ReflectionTestUtils.invokeMethod(doThrow(new IllegalStateException("audit storage unavailable"))
+                        .when(auditService), "recordCaptured", any(), anyString(), eq(AuditService.ADMIN_BULK_CHANGE),
+                anyString(), any(), any(), any(), any());
         Map<String, Object> body = request("DOMAIN",
                 List.of(pub("domains", first), pub("domains", second)),
                 Map.of("kind", "DOMAIN_VERIFY", "domainVerify", Map.of()));
@@ -1105,6 +1117,9 @@ class AdminBulkChangeTest {
         // only thing lost.
         JsonNode apply = applyJson(orgAdminToken, body);
 
+        ReflectionTestUtils.invokeMethod(verify(auditService), "recordCaptured", any(), anyString(),
+                eq(AuditService.ADMIN_BULK_CHANGE), eq("bulk_change"),
+                eq(UUID.fromString(apply.get("batchId").asString())), any(), any(), any());
         assertThat(verifyJobCount()).isEqualTo(before + 2);
         assertThat(auditCount(pub("domains", first), "domain.admin_verify")).isEqualTo(1);
         assertThat(auditCount(pub("domains", second), "domain.admin_verify")).isEqualTo(1);
@@ -1328,6 +1343,50 @@ class AdminBulkChangeTest {
     }
 
     // ── request helpers ────────────────────────────────────────────────────
+
+    @ParameterizedTest
+    @ValueSource(longs = {0, 10_000})
+    void bulkRemovingAnExhaustedDailyLimitReleasesTheGatewayRefusal(long initialLimit)
+            throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "unlimited-quota-bulk", "ACTIVE", null);
+        jdbcTemplate.update("update llm_api_keys set daily_tokens = ? where id = ?",
+                initialLimit, key.id());
+        jdbcTemplate.update("""
+                insert into llm_usage_events (event_id, key_id, public_model_name, budget_axis,
+                        status, input_tokens, output_tokens, requested_at)
+                values (?, ?, 'quota-test', 'TOKEN', 'OK', 11000, 0, now())
+                """, UUID.randomUUID().toString(), key.id());
+        quotaService.refresh();
+        assertThat(jdbcTemplate.queryForObject(
+                "select quota_exhausted from llm_api_keys where id = ?",
+                Boolean.class, key.id())).isTrue();
+        Map<String, Object> unlimited = new LinkedHashMap<>();
+        unlimited.put("dailyTokens", null);
+        JsonNode applied = applyJson(sysAdminToken,
+                request("LLM_KEY", List.of(key.publicId()), limits(unlimited)));
+        assertThat(item(applied, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(keyRow(key).get("daily_tokens")).isNull();
+
+        long beforeSweep = generation();
+        int changed = quotaService.refresh();
+        var document = (LlmSyncResponse.Document) llmSyncService.sync(objectMapper.convertValue(
+                Map.of("appliedGeneration", 0, "supportedFormat", 1, "inFlight", 0),
+                LlmSyncRequest.class));
+        var synced = document.keys().stream()
+                .filter(entry -> entry.keyId().equals(key.publicId().toString()))
+                .findFirst().orElseThrow();
+        org.assertj.core.api.SoftAssertions.assertSoftly(soft -> {
+            soft.assertThat(changed).as("bulk clear is reconciled by the sweep").isEqualTo(1);
+            soft.assertThat(jdbcTemplate.queryForObject(
+                    "select quota_exhausted from llm_api_keys where id = ?",
+                    Boolean.class, key.id())).as("stored unlimited key").isFalse();
+            soft.assertThat(synced.quotaExhausted()).as("gateway unlimited key").isFalse();
+            soft.assertThat(document.generation()).as("one changed quota generation")
+                    .isEqualTo(beforeSweep + 1);
+        });
+        assertThat(quotaService.refresh()).isZero();
+        assertThat(generation()).isEqualTo(document.generation());
+    }
 
     private void refused(Map<String, Object> body, String field) throws Exception {
         mockMvc.perform(post(PREVIEW).header("Authorization", "Bearer " + sysAdminToken)
