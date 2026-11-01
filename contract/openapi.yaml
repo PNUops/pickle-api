@@ -1239,7 +1239,7 @@ components:
           - $ref: "#/components/schemas/CreditLimitReset"
           - type: "null"
         creditUsage:
-          description: "OpenRouter가 마지막으로 보고한 현재 limit window 사용액. 미관측이면 null"
+          description: "OpenRouter가 마지막으로 보고한 키의 누적 사용액. 현재 리셋 창의 소비량이 아니며 미관측이면 null"
           type:
           - "number"
           - "null"
@@ -1523,7 +1523,7 @@ components:
           - $ref: "#/components/schemas/CreditLimitReset"
           - type: "null"
         creditUsage:
-          description: "OpenRouter가 마지막으로 보고한 현재 limit window 사용액. 미관측이면 null"
+          description: "OpenRouter가 마지막으로 보고한 키의 누적 사용액. 현재 리셋 창의 소비량이 아니며 미관측이면 null"
           type:
           - "number"
           - "null"
@@ -6111,13 +6111,13 @@ components:
           - "number"
           - "null"
         creditUsage:
-          description: "공급자가 보고한 현재 한도 창 사용액(USD). DAILY/WEEKLY/MONTHLY 리셋 뒤에는 감소할\
-            \ 수 있습니다. 아직 보고된 적이 없으면 null입니다."
+          description: "공급자가 보고한 키의 누적 사용액(USD). 일·주·월 리셋별 사용액이나 현재 창의 소비량을 뜻하지 않습\
+            니다. 아직 보고된 적이 없으면 null입니다."
           type:
           - "number"
           - "null"
         creditUsageAt:
-          description: "그 한도 창 사용액을 읽어 온 시각. 30분마다 갱신됩니다."
+          description: "그 누적 사용액을 읽어 온 시각. 30분마다 갱신됩니다."
           format: "date-time"
           type:
           - "string"
@@ -7407,13 +7407,13 @@ components:
           description: "유료 모델에 쓸 수 있는 금액 한도(USD). 0이면 유료 모델을 쓸 수 없습니다."
           type: "number"
         creditUsage:
-          description: "공급자가 보고한 현재 한도 창 사용액(USD). DAILY/WEEKLY/MONTHLY 리셋 뒤에는 감소할\
-            \ 수 있습니다. 아직 보고된 적이 없으면 null입니다."
+          description: "공급자가 보고한 키의 누적 사용액(USD). 일·주·월 리셋별 사용액이나 현재 창의 소비량을 뜻하지 않습\
+            니다. 아직 보고된 적이 없으면 null입니다."
           type:
           - "number"
           - "null"
         creditUsageAt:
-          description: "그 한도 창 사용액을 읽어 온 시각. 30분마다 갱신됩니다."
+          description: "그 누적 사용액을 읽어 온 시각. 30분마다 갱신됩니다."
           format: "date-time"
           type:
           - "string"
@@ -9947,6 +9947,15 @@ components:
       - "NORMAL"
       - "HIGH"
       type: "string"
+    NotificationPreferencesView:
+      properties:
+        usageMailEnabled:
+          description: "새 키 사용량 임계 알림 메일 수신 여부. 저장 전 기본값은 true이며 콘솔 알림과 기존 업무·보안 메\
+            일에는 영향을 주지 않습니다."
+          type: "boolean"
+      required:
+      - "usageMailEnabled"
+      type: "object"
     NotificationStatus:
       enum:
       - "PENDING"
@@ -13429,6 +13438,15 @@ components:
       required:
       - "status"
       type: "object"
+    UpdateNotificationPreferencesRequest:
+      properties:
+        usageMailEnabled:
+          description: "본인의 새 키 사용량 임계 알림 메일 수신 여부. 콘솔 알림과 다른 업무·보안 메일에는 영향을 주지 않습\
+            니다."
+          type: "boolean"
+      required:
+      - "usageMailEnabled"
+      type: "object"
     UpdateOpenRouterAccountRequest:
       properties:
         contact:
@@ -15413,7 +15431,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.113.0"
+  version: "0.114.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -23358,6 +23376,52 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "mfa-controller"
+  /me/notification-preferences:
+    get:
+      description: "새 키 사용량 임계 알림 메일의 개인 수신 설정을 조회합니다. 콘솔 알림과 다른 업무·보안 알림에는 영향을 주지\
+        \ 않습니다."
+      operationId: "getMyNotificationPreferences"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NotificationPreferencesView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "본인 알림 수신 설정 조회"
+      tags:
+      - "notification-preferences-controller"
+    put:
+      description: "새 키 사용량 임계 알림 메일만 변경합니다. 기본값은 수신이며 콘솔 알림과 기존 업무·보안 메일은 유지합니다."
+      operationId: "updateMyNotificationPreferences"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationPreferencesRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NotificationPreferencesView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "본인 알림 수신 설정 변경"
+      tags:
+      - "notification-preferences-controller"
   /me/password:
     put:
       operationId: "changePassword"

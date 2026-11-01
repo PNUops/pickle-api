@@ -50,6 +50,8 @@ public class NotificationService {
     private kr.ac.pusan.pickle.admin.AdminOrgOperationsQueryService orgOperationsQuery;
     @org.springframework.beans.factory.annotation.Autowired
     private kr.ac.pusan.pickle.mail.MailDeliveryJournal deliveryJournal;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.llm.alert.LlmUsageAlertAccess usageAccess;
 
     private static final String INSERT_SQL = """
             insert into notifications
@@ -177,6 +179,9 @@ public class NotificationService {
 
     private void insert(Collection<Long> recipientUserIds, NotificationEvent event,
             Map<String, Object> args, String dedupKey, boolean toAdmins) {
+        if (event == NotificationEvent.LLM_USAGE_THRESHOLD) {
+            throw new IllegalArgumentException("Usage notifications require their explicit mail selection");
+        }
         if (recipientUserIds.isEmpty()) {
             return;
         }
@@ -191,6 +196,38 @@ public class NotificationService {
                     payloadJson, dedupKey, status, bundle, userId);
             deliveryJournal.importNotifications(inserted);
         }
+    }
+
+    /** Small usage-only selection: console always, mail only for a selected 100% row. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public int publishUsage(long userId, kr.ac.pusan.pickle.llm.LlmApiKey key,
+            kr.ac.pusan.pickle.llm.alert.UsageAlertFacts facts, java.time.Instant evaluatedAt, String dedupKey,
+            boolean mailSelected) {
+        if (facts.stage() != 80 && facts.stage() != 100) {
+            throw new IllegalArgumentException("A usage notification needs a supported threshold stage");
+        }
+        boolean selected = mailSelected && facts.stage() == 100;
+        var composed = composer.usageThreshold(key.getPublicId(), key.getName(), facts, evaluatedAt);
+        List<Long> inserted = jdbcTemplate.queryForList("""
+                insert into notifications(user_id,event,title,body,link_path,importance,payload,
+                    dedup_key,status,bundle,recipient_email,skip_reason)
+                select u.id,?,?,?,?, 'NORMAL',?::jsonb,?,?::notification_status,false,u.email,?
+                  from users u join llm_api_keys k on k.id=?
+                 where u.id=? and k.status='ACTIVE' and (k.expires_at is null or k.expires_at>now())
+                   and (case when ?='TOKEN' then k.daily_tokens::numeric=?::numeric
+                        else k.credit_limit=?::numeric and k.openrouter_key_hash is not null
+                         and k.credit_limit_reset::text is not distinct from ? end)
+                   and %s
+                on conflict(user_id,dedup_key) where dedup_key is not null do nothing returning id
+                """.formatted(kr.ac.pusan.pickle.llm.alert.LlmUsageAlertAccess.keyRead("k", "u.id")),
+                Long.class, composed.eventId(), composed.title(), composed.body(), composed.linkPath(),
+                objectMapper.writeValueAsString(composed.payload()), dedupKey,
+                selected ? "PENDING" : "SKIPPED", selected ? null
+                        : facts.stage() == 80 ? "USAGE_CONSOLE_ONLY" : "USAGE_MAIL_DISABLED",
+                key.getId(), userId, facts.axis().name(), facts.limit(), facts.limit(),
+                facts.period() == kr.ac.pusan.pickle.llm.alert.UsageAlertPeriod.TOTAL ? null : facts.period().name());
+        deliveryJournal.importNotifications(inserted);
+        return inserted.size();
     }
 
     // ── recipient resolution helpers (ACTIVE users only) ───────────────────
@@ -303,6 +340,10 @@ public class NotificationService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
                         ErrorCodes.RESOURCE_NOT_FOUND,
                         "리소스를 찾을 수 없습니다", "해당 알림이 존재하지 않습니다."));
+        if (!usageAccess.readableNotification(notification.getId(), actorUserId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                    "리소스를 찾을 수 없습니다", "해당 알림이 존재하지 않습니다.");
+        }
         // microsecond precision: what PostgreSQL stores — the immediate
         // response and every later read then render the identical timestamp
         notification.markRead(java.time.Instant.now()
@@ -314,8 +355,8 @@ public class NotificationService {
     @Transactional
     public int markAllRead(long actorUserId) {
         return jdbcTemplate.update("""
-                update notifications set read_at = now()
-                 where user_id = ? and read_at is null
-                """, actorUserId);
+                update notifications n set read_at = now()
+                 where n.user_id = ? and n.read_at is null and %s
+                """.formatted(kr.ac.pusan.pickle.llm.alert.LlmUsageAlertAccess.notificationRead("n")), actorUserId);
     }
 }

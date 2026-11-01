@@ -42,6 +42,43 @@ class OpenRouterClientTest {
     private static WireMockServer server;
     private OpenRouterClient client;
 
+    @Test
+    void currentObservationPreservesExactRemainingWithoutChangingLifetimeUsage() {
+        server.stubFor(get(urlPathEqualTo("/keys/period-key"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("""
+                        {"data":{"hash":"period-key","usage":9000,"limit":1,"limit_reset":"daily",
+                        "include_byok_in_limit":true,"limit_remaining":0.20000000000000001}}
+                        """)));
+        OpenRouterClient.ManagedKey value = client.getKey(SECRET, null, "period-key");
+        assertThat(value.usage()).isEqualByComparingTo("9000");
+        assertThat(value.limitRemaining()).isEqualByComparingTo("0.2");
+        String serialized = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(value);
+        assertThat(serialized).contains("\"currentObservation\":")
+                .contains("\"limitRemaining\":0.20000000000000001");
+    }
+
+    @Test
+    void currentObservationDistinguishesMissingIncludeSettingFromReportedFalse() {
+        server.stubFor(get(urlPathEqualTo("/keys/missing-include"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":{\"hash\":\"missing-include\",\"limit\":1,\"limit_reset\":null}}")));
+        OpenRouterClient.ManagedKey value = client.getKey(SECRET, null, "missing-include");
+        assertThat(value.includeByokInLimit()).isFalse();
+        String serialized = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(value);
+        assertThat(serialized).contains("\"currentObservation\":")
+                .contains("\"includeByokInLimit\":null");
+    }
+
+    @Test
+    void currentObservationKeepsExplicitTotalResetSeparateFromMissingReset() {
+        server.stubFor(get(urlPathEqualTo("/keys/explicit-total"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":{\"hash\":\"explicit-total\",\"limit\":null,\"limit_reset\":null}}")));
+        String serialized = tools.jackson.databind.json.JsonMapper.builder().build()
+                .writeValueAsString(client.getKey(SECRET, null, "explicit-total"));
+        assertThat(serialized).contains("\"limitReported\":true").contains("\"resetReported\":true");
+    }
+
     @BeforeAll
     static void start() {
         server = new WireMockServer(WireMockConfiguration.options().dynamicPort());

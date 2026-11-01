@@ -1,4 +1,4 @@
-# Current authorization surface (contract v0.111.0, 314 operations, seven account roles).
+# Authorization matrix for API v0.114.0: 316 operations, seven account roles.
 # PermissionMatrixTest verifies the operation set, coarse controller role admission,
 # and the unauthenticated boundary. It does not treat a display role as institution authority.
 #
@@ -56,6 +56,8 @@ operations:
   - { id: getTerms, method: GET, path: "/meta/terms/{docType}", roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: profileOptions, method: GET, path: "/meta/profile-options", roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: me, method: GET, path: "/me", roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getMyNotificationPreferences, method: GET, path: "/me/notification-preferences", roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateMyNotificationPreferences, method: PUT, path: "/me/notification-preferences", roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateMyProfile, method: PUT, path: "/me/profile", roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: unlinkIdentity, method: DELETE, path: "/me/identities/{provider}", roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listMyActivity, method: GET, path: "/me/activity", roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }

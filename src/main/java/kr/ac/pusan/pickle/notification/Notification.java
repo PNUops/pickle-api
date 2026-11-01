@@ -121,6 +121,7 @@ public class Notification {
         return body;
     }
 
+
     public String getLinkPath() {
         return linkPath;
     }

@@ -33,10 +33,10 @@ public record InstitutionAdminLlmBudgetResponse(
         @Schema(description = "유료 모델에 쓸 수 있는 금액 한도(USD). 0이면 유료 모델을 쓸 수 없습니다.")
         @Nullable BigDecimal creditLimit,
         @Schema(description = """
-                공급자가 보고한 현재 한도 창 사용액(USD). DAILY/WEEKLY/MONTHLY 리셋 뒤에는 \
-                감소할 수 있습니다. 아직 보고된 적이 없으면 null입니다.""")
+                공급자가 보고한 키의 누적 사용액(USD). 일·주·월 리셋별 사용액이나 현재 창의 \
+                소비량을 뜻하지 않습니다. 아직 보고된 적이 없으면 null입니다.""")
         @Nullable BigDecimal creditUsage,
-        @Schema(description = "그 한도 창 사용액을 읽어 온 시각. 30분마다 갱신됩니다.")
+        @Schema(description = "그 누적 사용액을 읽어 온 시각. 30분마다 갱신됩니다.")
         @Nullable Instant creditUsageAt,
         @Schema(description = """
                 최근 소비 속도로 금액 한도에 도달할 것으로 보이는 날짜. 이력이 부족하거나 \
