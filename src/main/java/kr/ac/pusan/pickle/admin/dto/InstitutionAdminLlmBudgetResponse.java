@@ -39,8 +39,8 @@ public record InstitutionAdminLlmBudgetResponse(
         @Schema(description = "그 누적 사용액을 읽어 온 시각. 30분마다 갱신됩니다.")
         @Nullable Instant creditUsageAt,
         @Schema(description = """
-                최근 소비 속도로 금액 한도에 도달할 것으로 보이는 날짜. 이력이 부족하거나 \
-                최근에 쓴 적이 없으면 null입니다.""")
+                총액 한도를 최근 소비 속도로 소진할 것으로 예상하는 날짜. 주기별 한도이거나, \
+                이력이 부족하거나 최근 소비가 없으면 null입니다.""")
         @Nullable LocalDate creditDepletionForecast) {
 
     public static InstitutionAdminLlmBudgetResponse of(LlmKeyBudgetResponse value, boolean observation, boolean finance) {

@@ -445,16 +445,15 @@ class ProvisionPipelineTest {
                 "select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
                 Long.class, vmId)).isEqualTo(1);
 
-        // the completion notification is emailed by the dispatcher with the
-        // no-backup notice; the audience is the VM's owner on its access list
+        // The completion notification points at connection details; the audience is the VM's owner on its access list
         // plus the owners of the owning workspace, which here are the same account
         notificationDispatchJob.dispatch();
         MailMessage mail = mockMailSender.lastMessageTo(SeedFixtures.ORGADMIN_EMAIL);
         assertThat(mail).isNotNull();
         assertThat(mail.subject()).contains(vm.getHostname());
         assertThat(mail.textBody())
-                .contains(ip)
-                .contains("플랫폼은 VM 데이터를 백업하지 않습니다");
+                .contains("VM '" + vm.getHostname() + "'이 준비됐어요. 상세 화면에서 접속 방법을 확인해 주세요.")
+                .contains("/console/vms/" + vm.getPublicId());
     }
 
     @Test

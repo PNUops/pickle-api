@@ -70,22 +70,8 @@ public class NotificationComposer {
                     payload(args, "requestId"));
             case VM_CREATE_DONE -> new Composed(event.id(),
                     "VM 생성 완료 — " + str(args, "hostname"),
-                    """
-                    신청하신 VM이 생성되어 실행 중입니다.
-
-                    - 호스트명: %s
-                    - 내부 IP: %s
-                    - SSH 계정: %s
-                    - SSH 접속: ssh %s@%s
-                    - 비밀번호: 콘솔의 VM 상세 화면에서 확인할 수 있습니다.
-
-                    [안내] SSH 접속에는 이 VM 전용 SSH 키가 필요합니다. VM 상세 화면에서 키를 발급받아 개인키 파일을 내려받은 뒤 ssh -i 로 접속해 주세요.
-
-                    [중요] 플랫폼은 VM 데이터를 백업하지 않습니다(사용자 책임).
-                    중요한 데이터는 반드시 직접 백업해 주세요.
-                    """.formatted(str(args, "hostname"),
-                            args.get("ip") != null ? str(args, "ip") : "(확인 중)",
-                            str(args, "sshUsername"), str(args, "hostname"), sshHost),
+                    "VM '%s'이 준비됐어요. 상세 화면에서 접속 방법을 확인해 주세요."
+                            .formatted(oneLine(str(args, "hostname"))),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "hostname"));
             case VM_CREATE_FAILED -> new Composed(event.id(),
@@ -248,7 +234,7 @@ public class NotificationComposer {
                     + (Boolean.TRUE.equals(args.get("passwordCleared")) ? """
 
 
-                    이 계정은 이메일 인증을 마치지 않은 상태였습니다. 그때 설정돼 있던 비밀번호는 소유가 확인되지 않은 값이라 무효화했습니다. 비밀번호로도 로그인하려면 비밀번호 재설정으로 새로 설정해 주세요.""" : ""),
+                    비밀번호로 로그인하려면 '비밀번호 찾기'에서 새로 설정해 주세요.""" : ""),
                     "/console/account", event.defaultImportance(), null);
             case ACCOUNT_DISABLED -> new Composed(event.id(), "계정 비활성화 안내",
                     """
@@ -382,28 +368,25 @@ public class NotificationComposer {
                     payload(args, "requestId", "vmId", "vmName"));
             case WORKSPACE_DELETED -> new Composed(event.id(),
                     "워크스페이스 삭제 안내 — " + oneLine(str(args, "workspaceName")),
-                    """
-                    소유자가 워크스페이스 '%s'을(를) 삭제하여 워크스페이스와 구성원 정보가 정리되었습니다. 워크스페이스에 연결된 VM이 없는 상태에서만 삭제할 수 있으므로 자원에는 영향이 없습니다. 진행 중이던 VM 신청이 있었다면 함께 취소되었습니다.""".formatted(oneLine(str(args, "workspaceName"))),
+                    "'%s' 워크스페이스가 삭제됐어요.".formatted(oneLine(str(args, "workspaceName"))),
                     null, event.defaultImportance(), payload(args, "workspaceId", "workspaceName"));
         };
     }
 
-    /** Exact then-observation facts, not a promise of current request availability. */
+    /** A short threshold event; authorization identity remains in the existing payload. */
     public Composed usageThreshold(java.util.UUID keyId, String keyName,
             kr.ac.pusan.pickle.llm.alert.UsageAlertFacts facts, Instant evaluatedAt) {
-        String axis = facts.axis() == kr.ac.pusan.pickle.llm.alert.UsageAlertAxis.TOKEN ? "토큰" : "금액";
-        String unit = facts.axis() == kr.ac.pusan.pickle.llm.alert.UsageAlertAxis.TOKEN ? "TOKENS" : "USD";
-        String measurement = facts.usage() == null ? "당시 남은 키 한도: " + facts.remaining() + " USD"
-                : "반영된 입출력 토큰: " + facts.usage();
-        String body = oneLine(keyName) + " 키 전체에서 " + facts.stage() + "% 구간이 관측되었습니다.\n"
-                + measurement + "\n당시 한도: " + facts.limit() + " " + unit
-                + "\n기준: " + facts.period() + " / " + facts.zone()
-                + "\n기간: " + (facts.start() == null ? "총액 한도" : facts.start() + " ~ " + facts.end())
-                + "\n관측 시각: " + facts.observedAt() + "\n서버 평가 시각: " + evaluatedAt
-                + "\n사용량 전송, 공급자 대사와 메일 대기 때문에 지연될 수 있습니다."
-                + "\n개인별 사용량이나 실시간 값이 아니며 다른 예산·요청 조건에 따른 호출 가능성을 보장하지 않습니다.";
+        String limit = facts.axis() == kr.ac.pusan.pickle.llm.alert.UsageAlertAxis.TOKEN
+                ? "일일 토큰 한도" : switch (facts.period()) {
+                    case DAILY -> "일일 금액 한도";
+                    case WEEKLY -> "주간 금액 한도";
+                    case MONTHLY -> "월간 금액 한도";
+                    case TOTAL -> "총액 한도";
+                };
+        String body = oneLine(keyName) + "의 " + limit + "를 "
+                + (facts.stage() == 100 ? "모두 사용했어요." : "80% 이상 사용했어요.");
         return new Composed(NotificationEvent.LLM_USAGE_THRESHOLD.id(),
-                "키 " + axis + " 한도 " + facts.stage() + "% 관측", body,
+                "키 사용량 알림", body,
                 "/console/llm-keys/" + keyId, NotificationImportance.NORMAL,
                 Map.of("keyId", keyId, "axis", facts.axis().name()));
     }
@@ -573,11 +556,8 @@ public class NotificationComposer {
 
                   신청 목적
                   %s""".formatted(oneLine(str(args, "workspaceName")), label, str(args, "purpose"))
-                : """
-                  워크스페이스 '%s'의 %s 신청이 접수되었습니다. 관리자 검토 후 결과를 알려드립니다.
-
-                  신청 목적
-                  %s""".formatted(oneLine(str(args, "workspaceName")), label, str(args, "purpose"));
+                : "'%s'의 %s 신청이 접수됐어요. 검토가 끝나면 알려드릴게요."
+                        .formatted(oneLine(str(args, "workspaceName")), label);
         String link = (admin ? "/admin/requests/" : "/console/requests/") + args.get("requestId");
         return new Composed(event.id(), title, body, link, event.defaultImportance(),
                 payload(args, "requestId", "workspaceName"));

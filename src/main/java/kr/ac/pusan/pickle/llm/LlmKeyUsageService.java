@@ -245,10 +245,8 @@ public class LlmKeyUsageService {
 
     /**
      * Today's spend against the daily allowance, counted exactly the way the
-     * quota sweep counts it — the same EXISTS on the model's axis, so the
-     * number on the gauge and the number that refuses a request can never
-     * disagree. Any other formulation would drift the day somebody re-axes a
-     * model.
+     * quota sweep counts it. The request-time axis wins; only legacy null-axis
+     * events fall back to the current catalogue.
      */
     private static final String TODAY_TOKENS_SQL = """
             select coalesce(sum(e.input_tokens + e.output_tokens), 0)
@@ -256,9 +254,11 @@ public class LlmKeyUsageService {
              where e.key_id = ?
                and e.requested_at >= ?::date::timestamp at time zone 'Asia/Seoul'
                and e.requested_at < (?::date + 1)::timestamp at time zone 'Asia/Seoul'
-               and exists (select 1 from llm_models m
-                            where m.public_name = e.public_model_name
-                              and m.budget_axis = 'TOKEN')
+               and (e.budget_axis = 'TOKEN'
+                    or (e.budget_axis is null and exists (
+                        select 1 from llm_models m
+                         where m.public_name = e.public_model_name
+                           and m.budget_axis = 'TOKEN')))
             """;
 
     /**
@@ -268,11 +268,8 @@ public class LlmKeyUsageService {
      * week from flattening this week's slope.
      *
      * <p>The amounts are the ones belonging to those two <b>times</b>, not the
-     * smallest and largest amounts. Those differ whenever the reported total
-     * goes down, which is not hypothetical: a key with a daily, weekly or
-     * monthly window has its reported usage reset by OpenRouter, and pairing
-     * min-with-earliest across such a reset measures a spend that never
-     * happened. Read this way, a reset shows up as a negative difference and
+     * smallest and largest amounts. A decrease in the cumulative counter is
+     * not measured spending. Read this way, it becomes a negative difference and
      * the caller declines to forecast — which is the honest answer, since the
      * readings on either side of it are not comparable.
      */
@@ -486,11 +483,14 @@ public class LlmKeyUsageService {
 
     /**
      * When this key would reach its money limit at the rate it has been
-     * spending. Null whenever the honest answer is "not enough to say" — too
-     * few readings, too short a span, no spending, no limit, or a date so far
-     * out that naming it would be false precision.
+     * spending. A periodic limit cannot use this cumulative basis. Null also
+     * covers too few readings, too short a span, no spending, no limit, or a
+     * date so far out that naming it would be false precision.
      */
     private @Nullable LocalDate creditDepletionForecast(LlmApiKey key, LocalDate today) {
+        if (key.getCreditLimitReset() != null) {
+            return null;
+        }
         BigDecimal usage = key.getOpenrouterUsage();
         if (usage == null || key.getCreditLimit().signum() <= 0) {
             return null;

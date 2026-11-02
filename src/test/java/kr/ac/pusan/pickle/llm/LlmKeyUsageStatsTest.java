@@ -18,6 +18,9 @@ import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -170,6 +173,68 @@ class LlmKeyUsageStatsTest {
                 .andExpect(jsonPath("$.budget.creditDepletionForecast").doesNotExist());
     }
 
+    @ParameterizedTest
+    @EnumSource(CreditLimitReset.class)
+    void periodicMoneyLimitsDoNotForecastFromCumulativeUsage(CreditLimitReset reset) throws Exception {
+        jdbcTemplate.update("""
+                update llm_api_keys set credit_limit = 2, openrouter_usage = 9,
+                       openrouter_limit_remaining = 2, openrouter_usage_at = now(),
+                       credit_limit_reset = '%s' where id = ?
+                """.formatted(reset.name()), keyId);
+
+        mockMvc.perform(get(usageUrl()).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.budget.creditLimit").value(2))
+                .andExpect(jsonPath("$.budget.creditUsage").value(9))
+                .andExpect(jsonPath("$.budget.creditDepletionForecast").doesNotExist());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"CREDIT", "MISSING"})
+    void requestTimeTokenBudgetSurvivesCatalogChanges(String currentAxis) throws Exception {
+        jdbcTemplate.update("update llm_api_keys set daily_tokens = 100 where id = ?", keyId);
+        Instant noon = LocalDate.now(ClockConfig.KST).atTime(12, 0).atZone(ClockConfig.KST).toInstant();
+        event(noon, "pickle-general", "OK", null, 60, 40, 50);
+        jdbcTemplate.update("update llm_usage_events set budget_axis = 'TOKEN' where key_id = ?", keyId);
+        if ("MISSING".equals(currentAxis)) {
+            jdbcTemplate.update("delete from llm_models where public_name = 'pickle-general'");
+        } else {
+            jdbcTemplate.update("update llm_models set budget_axis = 'CREDIT' where public_name = 'pickle-general'");
+        }
+
+        mockMvc.perform(get(usageUrl()).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.budget.dailyTokens").value(100))
+                .andExpect(jsonPath("$.budget.todayTokens").value(100));
+    }
+
+    @Test
+    void requestTimeCreditDoesNotConsumeTheTokenGauge() throws Exception {
+        Instant noon = LocalDate.now(ClockConfig.KST).atTime(12, 0).atZone(ClockConfig.KST).toInstant();
+        event(noon, "pickle-general", "OK", null, 60, 40, 50);
+        jdbcTemplate.update("update llm_usage_events set budget_axis = 'CREDIT' where key_id = ?", keyId);
+
+        mockMvc.perform(get(usageUrl()).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.budget.todayTokens").value(0));
+    }
+
+    @Test
+    void legacyNullAxisUsesOnlyCurrentTokenModels() throws Exception {
+        Instant noon = LocalDate.now(ClockConfig.KST).atTime(12, 0).atZone(ClockConfig.KST).toInstant();
+        jdbcTemplate.update("""
+                insert into llm_models(public_name, upstream_ref, upstream_model, budget_axis)
+                values ('commercial-test', 'test', 'test', 'CREDIT')
+                """);
+        event(noon, "pickle-general", "OK", null, 10, 20, 50);
+        event(noon, "commercial-test", "OK", null, 40, 50, 50);
+        event(noon, "uncatalogued-test", "OK", null, 60, 70, 50);
+
+        mockMvc.perform(get(usageUrl()).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.budget.todayTokens").value(30));
+    }
+
     @Test
     void aSteadySpendOverEnoughDaysProducesADepletionDate() throws Exception {
         // Two readings four days apart: $2 of a $10 limit spent, so the
@@ -195,11 +260,9 @@ class LlmKeyUsageStatsTest {
     }
 
     @Test
-    void aWindowResetBetweenReadingsForecastsNothingRatherThanAPhantomSpend() throws Exception {
-        // OpenRouter resets a key's reported usage at its limit window, so the
-        // figure is not monotone. Reading the smallest and largest amounts
-        // instead of the earliest and latest ones would measure a spend across
-        // the reset that nobody made, and would inflate the slope.
+    void aCounterDecreaseForecastsNothingRatherThanAPhantomSpend() throws Exception {
+        // A decrease is not spending. Values must be paired with their actual
+        // timestamps rather than turned into an artificial positive slope.
         jdbcTemplate.update("""
                 update llm_api_keys set credit_limit = 10, openrouter_usage = 1,
                        openrouter_usage_at = now() where id = ?
