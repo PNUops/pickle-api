@@ -101,6 +101,9 @@ pickle:
     # (VM initial passwords). Same fail-fast policy as the JWT secret.
     encryption-key: ${PICKLE_CREDENTIALS_KEY:}
   llm:
+    usage-alerts:
+      # Prepared evaluator and usage mail stay off independently of personal opt-in.
+      enabled: ${PICKLE_LLM_USAGE_ALERTS_ENABLED:false}
     usage-rollup-direct:
       # Candidate-only in-process rollup while the shared JobRunr worker is off.
       enabled: ${PICKLE_LLM_USAGE_ROLLUP_DIRECT_ENABLED:false}

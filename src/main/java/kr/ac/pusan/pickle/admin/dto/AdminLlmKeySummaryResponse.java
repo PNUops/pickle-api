@@ -26,7 +26,7 @@ public record AdminLlmKeySummaryResponse(
         @Nullable CreditLimitReset creditLimitReset,
         @Schema(description = "유료 모델이 발급되어 현재 연결되어 있는지")
         @Nullable Boolean creditAxisConnected,
-        @Schema(description = "OpenRouter가 마지막으로 보고한 현재 limit window 사용액. 미관측이면 null")
+        @Schema(description = "OpenRouter가 마지막으로 보고한 키의 누적 사용액. 현재 리셋 창의 소비량이 아니며 미관측이면 null")
         @Nullable BigDecimal creditUsage,
         @Schema(description = "Key 금액을 vendor에서 관측한 시각. 미관측이면 null")
         @Nullable Instant creditUsageAt,

@@ -51,6 +51,8 @@ public class NotificationComposer {
 
     public Composed compose(NotificationEvent event, Map<String, Object> args) {
         return switch (event) {
+            case LLM_USAGE_THRESHOLD -> usageThreshold((java.util.UUID) args.get("keyId"), str(args, "keyName"),
+                    (kr.ac.pusan.pickle.llm.alert.UsageAlertFacts) args.get("facts"), (Instant) args.get("evaluatedAt"));
             case GPU_UPDATE -> new Composed(event.id(), str(args, "title"), str(args, "message"),
                     "/console/gpus/" + args.get("allocationId"), event.defaultImportance(), payload(args, "allocationId"));
             case GPU_REVIEW -> new Composed(event.id(), "GPU 관리자 확인", str(args, "message"),
@@ -384,6 +386,26 @@ public class NotificationComposer {
                     소유자가 워크스페이스 '%s'을(를) 삭제하여 워크스페이스와 구성원 정보가 정리되었습니다. 워크스페이스에 연결된 VM이 없는 상태에서만 삭제할 수 있으므로 자원에는 영향이 없습니다. 진행 중이던 VM 신청이 있었다면 함께 취소되었습니다.""".formatted(oneLine(str(args, "workspaceName"))),
                     null, event.defaultImportance(), payload(args, "workspaceId", "workspaceName"));
         };
+    }
+
+    /** Exact then-observation facts, not a promise of current request availability. */
+    public Composed usageThreshold(java.util.UUID keyId, String keyName,
+            kr.ac.pusan.pickle.llm.alert.UsageAlertFacts facts, Instant evaluatedAt) {
+        String axis = facts.axis() == kr.ac.pusan.pickle.llm.alert.UsageAlertAxis.TOKEN ? "토큰" : "금액";
+        String unit = facts.axis() == kr.ac.pusan.pickle.llm.alert.UsageAlertAxis.TOKEN ? "TOKENS" : "USD";
+        String measurement = facts.usage() == null ? "당시 남은 키 한도: " + facts.remaining() + " USD"
+                : "반영된 입출력 토큰: " + facts.usage();
+        String body = oneLine(keyName) + " 키 전체에서 " + facts.stage() + "% 구간이 관측되었습니다.\n"
+                + measurement + "\n당시 한도: " + facts.limit() + " " + unit
+                + "\n기준: " + facts.period() + " / " + facts.zone()
+                + "\n기간: " + (facts.start() == null ? "총액 한도" : facts.start() + " ~ " + facts.end())
+                + "\n관측 시각: " + facts.observedAt() + "\n서버 평가 시각: " + evaluatedAt
+                + "\n사용량 전송, 공급자 대사와 메일 대기 때문에 지연될 수 있습니다."
+                + "\n개인별 사용량이나 실시간 값이 아니며 다른 예산·요청 조건에 따른 호출 가능성을 보장하지 않습니다.";
+        return new Composed(NotificationEvent.LLM_USAGE_THRESHOLD.id(),
+                "키 " + axis + " 한도 " + facts.stage() + "% 관측", body,
+                "/console/llm-keys/" + keyId, NotificationImportance.NORMAL,
+                Map.of("keyId", keyId, "axis", facts.axis().name()));
     }
 
     /**

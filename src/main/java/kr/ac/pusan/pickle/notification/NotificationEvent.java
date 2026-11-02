@@ -2,16 +2,17 @@ package kr.ac.pusan.pickle.notification;
 
 /**
  * The notification event catalog (contract v0.5.0 {@code NotificationView.event}).
- * Each event carries its dot-namespaced id and default importance. Every event
- * is mailed as well as inboxed — there is no per-event email switch; a row is
- * only {@code SKIPPED} when its recipient turns out to be inactive at send
- * time. {@code VM_EXPIRY_NOTICE} renders a per-stage id
+ * Each event carries its dot-namespaced id and default importance. The usage
+ * threshold publisher selects console-only or parallel mail; legacy kinds
+ * retain their existing frozen delivery policy. {@code VM_EXPIRY_NOTICE} renders a per-stage id
  * ({@code vm.expiry.d7} …) in the composer.
  *
  * <p>The two expiry events are published by the expiry job;
  * they are defined here so the catalog is complete from the start.</p>
  */
 public enum NotificationEvent {
+
+    LLM_USAGE_THRESHOLD("llm.usage.threshold", NotificationImportance.NORMAL),
 
     GPU_UPDATE("gpu.update", NotificationImportance.NORMAL),
     GPU_REVIEW("gpu.review", NotificationImportance.HIGH),

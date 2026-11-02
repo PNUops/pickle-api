@@ -100,6 +100,8 @@ public class NotificationDispatchJob {
     private final Duration bundleWindow;
     private final MailDeliveryJournal journal;
     private final TransactionTemplate transactions;
+    @org.springframework.beans.factory.annotation.Autowired
+    private kr.ac.pusan.pickle.llm.alert.LlmUsageAlertMailGuard usageMailGuard;
 
     public NotificationDispatchJob(JdbcTemplate jdbcTemplate, MailSender mailSender,
             @Value("${pickle.console.base-url:https://pickle.pusan.ac.kr}") String consoleBaseUrl,
@@ -204,6 +206,8 @@ public class NotificationDispatchJob {
      * the enqueue-time decision and address, including later account changes.
      */
     private boolean skipIfInactive(PendingMail mail) {
+        if (kr.ac.pusan.pickle.llm.alert.LlmUsageAlertAccess.EVENT.equals(mail.event())
+                && usageMailGuard.skipPending(mail.id())) { return true; }
         if (mail.frozenRecipient() || "ACTIVE".equals(mail.userStatus())) {
             return false;
         }
@@ -222,6 +226,10 @@ public class NotificationDispatchJob {
     private List<PendingMail> claim(List<PendingMail> rows, UUID owner) {
         if (rows.isEmpty()) return List.of();
         return transactions.execute(tx -> {
+            for (PendingMail row : rows) {
+                if (kr.ac.pusan.pickle.llm.alert.LlmUsageAlertAccess.EVENT.equals(row.event())
+                        && usageMailGuard.skipPending(row.id())) { return List.of(); }
+            }
             long userId = jdbcTemplate.queryForObject("select user_id from notifications where id = ?",
                     Long.class, rows.getFirst().id());
             jdbcTemplate.queryForObject("select pg_advisory_xact_lock(1129074512, ?::integer)::text",
@@ -279,6 +287,10 @@ public class NotificationDispatchJob {
 
     private void send(List<PendingMail> rows, UUID owner, String email, String subject, String text,
             String html) {
+        for (PendingMail row : rows) {
+            if (kr.ac.pusan.pickle.llm.alert.LlmUsageAlertAccess.EVENT.equals(row.event())
+                    && usageMailGuard.skipClaimed(row.id(), owner)) { return; }
+        }
         try {
             mailSender.send(new MailMessage(email, subject, text, html));
         } catch (RuntimeException failure) {

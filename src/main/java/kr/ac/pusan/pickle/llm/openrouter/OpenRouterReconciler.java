@@ -13,6 +13,7 @@ import java.util.Set;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
+import kr.ac.pusan.pickle.llm.alert.LlmUsageAlertState;
 import kr.ac.pusan.pickle.provisioning.DriftFindingKind;
 import kr.ac.pusan.pickle.provisioning.DriftFindingRepository;
 import org.jspecify.annotations.Nullable;
@@ -32,6 +33,8 @@ public class OpenRouterReconciler {
     private final DriftFindingRepository findings;
     private final OpenRouterSpendRecorder spendRecorder;
     private final OpenRouterCredentialResolver credentialResolver;
+    @org.springframework.beans.factory.annotation.Autowired
+    private @Nullable LlmUsageAlertState usageAlertState;
 
     public OpenRouterReconciler(LlmApiKeyRepository keyRepository,
             OpenRouterReadClient readClient, OpenRouterKeyMutationClient mutationClient,
@@ -79,6 +82,9 @@ public class OpenRouterReconciler {
         Instant observedAt = Instant.now(clock);
         OpenRouterSpendRecorder.AccountRecordResult recorded = spendRecorder.recordAccount(
                 result.spends(), observedAt, baselineExists, claim, () -> {
+                    if (usageAlertState != null) {
+                        for (ObservedKey row : result.observations()) { usageAlertState.capture(row.key(), row.observation()); }
+                    }
                     recordFindings(result.findingObservations(), observedAt);
                     credentialResolver.markReconciled(access, observedAt);
                     String prefix = "account:" + access.scopeKey() + ":key:";
@@ -116,6 +122,7 @@ public class OpenRouterReconciler {
         List<String> orphanKeys = new ArrayList<>();
         List<String> staleKeys = new ArrayList<>();
         List<OpenRouterSpendRecorder.Spend> spends = new ArrayList<>();
+        List<ObservedKey> observations = new ArrayList<>();
         List<FindingObservation> findingObservations = new ArrayList<>();
         boolean usageComplete = true;
         boolean managedBoundary = false;
@@ -131,6 +138,9 @@ public class OpenRouterReconciler {
             }
             String dedup = dedup(access, managed.hash());
             LlmApiKey local = localByHash.remove(managed.hash());
+            if (local != null && managed.currentObservation() != null) {
+                observations.add(new ObservedKey(local, managed.currentObservation()));
+            }
             if (local != null && managed.usage() != null) {
                 spends.add(new OpenRouterSpendRecorder.Spend(local.getId(), managed.usage(),
                         local.getCreditLimit(), managed.limitRemaining()));
@@ -216,7 +226,7 @@ public class OpenRouterReconciler {
                             .formatted(access.scopeKey(), local.getPublicId()),
                     dedup));
         }
-        return new ScopeResult(orphanKeys, staleKeys, spends, findingObservations,
+        return new ScopeResult(orphanKeys, staleKeys, spends, observations, findingObservations,
                 usageComplete, managedBoundary);
     }
 
@@ -299,9 +309,12 @@ public class OpenRouterReconciler {
 
     private record ScopeResult(List<String> orphans, List<String> stale,
             List<OpenRouterSpendRecorder.Spend> spends,
+            List<ObservedKey> observations,
             List<FindingObservation> findingObservations, boolean usageComplete,
             boolean managedBoundary) {
     }
+
+    private record ObservedKey(LlmApiKey key, OpenRouterKeyObservation observation) { }
 
     private record FindingObservation(DriftFindingKind kind, String summary,
             String detail, String dedupKey) {
