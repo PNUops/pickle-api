@@ -105,7 +105,8 @@ class LlmUsageAlertIntegrationTest {
         dispatcher.dispatch(); assertThat(mail.getMessages()).hasSize(1);
         assertThat(jdbc.queryForObject("select count(*) from notifications where user_id=? and event=?", Long.class,
                 owner.getId(), LlmUsageAlertAccess.EVENT)).isEqualTo(2);
-        assertThat(mail.getMessages().getFirst().textBody()).contains("100%", "100", "/console/llm-keys/" + key.getPublicId());
+        assertThat(mail.getMessages().getFirst().textBody())
+                .contains("Alert fixture의 일일 토큰 한도를 모두 사용했어요.", "/console/llm-keys/" + key.getPublicId());
     }
 
     @Test
@@ -141,7 +142,8 @@ class LlmUsageAlertIntegrationTest {
         event(key, null, legacy, 20);
         assertThat(alerts.evaluateKey(key.getId())).isEqualTo(1);
         assertThat(jdbc.queryForObject("select body from notifications where user_id=? and event=?", String.class,
-                owner.getId(), LlmUsageAlertAccess.EVENT)).contains("입출력 토큰: 80");
+                owner.getId(), LlmUsageAlertAccess.EVENT))
+                .isEqualTo("Alert fixture의 일일 토큰 한도를 80% 이상 사용했어요.");
     }
 
     @Test
@@ -241,7 +243,9 @@ class LlmUsageAlertIntegrationTest {
             provider(server, client, key, "0", "daily", true);
             assertThat(alerts.evaluateKey(key.getId())).isEqualTo(1); dispatcher.dispatch();
             assertThat(mail.getMessages()).hasSize(1);
-            assertThat(mail.getMessages().getFirst().textBody()).contains("남은 키 한도: 0 USD", "당시 한도: 1 USD", "UTC");
+            assertThat(mail.getMessages().getFirst().textBody())
+                    .contains("Alert fixture의 일일 금액 한도를 모두 사용했어요.")
+                    .doesNotContain("당시 한도", "관측 시각", "UTC");
         } finally { server.stop(); }
     }
 

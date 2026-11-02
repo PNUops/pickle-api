@@ -6099,8 +6099,8 @@ components:
     InstitutionAdminLlmBudgetResponse:
       properties:
         creditDepletionForecast:
-          description: "최근 소비 속도로 금액 한도에 도달할 것으로 보이는 날짜. 이력이 부족하거나 최근에 쓴 적이 없으면 null입\
-            니다."
+          description: "총액 한도를 최근 소비 속도로 소진할 것으로 예상하는 날짜. 주기별 한도이거나, 이력이 부족하거나 최근\
+            \ 소비가 없으면 null입니다."
           format: "date"
           type:
           - "string"
@@ -7397,8 +7397,8 @@ components:
     LlmKeyBudgetResponse:
       properties:
         creditDepletionForecast:
-          description: "최근 소비 속도로 금액 한도에 도달할 것으로 보이는 날짜. 이력이 부족하거나 최근에 쓴 적이 없으면 null입\
-            니다."
+          description: "총액 한도를 최근 소비 속도로 소진할 것으로 예상하는 날짜. 주기별 한도이거나, 이력이 부족하거나 최근\
+            \ 소비가 없으면 null입니다."
           format: "date"
           type:
           - "string"

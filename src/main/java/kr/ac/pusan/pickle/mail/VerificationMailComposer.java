@@ -50,11 +50,11 @@ public class VerificationMailComposer {
     private static final String ALREADY_REGISTERED_BODY = """
             안녕하세요.
 
-            이 주소로 Pickle(부산대학교 클라우드 플랫폼) 가입 요청이 접수되었지만, 이미 가입된 계정이 있어 새로 가입되지는 않았습니다.
+            이 이메일에는 이미 가입된 계정이 있어요.
 
             비밀번호를 잊으셨다면 로그인 화면의 '비밀번호 찾기'에서 재설정할 수 있습니다.
 
-            본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다. 계정에는 아무런 변경이 없습니다.""";
+            본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.""";
 
     private final AuthProperties authProperties;
 

@@ -76,6 +76,15 @@ class VerificationMailComposerTest {
     }
 
     @Test
+    void alreadyRegisteredNoticeKeepsRecoveryAndUnrequestedMailAdviceWithoutRepeatingNoChange() {
+        MailMessage mail = composer.composeAlreadyRegistered("a@example.com");
+
+        assertThat(mail.textBody()).contains("이미 가입된 계정", "비밀번호 찾기", "본인이 요청하지 않았다면");
+        assertThat(mail.textBody()).doesNotContain("새로 가입되지는", "계정에는 아무런 변경");
+        assertThat(mail.htmlBody()).doesNotContain("token=", "<a ");
+    }
+
+    @Test
     void ttlWordingDropsTheEmptyHalf() {
         assertThat(VerificationMailComposer.humanizeTtl(Duration.ofHours(24))).isEqualTo("24시간");
         assertThat(VerificationMailComposer.humanizeTtl(Duration.ofMinutes(30))).isEqualTo("30분");
