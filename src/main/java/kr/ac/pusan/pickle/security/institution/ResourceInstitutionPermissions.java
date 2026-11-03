@@ -32,7 +32,7 @@ public class ResourceInstitutionPermissions {
     public void requireReadSource(AuthenticatedUser actor, InstitutionWork... work) {
         if (actor.role().isSysTier() || Arrays.stream(work).anyMatch(item -> !authorization.sources(actor, item).isEmpty())) { return; }
         throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
-                kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "이 조회 업무를 수행할 권한이 없습니다.");
+                kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "이 정보를 조회할 권한이 없어요.");
     }
 
     public boolean resource(AuthenticatedUser actor, InstitutionWork work, @Nullable Long institutionId,

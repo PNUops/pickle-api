@@ -12,6 +12,6 @@ public record ResendVerificationRequest(
         // advertising it would invite a signup path that is not for them. Do not
         // narrow the pattern to match the message.
         @Pattern(regexp = "^[A-Za-z0-9._%+-]+@(pusan\\.ac\\.kr|pnuops\\.com)$",
-                message = "@pusan.ac.kr 이메일만 사용할 수 있습니다.")
+                message = "부산대학교 이메일(@pusan.ac.kr)을 입력해 주세요.")
         String email) {
 }

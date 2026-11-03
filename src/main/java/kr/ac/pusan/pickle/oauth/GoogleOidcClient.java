@@ -92,10 +92,10 @@ public class GoogleOidcClient {
                     .retrieve()
                     .body(Map.class);
         } catch (RuntimeException e) {
-            throw exchangeFailed("토큰 교환에 실패했습니다.", e);
+            throw exchangeFailed("구글 로그인 정보를 받지 못했어요. 다시 시도해 주세요.", e);
         }
         if (token == null || !(token.get("id_token") instanceof String idToken)) {
-            throw exchangeFailed("구글 응답에 id_token이 없습니다.", null);
+            throw exchangeFailed("구글 로그인 정보가 없어요. 다시 시도해 주세요.", null);
         }
         return verify(idToken, expectedNonce);
     }
@@ -109,28 +109,28 @@ public class GoogleOidcClient {
         try {
             jwt = decoder().decode(idToken);
         } catch (RuntimeException e) {
-            throw exchangeFailed("id_token 검증에 실패했습니다.", e);
+            throw exchangeFailed("구글 로그인 정보를 확인하지 못했어요. 다시 시도해 주세요.", e);
         }
 
         // aud: a correctly signed token issued for a DIFFERENT client is still a
         // valid Google token. Skipping this is how one app accepts another's.
         if (!List.of(properties.clientId()).equals(audienceOf(jwt))) {
-            throw exchangeFailed("id_token의 대상이 이 클라이언트가 아닙니다.", null);
+            throw exchangeFailed("구글 로그인 정보를 확인하지 못했어요. 처음부터 다시 시도해 주세요.", null);
         }
         // getClaimAsString, not String.valueOf(getClaim(...)): getClaim is
         // generic, so the compiler infers char[] and picks String.valueOf(char[]),
         // which throws ClassCastException at runtime on a String claim.
         if (!properties.issuers().contains(jwt.getClaimAsString("iss"))) {
-            throw exchangeFailed("id_token의 발급자가 구글이 아닙니다.", null);
+            throw exchangeFailed("구글 로그인 정보를 확인하지 못했어요. 처음부터 다시 시도해 주세요.", null);
         }
         Instant expiresAt = jwt.getExpiresAt();
         if (expiresAt == null || expiresAt.isBefore(Instant.now())) {
-            throw exchangeFailed("id_token이 만료되었습니다.", null);
+            throw exchangeFailed("구글 로그인 정보가 만료됐어요. 다시 시도해 주세요.", null);
         }
         // nonce binds the token to the authorization request we started, so a
         // token captured from another flow cannot be replayed into this one.
         if (!expectedNonce.equals(jwt.getClaim("nonce"))) {
-            throw exchangeFailed("id_token이 이 요청과 연결되지 않았습니다.", null);
+            throw exchangeFailed("구글 로그인 요청을 확인하지 못했어요. 처음부터 다시 시도해 주세요.", null);
         }
 
         String email = jwt.getClaimAsString("email");
@@ -150,7 +150,7 @@ public class GoogleOidcClient {
         }
         String subject = jwt.getSubject();
         if (subject == null || subject.isBlank()) {
-            throw exchangeFailed("id_token에 sub가 없습니다.", null);
+            throw exchangeFailed("구글 계정을 확인하지 못했어요. 다시 시도해 주세요.", null);
         }
         return new GoogleIdentity(subject, email, jwt.getClaimAsString("name"), hostedDomain);
     }
@@ -176,7 +176,7 @@ public class GoogleOidcClient {
 
     private static ApiException exchangeFailed(String detail, @Nullable Throwable cause) {
         ApiException failure = new ApiException(HttpStatus.BAD_GATEWAY, ErrorCodes.AUTH_OAUTH_EXCHANGE_FAILED,
-                "구글 로그인에 실패했습니다", detail);
+                "구글 로그인에 실패했어요", detail);
         if (cause != null) {
             failure.initCause(cause);
         }
@@ -185,8 +185,8 @@ public class GoogleOidcClient {
 
     private static ApiException domainNotAllowed() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_OAUTH_DOMAIN_NOT_ALLOWED,
-                "사용할 수 없는 구글 계정입니다",
-                "부산대학교 구글 계정(@pusan.ac.kr)으로만 로그인할 수 있습니다.");
+                "사용할 수 없는 구글 계정이에요",
+                "부산대학교 구글 계정(@pusan.ac.kr)으로만 로그인할 수 있어요.");
     }
 
     private static String enc(String value) {

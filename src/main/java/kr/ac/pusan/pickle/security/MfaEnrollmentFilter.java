@@ -53,8 +53,8 @@ public class MfaEnrollmentFilter extends OncePerRequestFilter {
                     && principal.role().isSysTier()
                     && !mfaService.isEnrolled(principal.id())) {
                 problemJsonWriter.write(request, response, HttpStatus.FORBIDDEN.value(),
-                        ErrorCodes.MFA_ENROLLMENT_REQUIRED, "2단계 인증 등록이 필요합니다",
-                        "관리자 계정은 2단계 인증 등록 후 이용할 수 있습니다. 계정 설정에서 2단계 인증을 등록해 주세요.");
+                        ErrorCodes.MFA_ENROLLMENT_REQUIRED, "2단계 인증 등록이 필요해요",
+                        "관리자 계정은 2단계 인증을 등록해야 해요. 계정 설정에서 등록해 주세요.");
                 return;
             }
         }

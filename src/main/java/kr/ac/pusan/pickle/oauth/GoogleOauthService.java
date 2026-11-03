@@ -114,7 +114,7 @@ public class GoogleOauthService {
         if (purpose != OauthPurpose.LOGIN) {
             if (actor == null) {
                 throw new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
-                        "인증이 필요합니다", "로그인한 뒤 다시 시도해 주세요.");
+                        "인증이 필요해요", "로그인한 뒤 다시 시도해 주세요.");
             }
             initiatingUserId = actor.id();
         }
@@ -275,8 +275,8 @@ public class GoogleOauthService {
         identityRepository.findByProviderAndSubject(IdentityProvider.GOOGLE, identity.subject())
                 .ifPresent(existing -> {
                     throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.AUTH_OAUTH_ALREADY_LINKED,
-                            "이미 연동된 구글 계정입니다",
-                            "이 구글 계정은 다른 계정에 연동되어 있습니다.");
+                            "이미 연동된 구글 계정이에요",
+                            "이 구글 계정은 다른 계정에 연동돼 있어요.");
                 });
         identityRepository.save(new UserIdentity(user.getId(), IdentityProvider.GOOGLE,
                 identity.subject(), identity.email().toLowerCase(Locale.ROOT), identity.hostedDomain(),
@@ -309,7 +309,7 @@ public class GoogleOauthService {
         // colliding on the unique index.
         if (userRepository.existsByEmail(registration.getEmail())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.AUTH_OAUTH_ALREADY_LINKED,
-                    "이미 가입된 주소입니다", "이 주소로 이미 계정이 있습니다. 다시 로그인해 주세요.");
+                    "이미 가입된 이메일이에요", "이 이메일로 가입된 계정이 있어요. 다시 로그인해 주세요.");
         }
 
         Instant now = Instant.now();
@@ -351,7 +351,7 @@ public class GoogleOauthService {
     private void requireConfigured() {
         if (!properties.enabled()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.AUTH_OAUTH_NOT_CONFIGURED,
-                    "구글 로그인을 사용할 수 없습니다", "이 환경에는 구글 로그인이 설정되어 있지 않습니다.");
+                    "구글 로그인을 사용할 수 없어요", "현재 구글 로그인을 사용할 수 없어요.");
         }
     }
 
@@ -365,8 +365,8 @@ public class GoogleOauthService {
     private void requireSignInAllowed(User user) {
         if (user.getStatus() == UserStatus.WITHDRAWN || user.getStatus() == UserStatus.DISABLED) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCOUNT_INVALID_STATE,
-                    "로그인할 수 없는 계정입니다",
-                    "이 계정은 현재 사용할 수 없습니다. 운영자에게 문의해 주세요.");
+                    "로그인할 수 없는 계정이에요",
+                    "이 계정은 현재 사용할 수 없어요. 관리자에게 문의해 주세요.");
         }
     }
 
@@ -400,11 +400,11 @@ public class GoogleOauthService {
 
     private static ApiException stateGone() {
         return new ApiException(HttpStatus.GONE, ErrorCodes.AUTH_OAUTH_STATE_INVALID,
-                "로그인 요청이 만료되었습니다", "구글 로그인을 처음부터 다시 시도해 주세요.");
+                "로그인 요청이 만료됐어요", "구글 로그인을 처음부터 다시 시도해 주세요.");
     }
 
     private static ApiException registrationGone() {
         return new ApiException(HttpStatus.GONE, ErrorCodes.AUTH_OAUTH_REGISTRATION_EXPIRED,
-                "가입 절차가 만료되었습니다", "구글 로그인을 처음부터 다시 시도해 주세요.");
+                "가입 시간이 지났어요", "구글 로그인을 처음부터 다시 시도해 주세요.");
     }
 }

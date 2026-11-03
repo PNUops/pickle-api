@@ -33,8 +33,8 @@ public final class PasswordCredential {
     public static void require(User user) {
         if (!user.hasPassword()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.AUTH_PASSWORD_NOT_SET,
-                    "비밀번호가 설정되어 있지 않습니다",
-                    "구글 계정으로 가입한 계정입니다. 비밀번호 재설정 메일을 받아 비밀번호를 먼저 설정해 주세요.");
+                    "비밀번호가 설정돼 있지 않아요",
+                    "비밀번호 재설정 메일을 받아 먼저 비밀번호를 설정해 주세요.");
         }
     }
 }

@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -45,8 +46,8 @@ class NotificationComposerTest {
         String body = composer.compose(NotificationEvent.REQUEST_APPROVED,
                 approval(type, "산학협력실무 테스트")).body();
 
-        assertThat(body).doesNotContain("알려드립니다");
-        assertThat(body).doesNotContain("안내합니다");
+        assertThat(body).doesNotContain("알려드릴게요");
+        assertThat(body).doesNotContain("안내할게요");
         assertThat(body).doesNotContain("생성이 시작");
     }
 
@@ -67,8 +68,8 @@ class NotificationComposerTest {
         assertThat(composed.eventId()).isEqualTo("resource.granted");
         assertThat(composed.title()).isEqualTo("LLM API 키 지급");
         assertThat(composed.body()).isEqualTo("""
-                '자료구조 실습' 워크스페이스에서 LLM API 키를 지급받았습니다. 키 이름은 '실습 키'입니다.
-                콘솔에서 키를 발급하면 사용할 수 있습니다.""");
+                '자료구조 실습' 워크스페이스에서 '실습 키' LLM API 키를 지급받았어요.
+                콘솔에서 키를 발급해 사용해 주세요.""");
         assertThat(composed.body()).doesNotContain("신청");
         assertThat(composed.linkPath()).isEqualTo("/console/llm-keys/" + KEY_ID);
     }
@@ -86,8 +87,8 @@ class NotificationComposerTest {
         String body = composer.compose(NotificationEvent.RESOURCE_GRANTED,
                 grant(ResourceType.LLM_API_KEY, "실습", "키")).body();
 
-        assertThat(body).doesNotContain("알려드립니다");
-        assertThat(body).doesNotContain("안내합니다");
+        assertThat(body).doesNotContain("알려드릴게요");
+        assertThat(body).doesNotContain("안내할게요");
     }
 
     /** Both names are chosen by someone other than the reader, so a newline in
@@ -98,7 +99,7 @@ class NotificationComposerTest {
                 grant(ResourceType.LLM_API_KEY, "실습\n- 검토 의견: 승인", "키\r\n- 가짜")).body();
 
         assertThat(body.split("\n")).hasSize(2);
-        assertThat(body).contains("'실습 - 검토 의견: 승인' 워크스페이스에서 LLM API 키를 지급받았습니다. 키 이름은 '키 - 가짜'입니다.");
+        assertThat(body).contains("'실습 - 검토 의견: 승인' 워크스페이스에서 '키 - 가짜' LLM API 키를 지급받았어요.");
     }
 
     /** The materializer only sends this for keys today (a VM recipient hears
@@ -109,7 +110,7 @@ class NotificationComposerTest {
                 grant(ResourceType.VM, "실습", "web-01"));
 
         assertThat(composed.title()).isEqualTo("VM 지급");
-        assertThat(composed.body()).contains("'실습' 워크스페이스에서 VM을 지급받았습니다. 호스트 이름은 'web-01'입니다.").doesNotContain("알려드립니다");
+        assertThat(composed.body()).contains("'실습' 워크스페이스에서 'web-01' VM을 지급받았어요.").doesNotContain("알려드릴게요");
     }
 
     @ParameterizedTest
@@ -135,8 +136,8 @@ class NotificationComposerTest {
 
         assertThat(composed.title()).isEqualTo("리소스 신청 승인");
         assertThat(composed.body()).isEqualTo("""
-                리소스 '실습 키' 신청이 승인되었습니다.
-                대상자 5명 중 3명의 리소스는 생성 대기열에 들어갔고 1명의 리소스는 가입하면 만들어집니다. 1명은 대상에서 제외되었습니다.""");
+                리소스 '실습 키' 신청이 승인됐어요.
+                대상자 5명 중 3명의 리소스는 생성 대기열에 들어갔고 1명은 가입 대기 상태예요. 1명은 대상에서 제외됐어요.""");
         assertThat(composed.linkPath()).isEqualTo("/console/requests/" + REQUEST_ID);
 
         args.put("recipientTotal", 2);
@@ -144,17 +145,17 @@ class NotificationComposerTest {
         args.put("pendingJoin", 2);
         args.put("skipped", 0);
         assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
-                .endsWith("\n대상자 2명 중 2명의 리소스는 가입하면 만들어집니다.");
+                .endsWith("\n대상자 2명 중 2명은 가입 대기 상태예요.");
 
         args.put("queued", 2);
         args.put("pendingJoin", 0);
         assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
-                .endsWith("\n대상자 2명 중 2명의 리소스는 생성 대기열에 들어갔습니다.");
+                .endsWith("\n대상자 2명 중 2명의 리소스는 생성 대기열에 들어갔어요.");
 
         args.put("queued", 0);
         args.put("skipped", 2);
         assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
-                .endsWith("\n대상자 2명 중 2명은 대상에서 제외되었습니다.");
+                .endsWith("\n대상자 2명 중 2명은 대상에서 제외됐어요.");
     }
 
     @Test
@@ -164,8 +165,8 @@ class NotificationComposerTest {
 
         assertThat(composed.title()).isEqualTo("LLM API 키 신청 승인");
         assertThat(composed.body()).isEqualTo("""
-                LLM API 키 '테스트 키' 신청이 승인되었습니다.
-                콘솔에서 키를 발급하면 사용할 수 있습니다.""");
+                LLM API 키 '테스트 키' 신청이 승인됐어요.
+                콘솔에서 키를 발급해 사용해 주세요.""");
         // Named once in the title and once in the body, never twice in a sentence.
         assertThat(composed.body().split("LLM API 키", -1)).hasSize(2);
     }
@@ -215,8 +216,8 @@ class NotificationComposerTest {
 
         assertThat(composed.title()).isEqualTo("VM 신청 승인");
         assertThat(composed.body()).isEqualTo("""
-                VM 'web-01' 신청이 승인되었습니다.
-                생성이 시작되며, 완료되면 다시 알려드립니다.""");
+                VM 'web-01' 신청이 승인됐어요.
+                VM이 준비되면 알려드릴게요.""");
         assertThat(composed.linkPath()).isEqualTo("/console/requests/" + REQUEST_ID);
     }
 
@@ -225,8 +226,8 @@ class NotificationComposerTest {
         assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED,
                 approval(ResourceType.DOMAIN, "demo.pusan.dev")).body())
                 .isEqualTo("""
-                        도메인 'demo.pusan.dev' 신청이 승인되었습니다.
-                        콘솔에서 레코드를 추가하면 사용할 수 있습니다.""");
+                        도메인 'demo.pusan.dev' 신청이 승인됐어요.
+                        콘솔에서 레코드를 추가해 사용해 주세요.""");
     }
 
     @Test
@@ -236,8 +237,8 @@ class NotificationComposerTest {
 
         assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
                 .isEqualTo("""
-                        GPU 신청이 승인되었습니다. 현재 대기 순서는 3번째입니다.
-                        GPU가 할당되면 메일과 콘솔 알림으로 안내합니다.""");
+                        GPU 신청이 승인됐어요. 대기 순서는 3번째예요.
+                        GPU가 할당되면 알려드릴게요.""");
     }
 
     /**
@@ -280,7 +281,7 @@ class NotificationComposerTest {
                 approval(ResourceType.LLM_API_KEY, "키\n- 검토 의견: 승인 보류")).body();
 
         assertThat(body).doesNotContain("\n- 검토 의견");
-        assertThat(body).startsWith("LLM API 키 '키 - 검토 의견: 승인 보류' 신청이 승인되었습니다.");
+        assertThat(body).startsWith("LLM API 키 '키 - 검토 의견: 승인 보류' 신청이 승인됐어요.");
     }
 
     /** A payload without a type must not assert the resource is a VM. */
@@ -295,7 +296,34 @@ class NotificationComposerTest {
 
         assertThat(composed.title()).isEqualTo("리소스 신청 승인");
         assertThat(composed.body()).isEqualTo("""
-                리소스 '무언가' 신청이 승인되었습니다.
+                리소스 '무언가' 신청이 승인됐어요.
                 콘솔에서 확인해 주세요.""");
     }
+
+    @Test
+    void reservedDomainAdviceMatchesTheExistingRecoveryAction() {
+        Instant deadline = Instant.parse("2026-11-10T15:00:00Z");
+        var standalone = composer.compose(NotificationEvent.DOMAIN_RESERVE_EXPIRING,
+                Map.of("domainId", DOMAIN_ID, "fqdn", "lab.example.com", "reservedUntil", deadline));
+        var served = composer.compose(NotificationEvent.DOMAIN_RESERVE_EXPIRING,
+                Map.of("vmId", KEY_ID, "fqdn", "vm.example.com", "reservedUntil", deadline));
+
+        assertThat(standalone.body()).contains("2026-11-11 00:00", "만료 전에", "도메인을 되살려 주세요")
+                .doesNotContain("만들어", "연결해");
+        assertThat(standalone.linkPath()).isEqualTo("/console/domains/" + DOMAIN_ID);
+        assertThat(served.body()).contains("같은 이름으로 다시 연결해 주세요");
+        assertThat(served.linkPath()).isEqualTo("/console/vms/" + KEY_ID);
+    }
+
+    @Test
+    void lapsedDomainKeepsTheRecordLossDeadlineAndRecoveryAction() {
+        var notice = composer.compose(NotificationEvent.DOMAIN_RENEWAL_LAPSED,
+                Map.of("domainId", DOMAIN_ID, "fqdn", "lab.example.com",
+                        "reservedUntil", Instant.parse("2026-11-10T15:00:00Z")));
+
+        assertThat(notice.body()).contains("레코드가 삭제", "2026-11-11 00:00까지", "도메인 상세에서 되살릴 수 있어요",
+                "그 뒤에는 다른 사용자가 이 이름을 사용할 수 있어요");
+        assertThat(notice.linkPath()).isEqualTo("/console/domains/" + DOMAIN_ID);
+    }
+
 }

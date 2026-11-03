@@ -102,7 +102,7 @@ public class ProfileValidator {
                 errors.add(new FieldValidationError("studentNo", "학번을 입력해 주세요."));
             } else if (!STUDENT_NO.matcher(trimmed).matches()) {
                 errors.add(new FieldValidationError("studentNo",
-                        "학번 형식이 올바르지 않습니다. (영문·숫자·하이픈 4~20자)"));
+                        "학번은 영문과 숫자, 하이픈으로 4~20자 입력해 주세요."));
             }
         }
         if (verifyDepartmentCode && departmentCode != null
@@ -116,7 +116,7 @@ public class ProfileValidator {
         if (otherTrimmed != null && !otherTrimmed.isEmpty()
                 && departmentCode != null && !DepartmentCatalog.OTHER.equals(departmentCode)) {
             errors.add(new FieldValidationError("departmentOther",
-                    "목록에서 고른 소속과 직접 입력한 소속 중 하나만 보낼 수 있습니다."));
+                    "목록에서 고른 소속과 직접 입력한 소속 중 하나만 보내 주세요."));
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
