@@ -23,15 +23,15 @@ public class LlmKeyResourceAdapter implements ResourceTypeAdapter {
 
     /** Every sentence the access machinery says about a key. */
     public static final ResourceAccessMessages MESSAGES = new ResourceAccessMessages(
-            "해당 LLM API 키가 존재하지 않습니다.",
-            new ResourceAccessMessages.Refusal("이 키에 접근할 권한이 없습니다",
-                    "이 LLM API 키의 접근 목록에 등록되어 있지 않습니다. 자원 소유자에게 접근 권한을 요청해 주세요."),
-            new ResourceAccessMessages.Refusal("접근 권한을 관리할 권한이 없습니다",
-                    "이 LLM API 키의 소유자 또는 워크스페이스 소유자만 접근 권한을 관리할 수 있습니다."),
-            "이 키를 소유한 워크스페이스의 구성원만 접근 권한을 받을 수 있습니다. 먼저 워크스페이스에 추가해 주세요.",
+            "LLM API 키를 찾을 수 없어요.",
+            new ResourceAccessMessages.Refusal("이 키에 접근할 권한이 없어요",
+                    "키 소유자나 워크스페이스 소유자에게 접근 권한을 요청해 주세요."),
+            new ResourceAccessMessages.Refusal("접근 권한을 관리할 수 없어요",
+                    "이 LLM API 키의 소유자나 워크스페이스 소유자만 접근 권한을 관리할 수 있어요."),
+            "이 키의 워크스페이스 구성원에게만 권한을 줄 수 있어요. 먼저 구성원으로 추가해 주세요.",
             ErrorCodes.LLM_KEY_ACCESS_GRANT_EXISTS,
-            new ResourceAccessMessages.Refusal("이미 접근 권한이 있습니다",
-                    "이 대상은 이미 이 LLM API 키의 접근 목록에 있습니다. 등급을 바꾸려면 기존 항목을 수정해 주세요."));
+            new ResourceAccessMessages.Refusal("이미 접근 권한이 있어요",
+                    "기존 접근 목록에서 등급을 바꿔 주세요."));
 
     private static final ResourceAccessAudit AUDIT = new ResourceAccessAudit("llm_key",
             AuditService.LLM_KEY_ACCESS_GRANT_ADD, AuditService.LLM_KEY_ACCESS_GRANT_UPDATE,
