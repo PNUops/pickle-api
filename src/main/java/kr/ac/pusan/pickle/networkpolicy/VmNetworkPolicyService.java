@@ -33,10 +33,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class VmNetworkPolicyService {
 
     private static final List<VmNetworkSystemRuleView> SYSTEM_RULES = List.of(
-            new VmNetworkSystemRuleView("SSH_GATEWAY", "플랫폼 SSH gateway에서 VM SSH 접속"),
-            new VmNetworkSystemRuleView("WEB_TERMINAL", "웹 터미널 bridge에서 VM SSH 접속"),
-            new VmNetworkSystemRuleView("HTTP_PUBLISHING", "활성 도메인의 backend 포트 접속"),
-            new VmNetworkSystemRuleView("PORT_FORWARDING", "활성 포트포워딩의 backend 포트 접속"));
+            new VmNetworkSystemRuleView("SSH_GATEWAY", "SSH 게이트웨이에서 VM으로 SSH 접속"),
+            new VmNetworkSystemRuleView("WEB_TERMINAL", "웹 터미널에서 VM으로 SSH 접속"),
+            new VmNetworkSystemRuleView("HTTP_PUBLISHING", "활성 도메인의 VM 서비스 포트 접속"),
+            new VmNetworkSystemRuleView("PORT_FORWARDING", "활성 포트포워딩의 VM 서비스 포트 접속"));
 
     private final VmNetworkPolicyStore store;
     private final VmAccessService access;
@@ -72,14 +72,14 @@ public class VmNetworkPolicyService {
     @Transactional(readOnly = true)
     public VmNetworkPolicyView userView(AuthenticatedUser actor, UUID vmId) {
         Vm vm = access.of(actor, vmId).requireAtLeast(ResourceRole.VIEWER,
-                "VM 통신 정책을 조회할 수 없습니다", "VM 열람자 이상의 접근 권한이 필요합니다.");
+                "VM 통신 정책을 조회할 수 없어요", "VM 열람자 이상의 접근 권한이 필요해요.");
         return view(vm);
     }
 
     public VmNetworkPolicyView userUpdate(AuthenticatedUser actor, UUID vmId,
             UpdateVmNetworkPolicyRequest request, String ip) {
         Vm vm = access.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
-                "VM 통신 정책을 변경할 수 없습니다", "VM 편집자 이상의 접근 권한이 필요합니다.");
+                "VM 통신 정책을 변경할 수 없어요", "VM 편집자 이상의 접근 권한이 필요해요.");
         return updateLocked(vm, actor, request, false, ip);
     }
 
@@ -114,7 +114,7 @@ public class VmNetworkPolicyService {
     }
 
     private static ApiException busy() {
-        return VmNetworkPolicyStore.unavailable("VM 통신 정책을 다른 작업이 처리 중입니다. 작성 중인 규칙을 유지하고 다시 시도해 주세요.");
+        return VmNetworkPolicyStore.unavailable("다른 작업이 VM 통신 정책을 처리하고 있어요. 작성 중인 규칙을 유지하고 다시 시도해 주세요.");
     }
 
     private VmNetworkPolicyView view(Vm vm) {
@@ -122,8 +122,8 @@ public class VmNetworkPolicyService {
         if (policy.isEmpty()) {
             if (!properties.enabled()) {
                 throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_NETWORK_POLICY_DISABLED,
-                        "VM 통신 정책 기능이 비활성화되어 있습니다",
-                        "이 환경에서는 아직 VM 통신 정책을 사용할 수 없습니다.");
+                        "VM 통신 정책 기능이 꺼져 있어요",
+                        "이 환경에서는 아직 VM 통신 정책을 사용할 수 없어요.");
             }
             return new VmNetworkPolicyView(0, List.of(), SYSTEM_RULES,
                     VmNetworkPolicyApplyState.INACTIVE, null, null, null, null);

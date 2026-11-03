@@ -212,7 +212,7 @@ public class VmSettingsService {
         ResourceRole actorRole = memberRole(vm, actor);
         if (!actorRole.atLeast(ResourceRole.EDITOR)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                    "VM 설정에 접근할 권한이 없습니다", "이 VM의 편집자 이상만 VM 설정을 볼 수 있습니다.");
+                    "VM 설정에 접근할 권한이 없어요", "이 VM의 편집자 이상만 설정을 볼 수 있어요.");
         }
         return buildViews(vm, actorRole);
     }
@@ -234,8 +234,8 @@ public class VmSettingsService {
         }
         if (UNCHANGEABLE_STATES.contains(vm.getStatus())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 수행할 수 없는 작업입니다",
-                    "삭제 중이거나 삭제된 VM의 설정은 변경할 수 없습니다.");
+                    "현재 상태에서는 설정을 바꿀 수 없어요",
+                    "삭제 중이거나 삭제된 VM에서는 설정을 바꿀 수 없어요.");
         }
         // 0) normalize before anything looks at the values, so validation, the
         //    persisted row and the audit entry all see the same text.
@@ -247,7 +247,7 @@ public class VmSettingsService {
             VmSettingDef def = registry.get(entry.getKey());
             if (def == null) {
                 errors.add(new FieldValidationError("settings." + entry.getKey(),
-                        "알 수 없는 설정 키입니다."));
+                        "알 수 없는 설정 키예요."));
             } else {
                 validateValue(def, entry.getValue()).ifPresent(errors::add);
             }
@@ -260,9 +260,9 @@ public class VmSettingsService {
             VmSettingDef def = registry.get(key);
             if (!actorRole.atLeast(def.requiredRole())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                        "설정을 변경할 권한이 없습니다",
+                        "설정을 변경할 권한이 없어요",
                         "`" + key + "` 설정은 이 VM의 " + def.requiredRole()
-                                + " 이상만 변경할 수 있습니다.");
+                                + " 등급 이상만 변경할 수 있어요.");
             }
         }
         // 3) apply + audit (atomic within the tx).
@@ -356,12 +356,12 @@ public class VmSettingsService {
             return java.util.Optional.empty();
         }
         String message = switch (def.type()) {
-            case BOOLEAN -> "true 또는 false여야 합니다.";
-            case ENUM -> String.join(", ", def.allowedValues()) + " 중 하나여야 합니다.";
-            case INTEGER -> "정수여야 합니다.";
+            case BOOLEAN -> "true 또는 false를 입력해 주세요.";
+            case ENUM -> String.join(", ", def.allowedValues()) + " 중 하나를 입력해 주세요.";
+            case INTEGER -> "정수를 입력해 주세요.";
             case STRING -> value.isString() && def.maxLength() > 0
-                    ? "최대 " + def.maxLength() + "자까지 입력할 수 있습니다."
-                    : "문자열이어야 합니다.";
+                    ? "최대 " + def.maxLength() + "자까지 입력할 수 있어요."
+                    : "문자열로 입력해 주세요.";
         };
         return java.util.Optional.of(new FieldValidationError(field, message));
     }
@@ -395,30 +395,30 @@ public class VmSettingsService {
         map.put(SSH_PASSWORD_ENABLED, new VmSettingDef(SSH_PASSWORD_ENABLED,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
                 ResourceRole.EDITOR, "비밀번호 SSH 허용",
-                "SSH 게이트웨이에서 비밀번호 접속을 허용합니다. 켜면 접속자 개인을 식별할 수 없습니다.",
+                "켜면 SSH 게이트웨이에서 비밀번호 접속을 허용해요. 접속자를 개인별로 식별할 수 없어요.",
                 AuditService.VM_SETTING_UPDATE));
         map.put(PASSWORD_REVEAL_MIN_ROLE, new VmSettingDef(PASSWORD_REVEAL_MIN_ROLE,
                 VmSettingValueType.ENUM, List.of("MEMBER", "EDITOR", "OWNER"),
-                mapper.valueToTree("MEMBER"), ResourceRole.OWNER, "비밀번호 열람 최소 역할",
-                "VM 비밀번호(= sudo 자격)를 열람할 수 있는 최소 등급입니다(이 VM의 접근 권한 기준).",
+                mapper.valueToTree("MEMBER"), ResourceRole.OWNER, "비밀번호 열람 최소 등급",
+                "이 VM의 비밀번호(sudo 자격)를 볼 수 있는 최소 접근 등급이에요.",
                 AuditService.VM_SETTING_UPDATE));
         map.put(DELETION_PROTECTION, new VmSettingDef(DELETION_PROTECTION,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
                 ResourceRole.OWNER, "삭제 보호",
-                "켜면 본인과 관리자의 삭제 접수가 강제 삭제까지 모두 거부됩니다. "
-                        + "삭제하려면 먼저 이 설정을 해제하세요.",
+                "켜면 삭제 접수가 거부돼요. 삭제하려면 먼저 이 설정을 해제해야 해요. "
+                        + "시스템 관리자가 강제 삭제에서 보호 무시를 선택한 경우는 예외예요.",
                 AuditService.VM_SETTING_UPDATE));
         map.put(STOP_PROTECTION, new VmSettingDef(STOP_PROTECTION,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
                 ResourceRole.OWNER, "중지 보호",
-                "켜면 종료·재부팅·강제 종료를 EDITOR 이상만 수행할 수 있습니다(시작은 제한 없음). "
-                        + "한계: sudo 가능한 구성원은 게스트 내부에서 여전히 종료할 수 있습니다.",
+                "켜면 종료와 재부팅, 강제 종료는 편집자 이상만 할 수 있어요. 시작 권한은 바뀌지 않아요. "
+                        + "sudo 권한이 있는 사람은 VM 안에서 여전히 종료할 수 있어요.",
                 AuditService.VM_SETTING_UPDATE));
         map.put(DISPLAY_NAME, new VmSettingDef(DISPLAY_NAME,
                 VmSettingValueType.STRING, null, mapper.nullNode(),
                 ResourceRole.EDITOR, "표시명",
-                "콘솔 목록·상세에 이름 대신 표시할 별칭입니다(최대 " + DISPLAY_NAME_MAX_LENGTH
-                        + "자, 빈 문자열로 해제). 호스트네임·슬러그·Proxmox 이름은 바뀌지 않습니다.",
+                "목록과 상세에 이름 대신 보일 별칭이에요. 최대 " + DISPLAY_NAME_MAX_LENGTH
+                        + "자이며 빈 문자열로 해제할 수 있어요. 호스트명과 슬러그, Proxmox 이름은 바뀌지 않아요.",
                 AuditService.VM_SETTING_UPDATE, DISPLAY_NAME_MAX_LENGTH));
         return Collections.unmodifiableMap(map);
     }

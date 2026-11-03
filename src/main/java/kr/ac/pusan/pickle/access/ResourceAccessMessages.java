@@ -43,7 +43,7 @@ public record ResourceAccessMessages(
     /** Existence masked: the same answer as an id that names nothing. */
     public ApiException notFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", notFoundDetail);
+                "리소스를 찾을 수 없어요", notFoundDetail);
     }
 
     /** Visible but closed — an honest 403 rather than a lie about existence. */
