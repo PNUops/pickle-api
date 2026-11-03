@@ -181,7 +181,7 @@ public class DeleteVmJob {
                 || vm.getDeleteScheduledFor() == null
                 || vm.getDeleteScheduledFor().isAfter(Instant.now())) {
             taskRepository.fail(task.getId(),
-                    "파기 직전 재검증 실패 — 삭제가 취소되었거나 상태가 변경되어 중단합니다", Instant.now());
+                    "파기 직전 재검증에 실패했어요. 삭제가 취소됐거나 상태가 바뀌어 작업을 중단했어요.", Instant.now());
             log.info("Delete job aborted for vm {}: cancellation raced the destroy", vmId);
             return;
         }
@@ -195,8 +195,8 @@ public class DeleteVmJob {
         // already passed.
         if (vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION)) {
             Instant now = Instant.now();
-            String detail = "삭제 보호가 켜진 상태로 파기 시점에 도달했습니다 — 소유자 이의 제기"
-                    + " 여부를 확인한 뒤, 회수하려면 오버라이드 강제 삭제를 실행하세요";
+            String detail = "삭제 보호가 켜져 있어 파기를 보류했어요. 소유자 이의 제기"
+                    + " 여부를 확인한 뒤, 회수가 필요하면 오버라이드 강제 삭제를 요청해 주세요.";
             log.error("Delete pipeline parked for vm {}: deletion_protection is on at destroy time",
                     vmId);
             taskRepository.park(task.getId(), detail, now);
@@ -205,7 +205,7 @@ public class DeleteVmJob {
         }
         if (!gpuMutations.prepareVmDeletion(vmId, false)) {
             taskRepository.transitionStatus(task.getId(), ProvisioningTaskStatus.RUNNING,
-                    ProvisioningTaskStatus.RETRYING, "GPU 연결 해제가 완료되기를 기다립니다.", Instant.now());
+                    ProvisioningTaskStatus.RETRYING, "GPU 연결 해제를 기다리고 있어요.", Instant.now());
             return;
         }
         try {
@@ -243,15 +243,15 @@ public class DeleteVmJob {
             log.error("Delete pipeline parked for vm {}: {}", vmId, e.getMessage());
             taskRepository.park(task.getId(), e.getMessage(), now);
             vmRepository.updateStatusDetail(vmId, VmStatus.DELETING,
-                    e.getMessage() + " — 관리자 확인이 필요합니다", now);
+                    e.getMessage() + " (관리자 확인이 필요해요.)", now);
         } catch (ProtectedDestroyRefusalException e) {
             // PVE refused the destroy as protected even though the pipeline
             // cleared the flag just before — someone re-set it out-of-band
             // in that window. Never retry — park for an operator.
             Instant now = Instant.now();
-            String detail = "Proxmox 보호(protection) 플래그로 파기가 거부되었습니다 — "
-                    + "관리자가 오버라이드 강제 삭제로 회수해야 합니다"
-                    + " (out-of-band 재설정 여부 확인)";
+            String detail = "Proxmox 보호(protection) 플래그로 파기가 거절됐어요. "
+                    + "SYS_ADMIN에게 오버라이드 강제 삭제를 요청해 주세요."
+                    + " (플랫폼 밖에서 보호를 다시 설정했는지 확인해 주세요.)";
             log.error("Delete pipeline parked for vm {} (protected guest): {}", vmId,
                     e.getMessage());
             taskRepository.park(task.getId(), detail, now);
@@ -297,7 +297,7 @@ public class DeleteVmJob {
                         ProvisioningTaskKind.DELETE,
                         Set.of(ProvisioningTaskStatus.PENDING, ProvisioningTaskStatus.RETRYING))
                 .ifPresent(task -> taskRepository.transitionStatus(task.getId(), task.getStatus(),
-                        ProvisioningTaskStatus.FAILED, "삭제가 취소되어 파기 태스크를 닫습니다", now));
+                        ProvisioningTaskStatus.FAILED, "삭제가 취소돼 파기 작업을 중단했어요.", now));
     }
 
     /**
@@ -340,7 +340,7 @@ public class DeleteVmJob {
         }
         Node node = nodeRepository.findById(vm.getNodeId())
                 .orElseThrow(() -> new IllegalStateException(
-                        "노드 정보를 찾을 수 없습니다 (node " + vm.getNodeId() + ")"));
+                        "노드 정보를 찾을 수 없어요. (node " + vm.getNodeId() + ")"));
         ClusterResource resource = proxmoxClient.clusterResources(node.getApiHost(), "vm").stream()
                 .filter(r -> vmid.equals(r.vmid()))
                 .findFirst().orElse(null);
@@ -351,9 +351,9 @@ public class DeleteVmJob {
         }
         if (!ManagedGuestIdentity.matches(vm, resource)) {
             throw new DestroyTargetMismatchException(
-                    "파기 대상 불일치: vmid " + vmid + "의 게스트 이름 '" + resource.name()
-                            + "'이(가) 호스트명 '" + vm.getHostname()
-                            + "'과 다르고 플랫폼 관리 태그도 없습니다");
+                    "파기 대상이 일치하지 않아요. VMID " + vmid + "의 게스트 이름 '" + resource.name()
+                            + "' 값이 VM 호스트명 '" + vm.getHostname()
+                            + "' 값과 다르고 플랫폼 관리 태그도 없어요.");
         }
         shutdownIfRunning(node, vmid);
         // Disarm the always-on PVE protection as late as possible — after the
@@ -417,11 +417,11 @@ public class DeleteVmJob {
             taskRepository.park(taskId, error, now);
             // status-guarded: a concurrent transition away from DELETING wins
             vmRepository.updateStatusDetail(vmId, VmStatus.DELETING,
-                    error + " — 관리자 확인이 필요합니다", now);
+                    error + " (관리자 확인이 필요해요.)", now);
         } else {
             taskRepository.markRetrying(taskId, error, now);
             vmRepository.updateStatusDetail(vmId, VmStatus.DELETING,
-                    error + " — 자동 재시도 예정", now);
+                    error + " (자동으로 다시 시도할 예정이에요.)", now);
             jobScheduler.schedule(now.plus(backoffAfterAttempt(attempts)), () -> deleteVm(vmId));
         }
     }

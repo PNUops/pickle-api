@@ -90,6 +90,6 @@ public class VmMetricsService {
 
     private static ApiException metricsUnavailable() {
         return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.METRICS_UNAVAILABLE,
-                "사용량 데이터를 불러오지 못했습니다", "잠시 후 다시 시도해 주세요.");
+                "사용량 데이터를 불러오지 못했어요", "잠시 후 다시 시도해 주세요.");
     }
 }
