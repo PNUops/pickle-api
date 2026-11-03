@@ -196,7 +196,7 @@ public class AdminOpenRouterAccountService {
                 return response(actor, saved);
             });
         } catch (DataIntegrityViolationException e) {
-            throw invalidState("같은 기관에 동일한 이름 또는 vendor workspace의 account가 이미 있습니다.");
+            throw invalidState("같은 기관에 이름이 같은 사업 계정이 있거나, 해당 OpenRouter workspace가 이미 등록돼 있어요.");
         }
     }
 
@@ -210,17 +210,17 @@ public class AdminOpenRouterAccountService {
         }
         if (form.isNameSet() && (form.getName() == null || form.getName().isBlank())) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("name",
-                    "Account 이름은 비울 수 없습니다.")));
+                    "사업 계정 이름은 비울 수 없어요.")));
         }
         if (form.isStatusSet() && form.getStatus() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("status",
-                    "Account 상태는 null일 수 없습니다.")));
+                    "사업 계정 상태에는 null을 보낼 수 없어요.")));
         }
         OpenRouterAccountStatus nextStatus = form.isStatusSet()
                 ? form.getStatus() : account.getStatus();
         if (nextStatus == OpenRouterAccountStatus.ARCHIVED
                 && keyRepository.countUnsafeForAccountArchive(account.getId()) > 0) {
-            throw invalidState("활성, 정지, 발급 대기 또는 미만료 key가 연결된 account는 보관할 수 없습니다.");
+            throw invalidState("‘발급 전’, ‘활성’, ‘정지됨’ 상태인 연결 키 중 만료일이 없거나 아직 만료되지 않은 키가 있으면 보관할 수 없어요.");
         }
         String nextName = form.isNameSet() ? form.getName().strip() : account.getName();
         String nextProgram = form.isProgramSet()
@@ -313,7 +313,7 @@ public class AdminOpenRouterAccountService {
                         .getSingleResult();
                 if (!Boolean.TRUE.equals(identityLock)) {
                     throw credentialState(
-                            "다른 OpenRouter credential activation이 진행 중입니다. 다시 시도해 주세요.");
+                            "다른 OpenRouter 관리용 키 활성화가 진행 중이에요. 다시 시도해 주세요.");
                 }
                 String secret = form.managementKey();
                 UUID workspaceId = validateCandidate(snapshot, secret);
@@ -341,7 +341,7 @@ public class AdminOpenRouterAccountService {
                 // there would be rejected by the immutability rule, so the
                 // account would have no way back to a usable state.
                 if (identityMarker.get() != null) {
-                    if (locked.getVendorIdentityKeyHash() != null) { throw credentialState("검증 뒤 account 식별 상태가 바뀌었습니다."); }
+                    if (locked.getVendorIdentityKeyHash() != null) { throw credentialState("검증 후 사업 계정의 식별 상태가 바뀌었어요."); }
                     locked.establishVendorIdentityKey(identityMarker.get().hash(), now);
                 }
                 OpenRouterAccountCredential credential = new OpenRouterAccountCredential(
@@ -402,7 +402,7 @@ public class AdminOpenRouterAccountService {
                 // started" is the answer that names an action.
                 if (existing.stream()
                         .anyMatch(c -> c.getStatus() != OpenRouterCredentialStatus.ACTIVE)) {
-                    throw credentialState("이미 진행 중인 credential rotation이 있습니다.");
+                    throw credentialState("이미 관리용 키 교체가 진행 중이에요.");
                 }
                 if (existing.stream()
                         .noneMatch(c -> c.getStatus() == OpenRouterCredentialStatus.ACTIVE)) {
@@ -423,7 +423,7 @@ public class AdminOpenRouterAccountService {
                     .filter(other -> !other.getId().equals(snapshot.getId())).isPresent()) {
                 throw workspaceConflict();
             }
-            throw credentialState("이미 진행 중인 credential rotation이 있습니다.");
+            throw credentialState("이미 관리용 키 교체가 진행 중이에요.");
         }
     }
 
@@ -432,7 +432,7 @@ public class AdminOpenRouterAccountService {
         CredentialSnapshot snapshot = credentialSnapshot(actor, accountId, form.confirmName());
         requireActive(snapshot.account());
         if (snapshot.staged() == null) {
-            throw credentialState("활성화할 STAGED credential이 없습니다.");
+            throw credentialState("활성화할 교체 대기 키가 없어요.");
         }
         OpenRouterAccountResponse result;
         AtomicReference<OpenRouterClient.CreatedKey> identityMarker = new AtomicReference<>();
@@ -447,7 +447,7 @@ public class AdminOpenRouterAccountService {
                         .getSingleResult();
                 if (!Boolean.TRUE.equals(identityLock)) {
                     throw credentialState(
-                            "다른 OpenRouter credential activation이 진행 중입니다. 다시 시도해 주세요.");
+                            "다른 OpenRouter 관리용 키 활성화가 진행 중이에요. 다시 시도해 주세요.");
                 }
                 String stagedSecret = decrypt(snapshot.account(), snapshot.staged());
                 String activeSecret = snapshot.active() == null ? null
@@ -477,10 +477,10 @@ public class AdminOpenRouterAccountService {
                         || (active != null
                             && active.getStatus() != OpenRouterCredentialStatus.ACTIVE)) {
                     throw credentialState(
-                            "검증 뒤 credential 상태가 바뀌었습니다. 다시 시도해 주세요.");
+                            "검증 후 관리용 키 상태가 바뀌었어요. 다시 시도해 주세요.");
                 }
                 if (identityMarker.get() != null) {
-                    if (locked.getVendorIdentityKeyHash() != null) { throw credentialState("검증 뒤 account 식별 상태가 바뀌었습니다."); }
+                    if (locked.getVendorIdentityKeyHash() != null) { throw credentialState("검증 후 사업 계정의 식별 상태가 바뀌었어요."); }
                     locked.establishVendorIdentityKey(identityMarker.get().hash(), Instant.now());
                 }
                 entityManager.createNativeQuery(
@@ -529,7 +529,7 @@ public class AdminOpenRouterAccountService {
         confirm(account.getName(), form.confirmName());
         OpenRouterAccountCredential staged = credentialRepository
                 .findByAccountIdAndStatus(account.getId(), OpenRouterCredentialStatus.STAGED)
-                .orElseThrow(() -> credentialState("취소할 STAGED credential이 없습니다."));
+                .orElseThrow(() -> credentialState("취소할 교체 대기 키가 없어요."));
         credentialRepository.delete(staged);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.OPENROUTER_CREDENTIAL_CANCEL, "openrouter_account",
@@ -550,7 +550,7 @@ public class AdminOpenRouterAccountService {
             OpenRouterAccountCredential retiring = byId(credentials, snapshot.retiring().getId());
             if (active.getStatus() != OpenRouterCredentialStatus.ACTIVE
                     || retiring.getStatus() != OpenRouterCredentialStatus.RETIRING) {
-                throw credentialState("검증 뒤 credential 상태가 바뀌었습니다. 다시 시도해 주세요.");
+                throw credentialState("검증 후 관리용 키 상태가 바뀌었어요. 다시 시도해 주세요.");
             }
             entityManager.createNativeQuery(
                     "set constraints openrouter_account_credentials_slot_uq deferred")
@@ -592,7 +592,7 @@ public class AdminOpenRouterAccountService {
             OpenRouterAccountCredential retiring = byId(credentials, snapshot.retiring().getId());
             if (active.getStatus() != OpenRouterCredentialStatus.ACTIVE
                     || retiring.getStatus() != OpenRouterCredentialStatus.RETIRING) {
-                throw credentialState("검증 뒤 credential 상태가 바뀌었습니다. 다시 시도해 주세요.");
+                throw credentialState("검증 후 관리용 키 상태가 바뀌었어요. 다시 시도해 주세요.");
             }
             requireReconciledAfterActivation(active);
             active.markUsed(Instant.now());
@@ -617,7 +617,7 @@ public class AdminOpenRouterAccountService {
             requireActiveDeletionSafe(account, credentials);
             OpenRouterAccountCredential active = byId(credentials, snapshot.active().getId());
             if (active.getStatus() != OpenRouterCredentialStatus.ACTIVE) {
-                throw credentialState("검증 뒤 credential 상태가 바뀌었습니다. 다시 시도해 주세요.");
+                throw credentialState("검증 후 관리용 키 상태가 바뀌었어요. 다시 시도해 주세요.");
             }
             credentialRepository.delete(active);
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
@@ -668,7 +668,7 @@ public class AdminOpenRouterAccountService {
                         other.getVendorWorkspaceId(), other.getVendorIdentityKeyHash());
                 if (identity != null) {
                     throw credentialState(
-                            "같은 OpenRouter billing account가 이미 등록되어 있습니다.");
+                            "같은 OpenRouter 결제 계정이 이미 등록돼 있어요.");
                 }
             } catch (OpenRouterException error) {
                 if (error.status() != 404) {
@@ -680,12 +680,12 @@ public class AdminOpenRouterAccountService {
                         .orElse(null);
                 if (active == null) {
                     throw credentialState(
-                            "기존 account의 vendor identity marker를 확인할 수 없습니다. 먼저 해당 account의 credential을 복구해 주세요.");
+                            "기존 사업 계정의 OpenRouter 식별 정보를 확인할 수 없어요. 먼저 그 계정의 관리용 키를 복구해 주세요.");
                 }
                 if (sharesManagementScope(other, decrypt(other, active),
                         other.getVendorWorkspaceId(), candidateSecret)) {
                     throw credentialState(
-                            "같은 OpenRouter billing account가 이미 등록되어 있습니다.");
+                            "같은 OpenRouter 결제 계정이 이미 등록돼 있어요.");
                 }
             }
         }
@@ -703,7 +703,7 @@ public class AdminOpenRouterAccountService {
             String existingSecret = decrypt(other, credential);
             if (sharesManagementScope(other, existingSecret, other.getVendorWorkspaceId(),
                     candidateSecret)) {
-                throw credentialState("같은 OpenRouter billing account가 이미 등록되어 있습니다.");
+                throw credentialState("같은 OpenRouter 결제 계정이 이미 등록돼 있어요.");
             }
         }
     }
@@ -904,21 +904,21 @@ public class AdminOpenRouterAccountService {
             throw verificationFailed(classifyVerificationError(e));
         }
         throw credentialState(
-                "Vendor console에서 대상 management credential을 먼저 폐기해 주세요.");
+                "OpenRouter 콘솔에서 해당 관리용 키를 먼저 폐기해 주세요.");
     }
 
     private void requireActiveDeletionSafe(OpenRouterAccount account,
             List<OpenRouterAccountCredential> credentials) {
         if (credentials.stream().anyMatch(c -> c.getStatus()
                 != OpenRouterCredentialStatus.ACTIVE)) {
-            throw credentialState("Rotation credential을 먼저 취소하거나 finalize해 주세요.");
+            throw credentialState("교체 대기 키를 취소하거나 정리 대기 키를 먼저 정리해 주세요.");
         }
         if (account.getVendorIdentityKeyHash() == null) {
             throw credentialState(
-                    "Vendor identity marker를 확정할 credential rotation이 먼저 필요합니다.");
+                    "OpenRouter 계정 식별을 위해 관리용 키를 먼저 교체해 주세요.");
         }
         if (keyRepository.countByOpenrouterAccountId(account.getId()) > 0) {
-            throw credentialState("Key가 연결된 account의 ACTIVE credential은 삭제할 수 없습니다.");
+            throw credentialState("LLM API 키가 연결돼 있으면 사용 중인 관리용 키를 삭제할 수 없어요.");
         }
     }
 
@@ -926,7 +926,7 @@ public class AdminOpenRouterAccountService {
             OpenRouterAccountCredential credential) {
         if (credential.getActivatedAt() == null || credential.getLastReconciledAt() == null
                 || credential.getLastReconciledAt().isBefore(credential.getActivatedAt())) {
-            throw credentialState("새 ACTIVE credential로 성공한 key reconciliation이 필요합니다.");
+            throw credentialState("새로 활성화한 관리용 키로 키 대사가 한 번 성공해야 해요.");
         }
     }
 
@@ -941,8 +941,8 @@ public class AdminOpenRouterAccountService {
         } catch (IllegalStateException e) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
                     ErrorCodes.OPENROUTER_CREDENTIAL_KEYRING_UNAVAILABLE,
-                    "Credential을 사용할 수 없습니다",
-                    "저장된 OpenRouter management credential을 복호화할 수 없습니다.");
+                    "관리용 키를 사용할 수 없어요",
+                    "저장된 OpenRouter 관리용 키를 복호화할 수 없어요.");
         }
     }
 
@@ -1041,8 +1041,8 @@ public class AdminOpenRouterAccountService {
         if (!accountName.equals(confirmation)) {
             throw new ApiException(HttpStatus.CONFLICT,
                     ErrorCodes.OPENROUTER_ACCOUNT_CONFIRM_NAME_MISMATCH,
-                    "확인용 account 이름이 일치하지 않습니다",
-                    "표시된 account 이름을 정확히 입력해 주세요.");
+                    "확인용 사업 계정 이름이 일치하지 않아요",
+                    "표시된 사업 계정 이름을 정확히 입력해 주세요.");
         }
     }
 
@@ -1050,13 +1050,13 @@ public class AdminOpenRouterAccountService {
         if (!Boolean.TRUE.equals(form.vendorRevocationConfirmed())) {
             throw ApiException.validationFailed(List.of(new FieldValidationError(
                     "vendorRevocationConfirmed",
-                    "Vendor console에서 management key를 폐기했음을 확인해 주세요.")));
+                    "OpenRouter 콘솔에서 관리용 키를 폐기했음을 확인해 주세요.")));
         }
     }
 
     private static void requireActive(OpenRouterAccount account) {
         if (account.getStatus() != OpenRouterAccountStatus.ACTIVE) {
-            throw invalidState("보관된 account에는 credential을 등록할 수 없습니다.");
+            throw invalidState("보관된 사업 계정에서는 관리용 키를 등록하거나 활성화할 수 없어요.");
         }
     }
 
@@ -1064,8 +1064,8 @@ public class AdminOpenRouterAccountService {
         if (!credentialCipher.configuredForWrite()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
                     ErrorCodes.OPENROUTER_CREDENTIAL_KEYRING_UNAVAILABLE,
-                    "Credential keyring을 사용할 수 없습니다",
-                    "OpenRouter management credential 암호화 keyring을 먼저 구성해 주세요.");
+                    "관리용 키 암호화 키링을 사용할 수 없어요",
+                    "OpenRouter 관리용 키를 암호화할 키링을 먼저 구성해 주세요.");
         }
     }
 
@@ -1076,7 +1076,7 @@ public class AdminOpenRouterAccountService {
      */
     private void requireNoCredential(OpenRouterAccount account) {
         if (!credentialRepository.findByAccountIdOrderByIdAsc(account.getId()).isEmpty()) {
-            throw credentialState("이미 등록된 credential이 있습니다. 교체는 대기 등록을 거칩니다.");
+            throw credentialState("등록된 관리용 키가 이미 있어요. 교체하려면 교체 대기로 등록해 주세요.");
         }
     }
 
@@ -1089,7 +1089,7 @@ public class AdminOpenRouterAccountService {
         List<OpenRouterAccountCredential> existing =
                 credentialRepository.findByAccountIdOrderByIdAsc(account.getId());
         if (existing.stream().anyMatch(c -> c.getStatus() != OpenRouterCredentialStatus.ACTIVE)) {
-            throw credentialState("이미 진행 중인 credential rotation이 있습니다.");
+            throw credentialState("이미 관리용 키 교체가 진행 중이에요.");
         }
         if (existing.stream().noneMatch(c -> c.getStatus() == OpenRouterCredentialStatus.ACTIVE)) {
             throw noCredentialToRotate();
@@ -1104,13 +1104,13 @@ public class AdminOpenRouterAccountService {
      */
     private ApiException registrationConflict(OpenRouterAccount snapshot) {
         if (!credentialRepository.findByAccountIdOrderByIdAsc(snapshot.getId()).isEmpty()) {
-            return credentialState("이미 등록된 credential이 있습니다. 교체는 대기 등록을 거칩니다.");
+            return credentialState("등록된 관리용 키가 이미 있어요. 교체하려면 교체 대기로 등록해 주세요.");
         }
         return workspaceConflict();
     }
 
     private static ApiException noCredentialToRotate() {
-        return credentialState("이 account에는 교체할 ACTIVE credential이 없습니다. 먼저 등록해 주세요.");
+        return credentialState("이 사업 계정에는 교체할 활성 관리용 키가 없어요. 먼저 관리용 키를 등록해 주세요.");
     }
 
     /**
@@ -1138,7 +1138,7 @@ public class AdminOpenRouterAccountService {
             List<OpenRouterAccountCredential> credentials, OpenRouterCredentialStatus status) {
         OpenRouterAccountCredential credential = optionalByStatus(credentials, status);
         if (credential == null) {
-            throw credentialState(status + " credential이 없습니다.");
+            throw credentialState(status + " 관리용 키가 없어요.");
         }
         return credential;
     }
@@ -1146,39 +1146,39 @@ public class AdminOpenRouterAccountService {
     private static OpenRouterAccountCredential byId(
             List<OpenRouterAccountCredential> credentials, long id) {
         return credentials.stream().filter(c -> c.getId() == id).findFirst()
-                .orElseThrow(() -> credentialState("Credential 상태가 바뀌었습니다."));
+                .orElseThrow(() -> credentialState("관리용 키 상태가 바뀌었어요."));
     }
 
     private static ApiException notFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 OpenRouter account를 찾을 수 없습니다.");
+                "리소스를 찾을 수 없어요", "해당 OpenRouter 사업 계정을 찾을 수 없어요.");
     }
 
     private static ApiException denied(String detail) {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                "접근 권한이 없습니다", detail);
+                "접근 권한이 없어요", detail);
     }
 
     private static ApiException invalidState(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.OPENROUTER_ACCOUNT_INVALID_STATE,
-                "Account 상태가 올바르지 않습니다", detail);
+                "사업 계정 상태를 확인해 주세요", detail);
     }
 
     private static ApiException credentialState(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.OPENROUTER_CREDENTIAL_INVALID_STATE,
-                "Credential 상태가 올바르지 않습니다", detail);
+                "관리용 키 상태를 확인해 주세요", detail);
     }
 
     private static ApiException workspaceConflict() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.OPENROUTER_ACCOUNT_INVALID_STATE,
-                "Vendor workspace가 이미 등록되어 있습니다",
-                "같은 OpenRouter vendor workspace를 두 사업 계정에 등록할 수 없습니다.");
+                "같은 OpenRouter workspace가 이미 등록돼 있어요",
+                "같은 OpenRouter workspace를 두 사업 계정에 등록할 수 없어요.");
     }
 
     private static ApiException duplicateName() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.OPENROUTER_ACCOUNT_INVALID_STATE,
-                "같은 이름의 account가 이미 있습니다",
-                "한 기관 안에서는 사업 계정 이름을 중복해서 사용할 수 없습니다.");
+                "같은 이름의 사업 계정이 이미 있어요",
+                "한 기관 안에서는 사업 계정 이름을 중복해서 사용할 수 없어요.");
     }
 
     private static CredentialVerificationException verificationFailed(
@@ -1207,8 +1207,8 @@ public class AdminOpenRouterAccountService {
         private CredentialVerificationException(OpenRouterCredentialError category) {
             super(HttpStatus.UNPROCESSABLE_ENTITY,
                 ErrorCodes.OPENROUTER_CREDENTIAL_VERIFICATION_FAILED,
-                "OpenRouter management credential을 검증하지 못했습니다",
-                "Credential 권한과 vendor account workspace를 확인해 주세요.");
+                "OpenRouter 관리용 키를 검증하지 못했어요",
+                "관리용 키 권한과 OpenRouter 계정의 workspace를 확인해 주세요.");
             this.category = category;
         }
 
