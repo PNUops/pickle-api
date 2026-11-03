@@ -228,7 +228,7 @@ class VmPowerControlTest {
         mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/reboot")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.message").value("VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다."));
+                .andExpect(jsonPath("$.message").value("VM 재부팅 요청을 접수했어요."));
 
         // intent is visible immediately …
         assertThat(statusOf(vmId)).isEqualTo("REBOOTING");

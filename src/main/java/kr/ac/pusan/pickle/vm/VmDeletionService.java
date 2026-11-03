@@ -124,7 +124,7 @@ public class VmDeletionService {
             return deleteErrorVmImmediately(actor, deletable, ip);
         }
         requireStatusOutside(vm, Set.of(VmStatus.CREATING, VmStatus.DELETING, VmStatus.DELETED,
-                VmStatus.NEEDS_ADMIN), "현재 상태에서는 삭제할 수 없습니다.");
+                VmStatus.NEEDS_ADMIN), "현재 상태에서는 삭제할 수 없어요.");
 
         Instant now = Instant.now();
         int graceHours = settingsService.integer(SettingsService.VM_DELETE_GRACE_HOURS,
@@ -135,7 +135,7 @@ public class VmDeletionService {
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SELF_DELETE, actor.id(),
                 deletable.actorKind(),
-                "삭제 접수 — " + KST.format(scheduledFor) + " (KST) 파기 예정"));
+                "삭제 요청 접수: " + KST.format(scheduledFor) + " (KST) 파기 예정"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "scheduledFor", scheduledFor.toString()), ip);
@@ -157,7 +157,7 @@ public class VmDeletionService {
         }
         long vmId = vm.getId();
         vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.SELF_DELETE, actor.id(),
-                deletable.actorKind(), "삭제 접수 — 생성 실패(ERROR) 상태, 네트워크 퇴역 후 파기"));
+                deletable.actorKind(), "생성 실패(ERROR) VM의 삭제 요청을 접수했어요. 네트워크 퇴역을 확인한 뒤 파기할 예정이에요."));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "immediate", true), ip);
@@ -203,25 +203,25 @@ public class VmDeletionService {
         // so a schedule placed mid-provision simply defers until the VM lands.
         if (SCHEDULE_FORBIDDEN_STATUSES.contains(vm.getStatus())) {
             return new ScheduleOutcome(null, invalidState(vm,
-                    "현재 상태에서는 삭제를 접수할 수 없습니다."));
+                    "현재 상태에서는 삭제를 접수할 수 없어요."));
         }
         if (isDeletionProtected(vmId)) {
             return new ScheduleOutcome(null, deletionProtected(
-                    "삭제 보호가 켜져 있어 삭제할 수 없습니다. 소유자가 VM 설정에서 "
+                    "삭제 보호가 켜져 삭제할 수 없어요. 소유자가 VM 설정에서 "
                             + "삭제 보호를 해제한 뒤 다시 시도해 주세요."));
         }
 
         Instant now = Instant.now();
         if (!scheduledFor.isAfter(now)) {
             return new ScheduleOutcome(null, ApiException.validationFailed(List.of(
-                    new FieldValidationError("scheduledFor", "삭제 예정일은 미래 시각이어야 합니다."))));
+                    new FieldValidationError("scheduledFor", "삭제 예정일은 현재보다 뒤여야 해요."))));
         }
         String reason = rawReason.strip();
         if (vmRepository.scheduleAdminDeletion(vmId, scheduledFor, actor.id(), reason, now) == 0) {
             return new ScheduleOutcome(null, alreadyPendingDeletion());
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(), VmActorKind.ADMIN,
-                "관리자 삭제 접수 — " + KST.format(scheduledFor) + " (KST), 사유: " + reason));
+                "관리자 삭제 요청 접수: " + KST.format(scheduledFor) + " (KST), 사유: " + reason));
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("name", vm.getName());
         detail.put("orgId", auditIds.org(vm.getOrgId()));
@@ -254,7 +254,7 @@ public class VmDeletionService {
         if (refusal != null) {
             throw refusal;
         }
-        return new MessageResponse("삭제가 취소되었습니다.");
+        return new MessageResponse("삭제를 취소했어요.");
     }
 
     /**
@@ -288,7 +288,7 @@ public class VmDeletionService {
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.CANCEL_SCHEDULED_DELETE, actor.id(), VmActorKind.ADMIN,
                 vm.getDeleteKind() == VmDeleteKind.SELF
-                        ? "본인 삭제 취소 — VM은 STOPPED 상태로 유지"
+                        ? "본인 삭제를 취소하고 VM 상태를 STOPPED로 되돌렸어요."
                         : "관리자 삭제 취소"));
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("name", vm.getName());
@@ -331,8 +331,8 @@ public class VmDeletionService {
         long vmId = vm.getId();
         if (!vm.getName().equals(request.confirmName())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_CONFIRM_NAME_MISMATCH,
-                    "확인용 이름이 일치하지 않습니다",
-                    "입력한 이름이 VM 이름과 일치하지 않습니다. VM 이름을 정확히 입력해 주세요.");
+                    "확인용 이름이 일치하지 않아요",
+                    "VM 이름을 정확히 입력해 주세요.");
         }
         // Deletion protection: refused by default; the SYS_ADMIN escalation path
         // (overrideProtection) bypasses it by persisting the setting to false —
@@ -341,14 +341,14 @@ public class VmDeletionService {
         boolean protectedVm = vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION);
         if (protectedVm && !request.overridesProtection()) {
             throw deletionProtected(
-                    "삭제 보호가 켜져 있습니다. 소유 워크스페이스 OWNER가 해제하거나, 회수가 시급하면 "
-                            + "overrideProtection: true를 명시해 강제 삭제해야 합니다.");
+                    "삭제 보호가 켜져 있어요. 이 VM의 접근 등급이 OWNER인 사용자가 해제하거나, "
+                            + "SYS_ADMIN이 overrideProtection: true로 강제 삭제해야 해요.");
         }
         boolean overrodeProtection = protectedVm && request.overridesProtection();
         Instant now = Instant.now();
         if (vmRepository.beginForceDeletion(vmId, actor.id(), now) == 0) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 수행할 수 없는 작업입니다", "이미 파기된 VM입니다.");
+                    "현재 상태에서는 사용할 수 없어요", "이미 파기된 VM이에요.");
         }
         if (overrodeProtection) {
             // Persist the override in the same tx: the destroy pipeline's
@@ -359,15 +359,15 @@ public class VmDeletionService {
         failLiveProvisionTask(vmId);
         resumeParkedDeleteTask(vmId);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.FORCE_DELETE, actor.id(), VmActorKind.ADMIN,
-                overrodeProtection ? "강제 삭제 접수 — 삭제 보호 오버라이드, 즉시 강제 종료 후 파기"
-                        : "강제 삭제 접수 — 즉시 강제 종료 후 파기"));
+                overrodeProtection ? "삭제 보호를 해제하고 유예 없는 강제 삭제를 요청했어요."
+                        : "유예 없는 강제 삭제를 요청했어요."));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_FORCE_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "overrodeProtection", overrodeProtection), ip);
         enqueueAfterCommit("enqueue vm deleteVm #" + vmId, () -> deleteVmJob.deleteVm(vmId));
         notificationService.publish(recipients(vm), NotificationEvent.VM_DELETE_FORCE,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()), null);
-        return new MessageResponse("강제 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다.");
+        return new MessageResponse("유예 없는 강제 삭제 요청을 접수했어요. 취소할 수 없어요.");
     }
 
     /**
@@ -449,8 +449,8 @@ public class VmDeletionService {
         if (adminVmAccess.canDelete(actor, vm)) { return new DeletableVm(vm, VmActorKind.ADMIN); }
         access.requireVisible();
         throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                "VM을 삭제할 권한이 없습니다",
-                "이 VM의 소유자, 워크스페이스 소유자 또는 관리자만 VM을 삭제할 수 있습니다.");
+                "VM을 삭제할 권한이 없어요",
+                "이 VM의 소유자나 워크스페이스 소유자, 이 VM의 삭제 권한이 있는 관리자만 삭제할 수 있어요.");
     }
 
     private void requireNoPendingDeletion(Vm vm) {
@@ -467,14 +467,14 @@ public class VmDeletionService {
     /** Refuses any delete acceptance while {@code deletion_protection} is on. */
     private void requireNotDeletionProtected(long vmId) {
         if (isDeletionProtected(vmId)) {
-            throw deletionProtected("삭제 보호가 켜져 있어 삭제할 수 없습니다. 소유자가 VM 설정에서 "
+            throw deletionProtected("삭제 보호가 켜져 삭제할 수 없어요. 소유자가 VM 설정에서 "
                     + "삭제 보호를 해제한 뒤 다시 시도해 주세요.");
         }
     }
 
     private static ApiException deletionProtected(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_DELETION_PROTECTED,
-                "삭제 보호가 설정된 VM입니다", detail);
+                "삭제 보호가 켜진 VM이에요", detail);
     }
 
     private void requireStatusOutside(Vm vm, Set<VmStatus> forbidden, String baseDetail) {
@@ -485,19 +485,19 @@ public class VmDeletionService {
 
     private static ApiException invalidState(Vm vm, String baseDetail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                "현재 상태에서는 수행할 수 없는 작업입니다",
+                "현재 상태에서는 사용할 수 없어요",
                 baseDetail + " (현재 상태 " + vm.getStatus() + ")");
     }
 
     private static ApiException alreadyPendingDeletion() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                "현재 상태에서는 수행할 수 없는 작업입니다", "이미 삭제가 접수되었거나 진행 중인 VM입니다.");
+                "현재 상태에서는 사용할 수 없어요", "이미 삭제를 접수했거나 삭제 중인 VM이에요.");
     }
 
     private static ApiException notCancelable() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                "현재 상태에서는 수행할 수 없는 작업입니다",
-                "취소할 수 있는 삭제가 없습니다. 이미 파기가 시작되었거나 완료된 상태일 수 있습니다.");
+                "현재 상태에서는 사용할 수 없어요",
+                "취소할 수 있는 삭제가 없어요. 이미 파기를 시작했거나 마쳤을 수 있어요.");
     }
 
     // ── notifications / enqueue ────────────────────────────────────────────

@@ -92,14 +92,14 @@ public class VmLifecycleService {
         // Expiry guard: a past end date (KST, inclusive end) refuses start
         // even from STOPPED — only PATCH /admin/vms/{vmId}/period lifts it.
         if (isExpired(vm)) {
-            throw expired(vm, "사용 기간(종료일 %s)이 만료되어 시작할 수 없습니다. 관리자에게 기간 연장을 요청해 주세요.");
+            throw expired(vm, "사용 기간(종료일 %s)이 만료돼 시작할 수 없어요. 관리자에게 기간 연장을 요청해 주세요.");
         }
         claimPowerAction(id, PowerAction.START, List.of(VmStatus.STOPPED),
-                "STOPPED 상태의 VM만 시작할 수 있습니다.");
+                "STOPPED 상태의 VM만 시작할 수 있어요.");
         long actorId = actor.id();
         enqueueAfterCommit("enqueue vm start #" + id,
                 () -> vmPowerJobs.start(id, actorId, false));
-        return new MessageResponse("VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+        return new MessageResponse("VM 시작 요청을 접수했어요.");
     }
 
     @Transactional
@@ -108,11 +108,11 @@ public class VmLifecycleService {
         long id = controllable.vm().getId();
         requireStopAllowed(id, controllable.role());
         claimPowerAction(id, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
-                "RUNNING 상태의 VM만 종료할 수 있습니다.");
+                "RUNNING 상태의 VM만 종료할 수 있어요.");
         long actorId = actor.id();
         enqueueAfterCommit("enqueue vm shutdown #" + id,
                 () -> vmPowerJobs.shutdown(id, actorId, false));
-        return new MessageResponse("VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+        return new MessageResponse("VM 종료 요청을 접수했어요.");
     }
 
     @Transactional
@@ -123,12 +123,12 @@ public class VmLifecycleService {
         // Intent is visible immediately (and force-stop can target a hung
         // reboot); the CAS loses to a concurrent transition OR a live claim → 409.
         if (vmRepository.claimReboot(id, VmStatus.RUNNING, VmStatus.REBOOTING, Instant.now()) == 0) {
-            throw powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
+            throw powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있어요.");
         }
         long actorId = actor.id();
         enqueueAfterCommit("enqueue vm reboot #" + id,
                 () -> vmPowerJobs.reboot(id, actorId, false));
-        return new MessageResponse("VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+        return new MessageResponse("VM 재부팅 요청을 접수했어요.");
     }
 
     @Transactional
@@ -138,11 +138,11 @@ public class VmLifecycleService {
         requireStopAllowed(id, controllable.role());
         claimPowerAction(id, PowerAction.FORCE_STOP,
                 List.of(VmStatus.RUNNING, VmStatus.REBOOTING),
-                "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
+                "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있어요.");
         long actorId = actor.id();
         enqueueAfterCommit("enqueue vm forceStop #" + id,
                 () -> vmPowerJobs.forceStop(id, actorId, false));
-        return new MessageResponse("VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+        return new MessageResponse("VM 강제 종료 요청을 접수했어요.");
     }
 
     /* ─── admin intervention (org-scoped, stop-protection bypass, audited) ─── */
@@ -176,10 +176,10 @@ public class VmLifecycleService {
             throw refusal;
         }
         return new MessageResponse(switch (action) {
-            case START -> "VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.";
-            case SHUTDOWN -> "VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.";
-            case REBOOT -> "VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.";
-            case FORCE_STOP -> "VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.";
+            case START -> "VM 시작 요청을 접수했어요.";
+            case SHUTDOWN -> "VM 종료 요청을 접수했어요.";
+            case REBOOT -> "VM 재부팅 요청을 접수했어요.";
+            case FORCE_STOP -> "VM 강제 종료 요청을 접수했어요.";
         });
     }
 
@@ -199,11 +199,11 @@ public class VmLifecycleService {
             case START -> {
                 // Same expiry guard as the member path: extend the period first.
                 if (isExpired(vm)) {
-                    return expired(vm, "사용 기간(종료일 %s)이 만료되어 시작할 수 없습니다. 먼저 기간을 연장해 주세요.");
+                    return expired(vm, "사용 기간(종료일 %s)이 만료돼 시작할 수 없어요. 먼저 기간을 연장해 주세요.");
                 }
                 if (vmRepository.claimPowerAction(id, PowerAction.START, List.of(VmStatus.STOPPED),
                         Instant.now()) == 0) {
-                    return powerConflict(id, "STOPPED 상태의 VM만 시작할 수 있습니다.");
+                    return powerConflict(id, "STOPPED 상태의 VM만 시작할 수 있어요.");
                 }
                 recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_START, batchId, ip);
                 enqueueAfterCommit("enqueue vm start #" + id,
@@ -212,7 +212,7 @@ public class VmLifecycleService {
             case SHUTDOWN -> {
                 if (vmRepository.claimPowerAction(id, PowerAction.SHUTDOWN,
                         List.of(VmStatus.RUNNING), Instant.now()) == 0) {
-                    return powerConflict(id, "RUNNING 상태의 VM만 종료할 수 있습니다.");
+                    return powerConflict(id, "RUNNING 상태의 VM만 종료할 수 있어요.");
                 }
                 recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_SHUTDOWN, batchId, ip);
                 enqueueAfterCommit("enqueue vm shutdown #" + id,
@@ -221,7 +221,7 @@ public class VmLifecycleService {
             case REBOOT -> {
                 if (vmRepository.claimReboot(id, VmStatus.RUNNING, VmStatus.REBOOTING,
                         Instant.now()) == 0) {
-                    return powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
+                    return powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있어요.");
                 }
                 recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_REBOOT, batchId, ip);
                 enqueueAfterCommit("enqueue vm reboot #" + id,
@@ -231,7 +231,7 @@ public class VmLifecycleService {
                 if (vmRepository.claimPowerAction(id, PowerAction.FORCE_STOP,
                         List.of(VmStatus.RUNNING, VmStatus.REBOOTING), Instant.now()) == 0) {
                     return powerConflict(id,
-                            "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
+                            "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있어요.");
                 }
                 recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_FORCE_STOP, batchId, ip);
                 enqueueAfterCommit("enqueue vm forceStop #" + id,
@@ -257,7 +257,7 @@ public class VmLifecycleService {
 
     private static ApiException expired(Vm vm, String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_EXPIRED,
-                "사용 기간이 만료된 VM입니다", detail.formatted(vm.getEndDate()));
+                "사용 기간이 만료된 VM이에요", detail.formatted(vm.getEndDate()));
     }
 
     /**
@@ -312,7 +312,7 @@ public class VmLifecycleService {
     private Controllable requireMemberControllableVm(AuthenticatedUser actor, UUID vmId) {
         VmAccess access = vmAccessService.of(actor, vmId);
         Vm vm = access.requireAtLeast(ResourceRole.MEMBER,
-                "VM을 제어할 권한이 없습니다", "이 VM의 참여자 이상만 VM 전원을 제어할 수 있습니다.");
+                "VM을 제어할 권한이 없어요", "이 VM의 참여자 이상만 전원을 제어할 수 있어요.");
         return new Controllable(vm, access.role());
     }
 
@@ -329,8 +329,8 @@ public class VmLifecycleService {
         }
         if (vmSettingsService.bool(vmId, VmSettingsService.STOP_PROTECTION)) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_STOP_PROTECTED,
-                    "중지 보호가 설정된 VM입니다",
-                    "중지 보호가 켜져 있어 이 VM의 편집자 이상만 종료·재부팅·강제 종료할 수 있습니다.");
+                    "중지 보호가 켜진 VM이에요",
+                    "중지 보호가 켜져 있어 이 VM의 편집자 이상만 종료와 재부팅, 강제 종료를 할 수 있어요.");
         }
     }
 
@@ -344,15 +344,15 @@ public class VmLifecycleService {
         Vm current = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         if (current.getPendingPowerAction() != null) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 수행할 수 없는 작업입니다",
-                    "이미 진행 중인 전원 작업이 있습니다. 잠시 후 다시 시도해 주세요.");
+                    "현재 상태에서는 사용할 수 없어요",
+                    "이미 접수된 전원 요청이 있어요. 잠시 후 다시 시도해 주세요.");
         }
         return invalidState(current, invalidStateDetail);
     }
 
     private static ApiException invalidState(Vm vm, String baseDetail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                "현재 상태에서는 수행할 수 없는 작업입니다",
+                "현재 상태에서는 사용할 수 없어요",
                 baseDetail + " (현재 상태 " + vm.getStatus() + ")");
     }
 

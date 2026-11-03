@@ -87,20 +87,20 @@ public class VmPasswordService {
                 vmSettingsService.role(id, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE);
         if (!memberVm.role().atLeast(minRole)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                    "비밀번호를 열람할 권한이 없습니다",
-                    "이 VM은 접근 권한 " + minRole + " 이상만 비밀번호를 열람할 수 있습니다.");
+                    "비밀번호를 볼 권한이 없어요",
+                    "이 VM의 접근 등급이 " + minRole + " 이상이어야 비밀번호를 볼 수 있어요.");
         }
         if (FORBIDDEN_REVEAL_STATUSES.contains(vm.getStatus())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 수행할 수 없는 작업입니다",
-                    "VM 생성이 완료된 뒤에 비밀번호를 열람할 수 있습니다. (현재 상태 " + vm.getStatus() + ")");
+                    "현재 상태에서는 사용할 수 없어요",
+                    "현재 VM 상태에서는 비밀번호를 볼 수 없어요. (현재 상태 " + vm.getStatus() + ")");
         }
         if (vm.getPasswordEnc() == null) {
             // Mock-provisioned VMs, or rows whose plaintext predates the stored
             // ciphertext. The code value stays for backwards compatibility.
             throw new ApiException(HttpStatus.GONE, ErrorCodes.VM_PASSWORD_ALREADY_VIEWED,
-                    "비밀번호를 열람할 수 없습니다",
-                    "저장된 비밀번호가 없습니다. 비밀번호 재생성으로 새 비밀번호를 만들 수 있습니다.");
+                    "비밀번호를 볼 수 없어요",
+                    "저장된 비밀번호가 없어요. 비밀번호 재생성으로 새 비밀번호를 만들 수 있어요.");
         }
         String password = credentialCipher.decrypt(vm.getPasswordEnc());
         vmRepository.recordPasswordViewed(id, Instant.now());
@@ -121,14 +121,14 @@ public class VmPasswordService {
         Vm vm = memberVm.vm();
         if (!memberVm.role().atLeast(ResourceRole.EDITOR)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                    "비밀번호를 재생성할 권한이 없습니다",
-                    "이 VM의 편집자 이상만 비밀번호를 재생성할 수 있습니다.");
+                    "비밀번호를 재생성할 권한이 없어요",
+                    "이 VM의 편집자 이상만 비밀번호를 재생성할 수 있어요.");
         }
         if (vm.getStatus() != VmStatus.RUNNING || vm.getProxmoxVmid() == null) {
             throw agentUnavailable();
         }
         Node node = nodeRepository.findById(vm.getNodeId()).orElseThrow(
-                () -> new IllegalStateException("VM " + vmId + "의 노드를 찾을 수 없습니다"));
+                () -> new IllegalStateException("VM " + vmId + "의 노드를 찾을 수 없어요"));
         String password = passwordGenerator.generate();
         // Guest-agent HTTP failure (agent not running) → false → 409; a transport
         // failure propagates as 5xx (infrastructure, not a VM-state problem).
@@ -155,7 +155,7 @@ public class VmPasswordService {
 
     private static ApiException agentUnavailable() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                "현재 상태에서는 수행할 수 없는 작업입니다",
-                "VM이 실행 중이고 게스트 에이전트가 응답할 때만 비밀번호를 재생성할 수 있습니다.");
+                "현재 상태에서는 사용할 수 없어요",
+                "VM이 실행 중이고 게스트 에이전트가 응답할 때만 비밀번호를 재생성할 수 있어요.");
     }
 }

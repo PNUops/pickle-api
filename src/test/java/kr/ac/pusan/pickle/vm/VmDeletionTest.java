@@ -222,7 +222,7 @@ class VmDeletionTest {
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"))
-                .andExpect(jsonPath("$.detail").value("이미 삭제가 접수되었거나 진행 중인 VM입니다."));
+                .andExpect(jsonPath("$.detail").value("이미 삭제를 접수했거나 삭제 중인 VM이에요."));
     }
 
     @Test
@@ -515,7 +515,7 @@ class VmDeletionTest {
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", selfVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("삭제가 취소되었습니다."));
+                .andExpect(jsonPath("$.message").value("삭제를 취소했어요."));
         assertThat(statusOf(selfVm)).isEqualTo("STOPPED");
         assertThat(column(selfVm, "delete_kind")).isNull();
         assertThat(eventTypes(selfVm)).contains("CANCEL_SCHEDULED_DELETE");
@@ -634,7 +634,7 @@ class VmDeletionTest {
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").value(
-                        "강제 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다."));
+                        "유예 없는 강제 삭제 요청을 접수했어요. 취소할 수 없어요."));
 
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
         assertThat(column(vmId, "delete_kind")).isEqualTo("FORCE");
@@ -778,7 +778,7 @@ class VmDeletionTest {
         wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuBasePath())));
         assertThat(taskState(vmId).get(0)).isEqualTo("NEEDS_ADMIN");
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
-        assertThat(statusDetailOf(vmId)).contains("파기 대상 불일치");
+        assertThat(statusDetailOf(vmId)).contains("파기 대상이 일치하지 않아요");
     }
 
     @Test
@@ -1032,7 +1032,7 @@ class VmDeletionTest {
 
         assertThat(taskState(vmId)).containsExactly("NEEDS_ADMIN", 1);
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
-        assertThat(statusDetailOf(vmId)).contains("삭제 보호가 켜진 상태");
+        assertThat(statusDetailOf(vmId)).contains("삭제 보호가 켜져 있어 파기를 보류했어요");
         // no Proxmox interaction at all: PVE protection stays armed, no destroy
         assertThat(wm.server().getAllServeEvents()).isEmpty();
 
