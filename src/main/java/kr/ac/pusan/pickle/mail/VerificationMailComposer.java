@@ -21,21 +21,17 @@ public class VerificationMailComposer {
     private static final String HEADING = "이메일 인증";
 
     private static final String BODY_TEMPLATE = """
-            안녕하세요, %s님.
+            가입을 완료하려면 이메일을 인증해 주세요. 인증 링크는 %s 동안 한 번만 사용할 수 있어요.
 
-            Pickle(부산대학교 클라우드 플랫폼) 가입을 완료하려면 이메일 인증을 진행해 주세요. 인증 링크는 %s 동안 1회만 사용할 수 있습니다.
-
-            본인이 가입을 요청하지 않았다면 이 메일을 무시하셔도 됩니다.""";
+            본인이 가입을 요청하지 않았다면 이 메일은 무시해 주세요.""";
 
     private static final String RESET_SUBJECT = "[Pickle] 부산대학교 클라우드 플랫폼 비밀번호 재설정";
     private static final String RESET_HEADING = "비밀번호 재설정";
 
     private static final String RESET_BODY_TEMPLATE = """
-            안녕하세요, %s님.
+            새 비밀번호를 설정해 주세요. 재설정 링크는 %s 동안 한 번만 사용할 수 있어요.
 
-            비밀번호 재설정을 요청하셨습니다. 아래에서 새 비밀번호를 설정해 주세요. 재설정 링크는 %s 동안 1회만 사용할 수 있습니다.
-
-            본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다. 비밀번호는 변경되지 않습니다.""";
+            본인이 요청하지 않았다면 이 메일은 무시해 주세요. 비밀번호는 바뀌지 않아요.""";
 
     private static final String ALREADY_REGISTERED_SUBJECT =
             "[Pickle] 부산대학교 클라우드 플랫폼 가입 안내";
@@ -48,13 +44,11 @@ public class VerificationMailComposer {
      * confirm one either, and a clickable link is a prefetchable signal.
      */
     private static final String ALREADY_REGISTERED_BODY = """
-            안녕하세요.
-
             이 이메일에는 이미 가입된 계정이 있어요.
 
-            비밀번호를 잊으셨다면 로그인 화면의 '비밀번호 찾기'에서 재설정할 수 있습니다.
+            비밀번호를 잊으셨다면 로그인 화면에서 '비밀번호 찾기'를 눌러 주세요.
 
-            본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.""";
+            본인이 요청하지 않았다면 이 메일은 무시해 주세요.""";
 
     private final AuthProperties authProperties;
 
@@ -64,8 +58,7 @@ public class VerificationMailComposer {
 
     public MailMessage compose(String email, String name, String token) {
         String link = linkWithToken(authProperties.verificationBaseUrl(), token);
-        String body = BODY_TEMPLATE.formatted(name,
-                humanizeTtl(authProperties.verificationTokenTtl()));
+        String body = BODY_TEMPLATE.formatted(humanizeTtl(authProperties.verificationTokenTtl()));
         return new MailMessage(email, SUBJECT, textWithLink(body, link),
                 MailHtmlLayout.render(HEADING, body,
                         new MailHtmlLayout.Cta("이메일 인증하기", link)));
@@ -73,8 +66,7 @@ public class VerificationMailComposer {
 
     public MailMessage composePasswordReset(String email, String name, String token) {
         String link = linkWithToken(authProperties.passwordResetBaseUrl(), token);
-        String body = RESET_BODY_TEMPLATE.formatted(name,
-                humanizeTtl(authProperties.passwordResetTokenTtl()));
+        String body = RESET_BODY_TEMPLATE.formatted(humanizeTtl(authProperties.passwordResetTokenTtl()));
         return new MailMessage(email, RESET_SUBJECT, textWithLink(body, link),
                 MailHtmlLayout.render(RESET_HEADING, body,
                         new MailHtmlLayout.Cta("새 비밀번호 설정하기", link)));

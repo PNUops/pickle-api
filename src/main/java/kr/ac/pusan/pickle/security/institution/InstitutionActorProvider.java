@@ -137,7 +137,7 @@ public class InstitutionActorProvider {
 
     private static ApiException unauthorized() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
-                "인증이 필요합니다", "현재 활성 계정으로 다시 로그인해 주세요.");
+                "인증이 필요해요", "현재 활성 계정으로 다시 로그인해 주세요.");
     }
 
     private record InstitutionActorIdentityRow(long id, UUID publicId, String email, UserRole role, String status, int tokenVersion) { }

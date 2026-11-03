@@ -214,8 +214,8 @@ class VmDeletionTest {
         List<MailMessage> mails = mockMailSender.getMessages();
         assertThat(mails).extracting(MailMessage::to).contains(owner.getEmail());
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody())
-                .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다")
-                .contains("삭제 취소는 관리자만 가능합니다");
+                .contains("플랫폼은 VM 데이터를 백업하지 않아요. 삭제한 데이터는 복구할 수 없어요")
+                .contains("삭제는 관리자만 취소할 수 있어요");
 
         // stacking another deletion on top → 409
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
@@ -477,7 +477,7 @@ class VmDeletionTest {
         notificationDispatchJob.dispatch();
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody())
                 .contains("사용 종료일이 지난 VM 정리")
-                .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다");
+                .contains("플랫폼은 VM 데이터를 백업하지 않아요. 삭제한 데이터는 복구할 수 없어요");
 
         // double-schedule and regular-user access → 409 / 403
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/schedule-delete")
@@ -649,7 +649,9 @@ class VmDeletionTest {
         assertThat(enqueued).isPositive();
         assertDeletionNoticeOwners(vmId, "vm.delete.force", noticeOwners);
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("관리자");
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody())
+                .contains("관리자", "삭제를 요청했어요", "삭제는 취소할 수 없고", "삭제한 데이터는 복구할 수 없어요")
+                .doesNotContain("자원은 회수됐고", "삭제가 완료됐어요");
 
         // already destroyed → 409
         setStatus(vmId, VmStatus.DELETED);
@@ -753,7 +755,7 @@ class VmDeletionTest {
         // Owners remain available after destruction and receive the completion.
         assertDeletionNoticeOwners(vmId, "vm.delete.completed", noticeOwners);
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("파기");
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("삭제가 완료됐어요", "데이터는 복구할 수 없어요");
     }
 
     @Test

@@ -224,7 +224,7 @@ class MailHtmlLayoutTest {
         assertThat(html).contains("부산대학교 클라우드 플랫폼");
         assertThat(html)
                 .contains("부산대학교 정보컴퓨터공학부 PNUops</p>")
-                .contains("본 메일은 발신 전용입니다. 회신하신 내용은 확인되지 않습니다.</p>")
+                .contains("이 메일은 발신 전용이에요. 답장은 확인할 수 없어요.</p>")
                 .doesNotContain("Pickle 운영팀")
                 .doesNotContain("운영: 부산대학교 정보컴퓨터공학부 PNUops");
     }

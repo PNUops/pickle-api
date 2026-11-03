@@ -32,7 +32,7 @@ public class GlobalExceptionHandler {
             jakarta.persistence.OptimisticLockException.class})
     public ResponseEntity<ProblemDetail> handleConcurrentAccountChange(Exception ex, HttpServletRequest request) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(problem(HttpStatus.CONFLICT,
-                "계정 정보가 변경됐습니다", "다른 변경과 겹쳤습니다. 최신 정보를 다시 불러와 확인해 주세요.",
+                "정보가 변경됐어요", "다른 변경과 겹쳤어요. 최신 정보를 불러온 뒤 다시 확인해 주세요.",
                 kr.ac.pusan.pickle.common.error.ErrorCodes.ACCOUNT_CONCURRENT_MODIFICATION, request));
     }
 
@@ -54,7 +54,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request) {
         List<FieldValidationError> errors = ex.getBindingResult().getFieldErrors().stream()
                 .map(fe -> new FieldValidationError(fe.getField(),
-                        fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "올바르지 않은 값입니다."))
+                        fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "입력값을 확인해 주세요."))
                 .toList();
         return validationProblem(errors, request);
     }
@@ -66,7 +66,7 @@ public class GlobalExceptionHandler {
                 .flatMap(result -> result.getResolvableErrors().stream()
                         .map(error -> new FieldValidationError(
                                 result.getMethodParameter().getParameterName(),
-                                error.getDefaultMessage() != null ? error.getDefaultMessage() : "올바르지 않은 값입니다.")))
+                                error.getDefaultMessage() != null ? error.getDefaultMessage() : "입력값을 확인해 주세요.")))
                 .toList();
         return validationProblem(errors, request);
     }
@@ -79,7 +79,7 @@ public class GlobalExceptionHandler {
         for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
             if (cause instanceof kr.ac.pusan.pickle.common.web.RequestBodyCapExceededException) {
                 ProblemDetail problem = problem(HttpStatus.PAYLOAD_TOO_LARGE,
-                        "요청 본문이 너무 큽니다", "요청 본문이 허용 크기를 초과했습니다.",
+                        "요청 본문이 너무 커요", "요청 본문의 크기를 줄여 주세요.",
                         ErrorCodes.VALIDATION_FAILED, request);
                 return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(problem);
             }
@@ -94,8 +94,8 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
     public ResponseEntity<ProblemDetail> handleAccessDenied(HttpServletRequest request) {
-        ProblemDetail problem = problem(HttpStatus.FORBIDDEN, "접근 권한이 없습니다",
-                "이 작업을 수행할 권한이 없습니다.", ErrorCodes.ACCESS_DENIED, request);
+        ProblemDetail problem = problem(HttpStatus.FORBIDDEN, "접근 권한이 없어요",
+                "이 작업을 할 권한이 없어요.", ErrorCodes.ACCESS_DENIED, request);
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
     }
 
@@ -109,37 +109,37 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ProblemDetail> handleUploadTooLarge(MaxUploadSizeExceededException ex,
             HttpServletRequest request) {
-        ProblemDetail problem = problem(HttpStatus.PAYLOAD_TOO_LARGE, "이미지가 너무 큽니다",
-                "이미지 한 장은 2 MiB까지 첨부할 수 있습니다.", ErrorCodes.NOTICE_IMAGE_TOO_LARGE, request);
+        ProblemDetail problem = problem(HttpStatus.PAYLOAD_TOO_LARGE, "이미지가 너무 커요",
+                "이미지 한 장은 2 MiB까지 첨부할 수 있어요.", ErrorCodes.NOTICE_IMAGE_TOO_LARGE, request);
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(problem);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ProblemDetail> handleNotFound(NoResourceFoundException ex, HttpServletRequest request) {
-        ProblemDetail problem = problem(HttpStatus.NOT_FOUND, "리소스를 찾을 수 없습니다",
-                "요청한 리소스가 존재하지 않습니다.", ErrorCodes.RESOURCE_NOT_FOUND, request);
+        ProblemDetail problem = problem(HttpStatus.NOT_FOUND, "리소스를 찾을 수 없어요",
+                "요청한 리소스를 찾을 수 없어요.", ErrorCodes.RESOURCE_NOT_FOUND, request);
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ProblemDetail> handleMethodNotAllowed(HttpRequestMethodNotSupportedException ex,
             HttpServletRequest request) {
-        ProblemDetail problem = problem(HttpStatus.METHOD_NOT_ALLOWED, "허용되지 않은 메서드입니다",
-                "이 경로에서 지원하지 않는 HTTP 메서드입니다.", ErrorCodes.METHOD_NOT_ALLOWED, request);
+        ProblemDetail problem = problem(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 요청 방식이에요",
+                "이 경로는 해당 HTTP 메서드를 지원하지 않아요.", ErrorCodes.METHOD_NOT_ALLOWED, request);
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(problem);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception on {} {}", request.getMethod(), request.getRequestURI(), ex);
-        ProblemDetail problem = problem(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다",
+        ProblemDetail problem = problem(HttpStatus.INTERNAL_SERVER_ERROR, "요청을 처리하지 못했어요",
                 "잠시 후 다시 시도해 주세요.", ErrorCodes.INTERNAL_ERROR, request);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
     }
 
     private ResponseEntity<ProblemDetail> validationProblem(List<FieldValidationError> errors,
             HttpServletRequest request) {
-        ProblemDetail problem = problem(HttpStatus.UNPROCESSABLE_CONTENT, "입력값이 올바르지 않습니다",
+        ProblemDetail problem = problem(HttpStatus.UNPROCESSABLE_CONTENT, "입력값을 확인해 주세요",
                 "요청 값을 확인해 주세요.", ErrorCodes.VALIDATION_FAILED, request);
         if (!errors.isEmpty()) {
             problem.setProperty("errors", errors);

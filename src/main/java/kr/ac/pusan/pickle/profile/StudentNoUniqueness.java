@@ -75,6 +75,6 @@ public class StudentNoUniqueness {
 
     public static ApiException taken() {
         return ApiException.validationFailed(List.of(new FieldValidationError("studentNo",
-                "이미 다른 계정에 등록된 학번입니다. 학번이 맞다면 문의해 주세요.")));
+                "이미 다른 계정에 등록된 학번이에요. 학번이 맞다면 관리자에게 문의해 주세요.")));
     }
 }

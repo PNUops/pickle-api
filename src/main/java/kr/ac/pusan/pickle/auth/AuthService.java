@@ -210,7 +210,7 @@ public class AuthService {
     }
 
     private static MessageResponse signupAccepted() {
-        return new MessageResponse("인증 메일을 발송했습니다. 메일함을 확인해 주세요.");
+        return new MessageResponse("메일함에서 가입 안내를 확인해 주세요.");
     }
 
     @Transactional
@@ -236,7 +236,7 @@ public class AuthService {
         activateAccount(user, now);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_VERIFY,
                 "user", user.getPublicId(), Map.of("email", user.getEmail()), ip);
-        return new MessageResponse("이메일 인증이 완료되었습니다. 이제 로그인할 수 있습니다.");
+        return new MessageResponse("이메일 인증을 마쳤어요. 로그인해 주세요.");
     }
 
     /**
@@ -294,7 +294,7 @@ public class AuthService {
         userRepository.findByEmail(normalized)
                 .filter(user -> user.getStatus() == UserStatus.PENDING_VERIFICATION)
                 .ifPresent(this::sendVerificationMail);
-        return new MessageResponse("해당 주소가 등록되어 있다면 인증 메일을 다시 발송했습니다.");
+        return new MessageResponse("인증 메일 재발송 요청을 받았어요. 메일함을 확인해 주세요.");
     }
 
     @Transactional
@@ -334,7 +334,7 @@ public class AuthService {
             auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN_FAILED,
                     "user", user.getPublicId(), Map.of("email", email, "reason", "email_not_verified"), ip);
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_EMAIL_NOT_VERIFIED,
-                    "이메일 인증이 필요합니다", "가입 시 발송된 인증 메일을 확인한 뒤 다시 로그인해 주세요.");
+                    "이메일 인증이 필요해요", "가입 시 발송된 인증 메일을 확인한 뒤 다시 로그인해 주세요.");
         }
         if (user.getStatus() != UserStatus.ACTIVE) {
             // Uniform 401: do not disclose DISABLED/WITHDRAWN state.
@@ -546,7 +546,7 @@ public class AuthService {
         userRepository.findByEmail(normalized)
                 .filter(user -> user.getStatus() == UserStatus.ACTIVE)
                 .ifPresent(this::sendPasswordResetMail);
-        return new MessageResponse("해당 주소가 등록되어 있다면 비밀번호 재설정 메일을 발송했습니다.");
+        return new MessageResponse("비밀번호 재설정 요청을 받았어요. 메일함을 확인해 주세요.");
     }
 
     /**
@@ -586,7 +586,7 @@ public class AuthService {
                 AuditService.ACCOUNT_PASSWORD_RESET, "user", user.getPublicId(), Map.of(), ip);
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_PASSWORD_CHANGED, Map.of(),
                 "account_password_reset:" + user.getId() + ":" + user.getTokenVersion());
-        return new MessageResponse("비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.");
+        return new MessageResponse("비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요.");
     }
 
     private void sendVerificationMail(User user) {
@@ -637,32 +637,32 @@ public class AuthService {
 
     private static ApiException verificationTokenGone() {
         return new ApiException(HttpStatus.GONE, ErrorCodes.AUTH_VERIFICATION_TOKEN_EXPIRED,
-                "인증 토큰이 만료되었습니다", "인증 링크가 만료되었거나 이미 사용되었습니다. 인증 메일을 다시 요청해 주세요.");
+                "인증 링크를 사용할 수 없어요", "인증 링크가 만료됐거나 이미 사용됐어요. 인증 메일을 다시 요청해 주세요.");
     }
 
     private static ApiException invalidCredentials() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_INVALID_CREDENTIALS,
-                "로그인에 실패했습니다", "이메일 또는 비밀번호가 올바르지 않습니다.");
+                "로그인하지 못했어요", "이메일과 비밀번호를 확인해 주세요.");
     }
 
     private static ApiException refreshTokenInvalid() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_REFRESH_TOKEN_INVALID,
-                "세션이 만료되었습니다", "다시 로그인해 주세요.");
+                "로그인이 만료됐어요", "다시 로그인해 주세요.");
     }
 
     private static ApiException passwordMismatch() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_PASSWORD_MISMATCH,
-                "현재 비밀번호가 올바르지 않습니다", "현재 비밀번호를 다시 확인해 주세요.");
+                "현재 비밀번호가 올바르지 않아요", "현재 비밀번호를 다시 확인해 주세요.");
     }
 
     private static ApiException resetTokenGone() {
         return new ApiException(HttpStatus.GONE, ErrorCodes.AUTH_RESET_TOKEN_EXPIRED,
-                "재설정 링크가 만료되었습니다",
-                "재설정 링크가 만료되었거나 이미 사용되었습니다. 재설정을 다시 요청해 주세요.");
+                "재설정 링크를 사용할 수 없어요",
+                "재설정 링크가 만료됐거나 이미 사용됐어요. 비밀번호 재설정을 다시 요청해 주세요.");
     }
 
     private static ApiException sessionUserGone() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
-                "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요.");
+                "인증이 필요해요", "액세스 토큰이 없거나 만료됐어요. 토큰을 갱신한 뒤 다시 시도해 주세요.");
     }
 }

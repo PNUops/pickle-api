@@ -105,7 +105,7 @@ public class MfaService {
         UserMfa mfa = userMfaRepository.findById(userId).orElseGet(() -> new UserMfa(userId));
         if (mfa.isEnrolled()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.MFA_ALREADY_ENROLLED,
-                    "이미 2단계 인증이 설정되어 있습니다", "기존 설정을 해제한 뒤 다시 등록할 수 있습니다.");
+                    "이미 2단계 인증이 등록돼 있어요", "기존 설정을 해제한 뒤 다시 등록해 주세요.");
         }
         String secret = totpService.generateSecret();
         mfa.startPending(credentialCipher.encrypt(secret), Instant.now());
@@ -126,7 +126,7 @@ public class MfaService {
         UserMfa mfa = userMfaRepository.findById(userId).orElse(null);
         if (mfa == null || !mfa.hasPendingSetup()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.MFA_SETUP_NOT_IN_PROGRESS,
-                    "진행 중인 2단계 인증 등록이 없습니다", "등록을 처음부터 다시 시작해 주세요.");
+                    "진행 중인 2단계 인증 등록이 없어요", "등록을 처음부터 다시 시작해 주세요.");
         }
         String secret = credentialCipher.decrypt(mfa.getPendingSecretEnc());
         if (!totpService.verify(secret, code, Instant.now())) {
@@ -308,7 +308,7 @@ public class MfaService {
     public void adminReset(long actorId, String actorRole, User target, String ip) {
         if (!userMfaRepository.isEnrolled(target.getId())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.MFA_NOT_ENROLLED,
-                    "2단계 인증이 설정되어 있지 않습니다", "해당 사용자는 2단계 인증을 사용하고 있지 않습니다.");
+                    "2단계 인증이 등록돼 있지 않아요", "이 사용자는 2단계 인증을 사용하지 않아요.");
         }
         userMfaRepository.deleteByUserId(target.getId());
         recoveryCodeRepository.deleteByUserId(target.getId());
@@ -372,7 +372,7 @@ public class MfaService {
     private UserMfa enrolledOrThrow(long userId) {
         return userMfaRepository.findById(userId).filter(UserMfa::isEnrolled)
                 .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, ErrorCodes.MFA_NOT_ENROLLED,
-                        "2단계 인증이 설정되어 있지 않습니다", "먼저 2단계 인증을 등록해 주세요."));
+                        "2단계 인증이 등록돼 있지 않아요", "먼저 2단계 인증을 등록해 주세요."));
     }
 
     private static boolean isExactlyOne(String code, String recoveryCode) {
@@ -385,7 +385,7 @@ public class MfaService {
     public static void requireExactlyOneCode(String code, String recoveryCode) {
         if (!isExactlyOne(code, recoveryCode)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.VALIDATION_FAILED,
-                    "입력값이 올바르지 않습니다", "인증 코드 또는 복구 코드 중 하나만 입력해 주세요.");
+                    "입력값을 확인해 주세요", "인증 코드 또는 복구 코드 중 하나만 입력해 주세요.");
         }
     }
 
@@ -408,27 +408,27 @@ public class MfaService {
 
     private static ApiException passwordMismatch() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_PASSWORD_MISMATCH,
-                "본인 확인에 실패했습니다", "비밀번호를 다시 확인해 주세요.");
+                "본인 확인에 실패했어요", "비밀번호를 다시 확인해 주세요.");
     }
 
     /** 403 for enrollment/disable flows; login step-up throws 401 via {@link #loginCodeInvalid()}. */
     private static ApiException codeInvalid(String detail) {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_MFA_CODE_INVALID,
-                "인증 코드가 올바르지 않습니다", detail);
+                "인증 코드가 올바르지 않아요", detail);
     }
 
     public static ApiException loginCodeInvalid() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_MFA_CODE_INVALID,
-                "인증 코드가 올바르지 않습니다", "입력한 코드가 올바르지 않습니다. 인증 앱의 최신 코드를 확인해 주세요.");
+                "인증 코드가 올바르지 않아요", "인증 앱의 최신 코드나 사용하지 않은 복구 코드를 확인해 주세요.");
     }
 
     private static ApiException challengeExpired() {
         return new ApiException(HttpStatus.GONE, ErrorCodes.AUTH_MFA_TOKEN_EXPIRED,
-                "인증 세션이 만료되었습니다", "2단계 인증 시간이 지났습니다. 처음부터 다시 로그인해 주세요.");
+                "인증 시간이 지났어요", "처음부터 다시 로그인해 주세요.");
     }
 
     private static ApiException sessionUserGone() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
-                "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요.");
+                "인증이 필요해요", "액세스 토큰이 없거나 만료됐어요. 토큰을 갱신한 뒤 다시 시도해 주세요.");
     }
 }

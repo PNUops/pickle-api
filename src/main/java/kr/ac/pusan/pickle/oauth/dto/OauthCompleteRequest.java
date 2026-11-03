@@ -28,24 +28,24 @@ public record OauthCompleteRequest(
         @NotBlank @Size(max = 128) String registrationToken,
 
         @NotBlank(message = "이름을 입력해 주세요.")
-        @Size(max = 50, message = "이름은 50자 이하여야 합니다.")
+        @Size(max = 50, message = "이름은 50자 이하로 입력해 주세요.")
         String name,
 
         @Nullable UserPosition position,
 
-        @Size(max = 20, message = "학번은 20자 이하여야 합니다.")
+        @Size(max = 20, message = "학번은 20자 이하로 입력해 주세요.")
         @Nullable String studentNo,
 
-        @Size(max = 32, message = "소속 코드가 올바르지 않습니다.")
+        @Size(max = 32, message = "소속을 다시 선택해 주세요.")
         @Nullable String departmentCode,
 
         // 소속, written out. A student picks a catalogue code; everyone else
         // writes it, because a 연구소 or a 부서 is not in any 학과 list. Both
         // together is the unlisted-학과 case and needs the OTHER code.
-        @Size(max = 100, message = "소속은 100자 이하여야 합니다.")
+        @Size(max = 100, message = "소속은 100자 이하로 입력해 주세요.")
         @Nullable String departmentOther,
 
-        @NotEmpty(message = "약관 동의가 필요합니다.")
+        @NotEmpty(message = "약관 동의가 필요해요.")
         @Valid
         List<ConsentInput> consents) {
 }

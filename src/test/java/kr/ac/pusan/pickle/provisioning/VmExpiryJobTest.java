@@ -197,7 +197,7 @@ class VmExpiryJobTest {
         assertThat(noticeTitles(vmLate)).allSatisfy(title ->
                 assertThat(title).contains("D-5").doesNotContain("D-7"));
         assertThat(noticeBodies(vmLate)).allSatisfy(body ->
-                assertThat(body).contains("5일 남았습니다").doesNotContain("7일"));
+                assertThat(body).contains("5일 남았어요").doesNotContain("7일"));
         assertThat(noticeTitles(vm7)).allSatisfy(title -> assertThat(title).contains("D-7"));
 
         // recipients: the VM's EDITOR grantee + the workspace's owner, never a member
@@ -243,7 +243,7 @@ class VmExpiryJobTest {
         assertThat(noticeTitles(vmToday)).allSatisfy(title ->
                 assertThat(title).contains("오늘").doesNotContain("D-"));
         assertThat(noticeBodies(vmToday)).allSatisfy(body ->
-                assertThat(body).contains("오늘입니다").doesNotContain("일 남았습니다"));
+                assertThat(body).contains("오늘이에요").doesNotContain("일 남았어요"));
         assertThat(jdbcTemplate.queryForObject("""
                 select distinct importance from notifications
                  where event = 'vm.expiry.d1' and payload ->> 'vmId' = ?

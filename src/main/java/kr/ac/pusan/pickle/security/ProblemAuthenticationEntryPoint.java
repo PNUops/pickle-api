@@ -23,7 +23,7 @@ public class ProblemAuthenticationEntryPoint implements AuthenticationEntryPoint
     public void commence(HttpServletRequest request, HttpServletResponse response,
             AuthenticationException authException) throws IOException {
         problemJsonWriter.write(request, response, HttpServletResponse.SC_UNAUTHORIZED,
-                ErrorCodes.AUTH_TOKEN_INVALID, "인증이 필요합니다",
-                "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요.");
+                ErrorCodes.AUTH_TOKEN_INVALID, "인증이 필요해요",
+                "액세스 토큰이 없거나 만료됐어요. 토큰을 갱신한 뒤 다시 시도해 주세요.");
     }
 }

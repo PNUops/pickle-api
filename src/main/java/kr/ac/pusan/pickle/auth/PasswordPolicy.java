@@ -45,13 +45,13 @@ public class PasswordPolicy {
         String stripped = lower.replaceAll("[^a-z0-9]", "");
 
         if (rawPassword.getBytes(StandardCharsets.UTF_8).length > MAX_PASSWORD_BYTES) {
-            return error("비밀번호가 너무 깁니다. 한글 등 다국어 문자를 포함하면 더 짧게 입력해 주세요. (UTF-8 72바이트 이하)");
+            return error("비밀번호는 UTF-8 72바이트까지 입력할 수 있어요. 한글 등 다국어 문자가 있으면 글자 수를 줄여 주세요.");
         }
         if (lower.chars().distinct().count() <= 2) {
-            return error("같은 문자가 반복되는 비밀번호는 사용할 수 없습니다.");
+            return error("같은 문자가 반복되는 비밀번호는 사용할 수 없어요.");
         }
         if (isSequential(stripped)) {
-            return error("연속된 문자·숫자로만 이루어진 비밀번호는 사용할 수 없습니다.");
+            return error("연속된 문자나 숫자로만 이루어진 비밀번호는 사용할 수 없어요.");
         }
         return List.of();
     }

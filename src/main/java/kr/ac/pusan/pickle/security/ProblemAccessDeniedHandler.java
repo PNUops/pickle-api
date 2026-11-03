@@ -23,6 +23,6 @@ public class ProblemAccessDeniedHandler implements AccessDeniedHandler {
     public void handle(HttpServletRequest request, HttpServletResponse response,
             AccessDeniedException accessDeniedException) throws IOException {
         problemJsonWriter.write(request, response, HttpServletResponse.SC_FORBIDDEN,
-                ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "이 작업을 수행할 권한이 없습니다.");
+                ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "이 작업을 할 권한이 없어요.");
     }
 }

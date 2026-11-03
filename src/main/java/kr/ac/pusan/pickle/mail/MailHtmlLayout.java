@@ -30,7 +30,7 @@ public final class MailHtmlLayout {
 
     private static final String OPERATOR_NAME = "부산대학교 정보컴퓨터공학부 PNUops";
     private static final String SEND_ONLY_NOTICE =
-            "본 메일은 발신 전용입니다. 회신하신 내용은 확인되지 않습니다.";
+            "이 메일은 발신 전용이에요. 답장은 확인할 수 없어요.";
 
     /** Plain-text counterpart of the HTML footer; both mail paths use this one value. */
     public static final String TEXT_SIGNATURE =
@@ -127,10 +127,8 @@ public final class MailHtmlLayout {
      * preview is not completed with whatever markup follows.
      */
     private static void appendPreheader(StringBuilder html, String textBody) {
-        // Joined across lines rather than taken from the first one. The account
-        // mails open with a greeting, so a first-line preview made the signup
-        // and the password-reset mail read identically in the inbox list —
-        // exactly what this is here to prevent.
+        // Include substantive text across paragraphs rather than relying on
+        // a single first line that may be a greeting or a short introduction.
         String first = String.join(" ", textBody.replace("\r\n", "\n").replace('\r', '\n')
                 .trim().lines().map(String::strip).filter(line -> !line.isEmpty())
                 // The list marker is layout, not words: a preview reading

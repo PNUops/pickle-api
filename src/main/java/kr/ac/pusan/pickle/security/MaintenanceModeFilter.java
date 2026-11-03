@@ -54,7 +54,7 @@ public class MaintenanceModeFilter extends OncePerRequestFilter {
                     "SYS_VIEWER", "SYS_MANAGER", "SYS_ADMIN");
 
     private static final String DEFAULT_MESSAGE =
-            "서비스 점검 중입니다. 잠시 후 다시 이용해 주세요.";
+            "서비스 점검 중이에요. 잠시 후 다시 이용해 주세요.";
 
     private final SystemStatusService systemStatusService;
     private final ProblemJsonWriter problemJsonWriter;

@@ -65,8 +65,8 @@ public class RefreshCsrfFilter extends OncePerRequestFilter {
                 || !MessageDigest.isEqual(header.getBytes(StandardCharsets.UTF_8),
                         cookie.getBytes(StandardCharsets.UTF_8))) {
             problemJsonWriter.write(request, response, HttpStatus.FORBIDDEN.value(),
-                    ErrorCodes.AUTH_CSRF_INVALID, "CSRF 검증에 실패했습니다",
-                    "요청의 CSRF 토큰이 없거나 올바르지 않습니다. 페이지를 새로 고친 뒤 다시 시도해 주세요.");
+                    ErrorCodes.AUTH_CSRF_INVALID, "요청을 확인하지 못했어요",
+                    "CSRF 토큰이 없거나 올바르지 않아요. 페이지를 새로 고친 뒤 다시 시도해 주세요.");
             return;
         }
         filterChain.doFilter(request, response);

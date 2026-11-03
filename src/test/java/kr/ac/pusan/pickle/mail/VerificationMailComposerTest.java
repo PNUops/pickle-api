@@ -26,10 +26,10 @@ class VerificationMailComposerTest {
         MailMessage mail = composer.compose("a@pusan.ac.kr", "홍길동", "TOK123");
 
         assertThat(mail.textBody())
-                .contains("홍길동님")
+                .startsWith("가입을 완료하려면 이메일을 인증해 주세요.")
                 .contains("https://pickle.pusan.ac.kr/verify-email?token=TOK123")
                 .contains("부산대학교 정보컴퓨터공학부 PNUops")
-                .contains("본 메일은 발신 전용입니다. 회신하신 내용은 확인되지 않습니다.")
+                .contains("이 메일은 발신 전용이에요. 답장은 확인할 수 없어요.")
                 .doesNotContain("Pickle 운영팀")
                 .doesNotContain("운영: 부산대학교 정보컴퓨터공학부 PNUops");
         assertThat(mail.hasHtml()).isTrue();
