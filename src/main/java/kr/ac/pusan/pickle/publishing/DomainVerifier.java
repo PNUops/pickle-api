@@ -125,7 +125,7 @@ public class DomainVerifier {
             domain.setStatus(deadlinePassed ? DomainStatus.FAILED : DomainStatus.VERIFYING);
             if (deadlinePassed) {
                 String error = "검증 기한(" + properties.verificationTimeout().toHours()
-                        + "시간)이 지났습니다. DNS 레코드를 설정한 뒤 검증을 다시 실행해 주세요.";
+                        + "시간)이 지났어요. DNS 레코드를 설정한 뒤 검증을 다시 실행해 주세요.";
                 domain.setLastError(error);
                 discardUnissuedCertificate(domain);
                 notifyVerificationFailed(domain, error);
@@ -204,9 +204,9 @@ public class DomainVerifier {
 
     private static String missReason(boolean txtOk, boolean aOk) {
         if (!txtOk && !aOk) {
-            return "TXT 소유권 레코드와 A 레코드를 아직 찾을 수 없습니다.";
+            return "TXT 소유권 값과 프록시 IP를 아직 확인하지 못했어요.";
         }
-        return txtOk ? "A 레코드가 아직 프록시 IP를 가리키지 않습니다."
-                : "TXT 소유권 레코드를 아직 찾을 수 없습니다.";
+        return txtOk ? "A 레코드가 아직 프록시 IP를 가리키지 않아요."
+                : "TXT 소유권 값을 아직 확인하지 못했어요.";
     }
 }

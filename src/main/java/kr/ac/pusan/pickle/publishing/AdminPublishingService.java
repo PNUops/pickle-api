@@ -272,7 +272,7 @@ public class AdminPublishingService {
         });
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ROUTE_RESYNC,
                 "route", null, Map.of(), ip);
-        return new MessageResponse("라우트 전체 재동기화를 접수했습니다. 잠시 후 적용 상태가 갱신됩니다.");
+        return new MessageResponse("전체 라우트 재동기화 요청을 접수했어요.");
     }
 
     // ── post-hoc intervention (contract v0.18.0, all admin roles org-scoped) ──
@@ -353,12 +353,12 @@ public class AdminPublishingService {
         if (!mayIntervene(actor, domain, kr.ac.pusan.pickle.security.institution.InstitutionWork.DOMAIN_RENEWAL)) { return domainNotFound(); }
         if (!hasRenewalDeadline(domain)) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
-                    "사용 기한이 없는 도메인입니다",
-                    "외부 도메인만 사용 기한을 갖습니다. 다른 종류는 가상머신이나 소유자의 DNS가 수명을 정합니다.");
+                    "사용 기한이 없는 도메인이에요",
+                    "외부 도메인의 사용 기한만 바꿀 수 있어요.");
         }
         if (domain.getReleasedAt() != null) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
-                    "이미 해제한 도메인입니다", "해제한 이름에는 사용 기한이 없습니다.");
+                    "이미 해제한 도메인이에요", "해제한 도메인의 사용 기한은 바꿀 수 없어요.");
         }
         // A deadline in the past is a forced release with a day's delay and no
         // notice: the nightly sweeper lapses it, the records come down, and the
@@ -391,7 +391,7 @@ public class AdminPublishingService {
             return null;
         }
         return new FieldValidationError("renewDueAt",
-                "지난 시각으로는 옮길 수 없습니다. 지금 회수하려면 강제 해제를 쓰세요.");
+                "사용 기한은 현재보다 뒤로 정해 주세요. 지금 회수하려면 강제 해제를 사용해 주세요.");
     }
 
     private static Map<String, Object> renewalArgs(Domain domain, @Nullable Instant before,
@@ -428,7 +428,7 @@ public class AdminPublishingService {
         actor = permissions.currentForWrite(actor);
         Domain domain = requireDomainWork(actor, domainId, domainWork(findExistingDomain(domainId), false));
         releaseByAdmin(actor, domain, null, ip);
-        return new MessageResponse("도메인을 강제 해제했습니다. 라우트 제거가 곧 적용되며, 이름은 즉시 회수됩니다.");
+        return new MessageResponse("도메인을 강제 해제하고 이름을 반환했어요. 라우트와 플랫폼이 관리하는 DNS 레코드의 정리는 비동기로 진행해요.");
     }
 
     /**
@@ -506,7 +506,7 @@ public class AdminPublishingService {
         if (refusal != null) {
             throw refusal;
         }
-        return new MessageResponse("소유권 재검증을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+        return new MessageResponse("소유권 재검증 요청을 접수했어요.");
     }
 
     /** Whether the name is one whose ownership this platform verifies: only a custom domain. */
@@ -530,7 +530,7 @@ public class AdminPublishingService {
         if (!mayIntervene(actor, domain, kr.ac.pusan.pickle.security.institution.InstitutionWork.VM_CUSTOM_DOMAIN_VERIFY)) { return domainNotFound(); }
         if (!isVerifiable(domain)) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
-                    "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
+                    "검증할 수 없는 도메인이에요", "플랫폼 서브도메인은 소유권 검증이 필요하지 않아요.");
         }
         long domainId = domain.getId();
         AfterCommit.queue("enqueue verify " + domain.getPublicId(),
@@ -577,8 +577,8 @@ public class AdminPublishingService {
         if (route.getStatus() != RouteStatus.REMOVED
                 && domain.getStatus() != DomainStatus.ACTIVE) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
-                    "적용할 수 없는 도메인 상태입니다",
-                    "소유권 검증이 완료(ACTIVE)된 도메인의 라우트만 재적용할 수 있습니다. (현재 상태 "
+                    "적용할 수 없는 도메인 상태예요",
+                    "소유권 검증이 완료(ACTIVE)된 도메인의 라우트만 재적용할 수 있어요. (현재 상태 "
                             + domain.getStatus() + ")");
         }
         route.setGeneration(routeGenerations.next());
@@ -595,7 +595,7 @@ public class AdminPublishingService {
         });
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ROUTE_APPLY,
                 "route", route.getPublicId(), Map.of("fqdn", domain.getFqdn()), ip);
-        return new MessageResponse("라우트 재적용을 접수했습니다. 잠시 후 적용 상태가 갱신됩니다.");
+        return new MessageResponse("라우트 재적용 요청을 접수했어요.");
     }
 
     /** A removal resend uses its known historical workspace without reopening an active route. */
@@ -734,12 +734,12 @@ public class AdminPublishingService {
 
     private static ApiException domainNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 도메인이 존재하지 않습니다.");
+                "리소스를 찾을 수 없어요", "해당 도메인을 찾을 수 없어요.");
     }
 
     private static ApiException routeNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 라우트가 존재하지 않습니다.");
+                "리소스를 찾을 수 없어요", "해당 라우트를 찾을 수 없어요.");
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
