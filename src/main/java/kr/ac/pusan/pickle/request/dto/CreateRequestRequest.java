@@ -49,10 +49,10 @@ public record CreateRequestRequest(
         @Nullable UUID orgId,
 
         @NotBlank(message = "사용 목적을 입력해 주세요.")
-        @Size(max = 2000, message = "사용 목적은 2000자 이하여야 합니다.")
+        @Size(max = 2000, message = "사용 목적은 2000자 이내로 입력해 주세요.")
         String purpose,
 
-        @Size(max = 2000, message = "기타 참고 사항은 2000자 이하여야 합니다.")
+        @Size(max = 2000, message = "기타 참고 사항은 2000자 이내로 입력해 주세요.")
         @Nullable String extraNote,
 
         /**
@@ -80,7 +80,7 @@ public record CreateRequestRequest(
         // 신청하는 리소스의 이름. 종류를 가리지 않고 필수이며, 이 신청을 가리키는
         // 응답은 어디서나 식별자 옆에 이 이름을 함께 싣는다.
         @NotBlank(message = "리소스 이름을 입력해 주세요.")
-        @Size(max = 100, message = "리소스 이름은 100자 이하여야 합니다.")
+        @Size(max = 100, message = "리소스 이름은 100자 이내로 입력해 주세요.")
         String displayName,
 
         /** Required when {@code type} is VM, ignored otherwise. */
@@ -110,7 +110,7 @@ public record CreateRequestRequest(
         @Schema(description = "리소스를 받을 대상자. 비우면 신청자 본인이 받는 일반 신청입니다. "
                 + "VM과 LLM API 키에만 쓸 수 있고, 워크스페이스 소유자나 해당 명단 발급 업무가 있는 담당자가 지정할 수 있습니다. "
                 + "대상자마다 리소스를 하나씩 만들며, 가입 전인 초대 대상자는 가입할 때 만듭니다.")
-        @Size(max = 200, message = "대상자는 한 번에 200명까지 지정할 수 있습니다.")
+        @Size(max = 200, message = "대상자는 한 번에 200명 이내로 지정해 주세요.")
         @Valid @Nullable List<CreateRequestRecipient> recipients,
 
         /**

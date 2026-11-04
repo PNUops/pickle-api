@@ -35,24 +35,24 @@ public record CreateLlmKeyRequestSpec(
 
         @Schema(description = "희망 금액 한도(USD). 유료 모델을 쓸 때만 적습니다.",
                 example = "20.00")
-        @DecimalMin(value = "0.01", message = "금액 한도는 0보다 커야 합니다.")
-        @DecimalMax(value = "100000.00", message = "금액 한도가 너무 큽니다.")
+        @DecimalMin(value = "0.01", message = "금액 한도는 0.01 USD 이상으로 입력해 주세요.")
+        @DecimalMax(value = "100000.00", message = "금액 한도는 100000.00 USD 이하로 입력해 주세요.")
         // 열이 numeric(12,2)이라 셋째 자리는 저장되면서 반올림된다. 막지 않으면
         // 0.015를 적은 사람이 0.02로 적힌 신청을 돌려받는다. 부여 쪽과 같은 규칙이다.
         @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.")
         @Nullable BigDecimal reqCreditLimit,
 
         @Schema(description = "희망 분당 요청 수. 비우면 서비스 기본값을 받습니다.")
-        @Min(value = 1, message = "분당 요청 수는 1 이상이어야 합니다.")
-        @Max(value = 10000, message = "분당 요청 수가 너무 큽니다.")
+        @Min(value = 1, message = "분당 요청 수는 1 이상으로 입력해 주세요.")
+        @Max(value = 10000, message = "분당 요청 수는 10000 이하로 입력해 주세요.")
         @Nullable Integer reqRpm,
 
         @Schema(description = "희망 분당 토큰 수. 비우면 서비스 기본값을 받습니다.")
-        @Min(value = 1, message = "분당 토큰 수는 1 이상이어야 합니다.")
+        @Min(value = 1, message = "분당 토큰 수는 1 이상으로 입력해 주세요.")
         @Nullable Integer reqTpm,
 
         @Schema(description = "희망 일일 토큰 수. 비우면 서비스 기본값을 받습니다.")
-        @Min(value = 1, message = "일일 토큰 수는 1 이상이어야 합니다.")
+        @Min(value = 1, message = "일일 토큰 수는 1 이상으로 입력해 주세요.")
         @Nullable Long reqDailyTokens,
 
         /**
@@ -73,6 +73,6 @@ public record CreateLlmKeyRequestSpec(
                                 + "embeddings, rerank, speech, transcriptions이고 나머지는 422로 거절합니다. web_search와 pdf_ocr은 "
                                 + "chat과 함께 골라야 합니다."))
         @NotNull(message = "필요한 기능을 골라 주세요. 아무 기능도 쓰지 않으려면 빈 배열을 보내 주세요.")
-        @Size(max = 20, message = "기능은 최대 20개까지 고를 수 있습니다.")
+        @Size(max = 20, message = "필요한 기능은 20개 이내로 골라 주세요.")
         List<String> reqPassthroughEndpoints) {
 }

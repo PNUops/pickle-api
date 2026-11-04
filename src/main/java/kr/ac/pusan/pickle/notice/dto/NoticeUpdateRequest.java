@@ -20,11 +20,11 @@ import org.jspecify.annotations.Nullable;
  */
 public class NoticeUpdateRequest {
 
-    @Size(max = 200, message = "제목은 200자 이하여야 합니다.")
+    @Size(max = 200, message = "제목은 200자 이내로 입력해 주세요.")
     private String title;
     private boolean titleSet;
 
-    @Size(max = 20000, message = "본문은 20,000자 이하여야 합니다.")
+    @Size(max = 20000, message = "본문은 20,000자 이내로 입력해 주세요.")
     private String body;
     private boolean bodySet;
 

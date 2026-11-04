@@ -35,22 +35,22 @@ public class UpdateProfileRequest {
     // the published schema must not offer null as a value. The same split as
     // UpdateOrgRequest, where name is required-if-present and description is
     // clearable.
-    @Size(max = 50, message = "이름은 50자 이하여야 합니다.")
+    @Size(max = 50, message = "이름은 50자 이내로 입력해 주세요.")
     private String name;
     private boolean nameSet;
 
     private @Nullable UserPosition position;
     private boolean positionSet;
 
-    @Size(max = 20, message = "학번은 20자 이하여야 합니다.")
+    @Size(max = 20, message = "학번은 20자 이내로 입력해 주세요.")
     private @Nullable String studentNo;
     private boolean studentNoSet;
 
-    @Size(max = 32, message = "소속 코드가 올바르지 않습니다.")
+    @Size(max = 32, message = "소속 코드는 32자 이내로 입력해 주세요.")
     private @Nullable String departmentCode;
     private boolean departmentCodeSet;
 
-    @Size(max = 100, message = "소속은 100자 이하여야 합니다.")
+    @Size(max = 100, message = "소속은 100자 이내로 입력해 주세요.")
     private @Nullable String departmentOther;
     private boolean departmentOtherSet;
 

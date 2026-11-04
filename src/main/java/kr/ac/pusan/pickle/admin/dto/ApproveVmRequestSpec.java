@@ -13,15 +13,15 @@ import org.jspecify.annotations.Nullable;
  */
 public record ApproveVmRequestSpec(
         @NotNull(message = "부여 vCPU 수를 입력해 주세요.")
-        @Min(value = 1, message = "vCPU는 1 이상이어야 합니다.")
+        @Min(value = 1, message = "vCPU는 1 이상으로 입력해 주세요.")
         Integer grantedVcpu,
 
         @NotNull(message = "부여 메모리를 입력해 주세요.")
-        @Min(value = 256, message = "메모리는 256MiB 이상이어야 합니다.")
+        @Min(value = 256, message = "메모리는 256MiB 이상으로 입력해 주세요.")
         Integer grantedMemoryMb,
 
         @NotNull(message = "부여 디스크 크기를 입력해 주세요.")
-        @Min(value = 1, message = "디스크는 1GiB 이상이어야 합니다.")
+        @Min(value = 1, message = "디스크는 1GiB 이상으로 입력해 주세요.")
         Integer grantedDiskGb,
 
         @NotNull(message = "부여 OS 이미지(grantedImageId)를 지정해 주세요.")
@@ -31,7 +31,7 @@ public record ApproveVmRequestSpec(
         // Blank ≡ null이므로 패턴이 공백을 허용하고, 예약어·중복(파기 VM 포함)은
         // 서버(VmSlugPolicy + VmRequestSupport)에서 검증한다.
         @Pattern(regexp = "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
-                message = "소문자와 숫자, 하이픈만 쓸 수 있고 3~40자여야 합니다. 하이픈으로 시작하거나 끝낼 수 없습니다.")
+                message = "소문자와 숫자, 하이픈으로 3~40자를 입력해 주세요. 처음과 끝에는 하이픈을 쓸 수 없어요.")
         @Nullable String grantedSlug,
 
         /** null이면 자동 배치. */

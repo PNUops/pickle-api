@@ -22,7 +22,7 @@ public record AdminBulkChangeRequest(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                 description = "대상의 공개 ID. 1개 이상 200개 이하, 중복 없이.")
         @NotNull(message = "대상을 지정해 주세요.")
-        @Size(min = 1, max = 200, message = "대상은 1개 이상 200개 이하여야 합니다.")
+        @Size(min = 1, max = 200, message = "대상은 1~200개를 지정해 주세요.")
         List<UUID> targetIds,
 
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)

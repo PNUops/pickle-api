@@ -34,25 +34,25 @@ import org.jspecify.annotations.Nullable;
  */
 public class AdminLlmKeyLimitsRequest {
 
-    @Min(value = 1, message = "분당 요청 수는 1 이상이어야 합니다.")
-    @Max(value = 10000, message = "분당 요청 수가 너무 큽니다.")
+    @Min(value = 1, message = "분당 요청 수는 1 이상으로 입력해 주세요.")
+    @Max(value = 10000, message = "분당 요청 수는 10000 이하로 입력해 주세요.")
     private @Nullable Integer rpm;
     private boolean rpmSet;
 
-    @Min(value = 1, message = "분당 토큰 수는 1 이상이어야 합니다.")
+    @Min(value = 1, message = "분당 토큰 수는 1 이상으로 입력해 주세요.")
     private @Nullable Integer tpm;
     private boolean tpmSet;
 
-    @Min(value = 1, message = "동시 요청 수는 1 이상이어야 합니다.")
-    @Max(value = 100, message = "동시 요청 수가 너무 큽니다.")
+    @Min(value = 1, message = "동시 요청 수는 1 이상으로 입력해 주세요.")
+    @Max(value = 100, message = "동시 요청 수는 100 이하로 입력해 주세요.")
     private @Nullable Integer concurrency;
     private boolean concurrencySet;
 
-    @Min(value = 0, message = "일일 토큰 수는 0 이상이어야 합니다.")
+    @Min(value = 0, message = "일일 토큰 수는 0 이상으로 입력해 주세요.")
     private @Nullable Long dailyTokens;
     private boolean dailyTokensSet;
 
-    @DecimalMin(value = "0", message = "금액 한도는 0 이상이어야 합니다.")
+    @DecimalMin(value = "0", message = "금액 한도는 0 이상으로 입력해 주세요.")
     @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.")
     @kr.ac.pusan.pickle.common.openapi.NonNullWhenPresent
     private @Nullable BigDecimal creditLimit;
@@ -61,15 +61,15 @@ public class AdminLlmKeyLimitsRequest {
     private @Nullable CreditLimitReset creditLimitReset;
     private boolean creditLimitResetSet;
 
-    @Size(max = 50, message = "모델은 최대 50개까지 허용할 수 있습니다.")
+    @Size(max = 50, message = "허용할 모델은 50개 이내로 지정해 주세요.")
     private @Nullable List<String> creditAllowedModels;
     private boolean creditAllowedModelsSet;
 
-    @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
+    @Size(max = 50, message = "차단할 모델은 50개 이내로 지정해 주세요.")
     private @Nullable List<String> creditDeniedModels;
     private boolean creditDeniedModelsSet;
 
-    @Size(max = 20, message = "기능은 최대 20개까지 허용할 수 있습니다.")
+    @Size(max = 20, message = "허용할 기능은 20개 이내로 지정해 주세요.")
     private @Nullable List<String> passthroughEndpoints;
     private boolean passthroughEndpointsSet;
 

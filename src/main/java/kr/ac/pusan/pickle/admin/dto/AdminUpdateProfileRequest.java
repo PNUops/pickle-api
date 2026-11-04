@@ -33,20 +33,20 @@ public class AdminUpdateProfileRequest {
     private @Nullable UserPosition position;
     private boolean positionSet;
 
-    @Size(max = 20, message = "학번은 20자 이하여야 합니다.")
+    @Size(max = 20, message = "학번은 20자 이내로 입력해 주세요.")
     private @Nullable String studentNo;
     private boolean studentNoSet;
 
-    @Size(max = 32, message = "소속 코드가 올바르지 않습니다.")
+    @Size(max = 32, message = "소속 코드는 32자 이내로 입력해 주세요.")
     private @Nullable String departmentCode;
     private boolean departmentCodeSet;
 
-    @Size(max = 100, message = "소속은 100자 이하여야 합니다.")
+    @Size(max = 100, message = "소속은 100자 이내로 입력해 주세요.")
     private @Nullable String departmentOther;
     private boolean departmentOtherSet;
 
     /** Why the correction was made; recorded in the audit entry. */
-    @Size(max = 200, message = "사유는 200자 이하여야 합니다.")
+    @Size(max = 200, message = "사유는 200자 이내로 입력해 주세요.")
     private @Nullable String reason;
 
     @jakarta.validation.Valid

@@ -16,7 +16,7 @@ import org.jspecify.annotations.Nullable;
  * filed.</p>
  */
 public record UpdateRequestPeriodRequest(
-        @Size(max = 100, message = "표시명은 100자 이하여야 합니다.")
+        @Size(max = 100, message = "표시명은 100자 이내로 입력해 주세요.")
         @Nullable String displayName,
 
         @Schema(description = "새 종료일")

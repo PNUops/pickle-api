@@ -32,23 +32,23 @@ public record CreateVmRequestSpec(
         @Nullable UUID flavorId,
 
         @NotNull(message = "요청 vCPU 수를 입력해 주세요.")
-        @Min(value = 1, message = "vCPU는 1 이상이어야 합니다.")
+        @Min(value = 1, message = "vCPU는 1 이상으로 입력해 주세요.")
         Integer reqVcpu,
 
         @NotNull(message = "요청 메모리를 입력해 주세요.")
-        @Min(value = 256, message = "메모리는 256MiB 이상이어야 합니다.")
+        @Min(value = 256, message = "메모리는 256MiB 이상으로 입력해 주세요.")
         Integer reqMemoryMb,
 
         @NotNull(message = "요청 디스크 크기를 입력해 주세요.")
-        @Min(value = 1, message = "디스크는 1GiB 이상이어야 합니다.")
+        @Min(value = 1, message = "디스크는 1GiB 이상으로 입력해 주세요.")
         Integer reqDiskGb,
 
-        @Size(max = 2000, message = "사양 사유는 2000자 이하여야 합니다.")
+        @Size(max = 2000, message = "사양 사유는 2000자 이내로 입력해 주세요.")
         @Nullable String specReason,
 
         // Blank ≡ null (미지정 → 승인 시 자동 생성) — 예약어·중복(파기 VM 포함)은
         // 서버(VmSlugPolicy + 서비스)에서 검증.
         @Pattern(regexp = "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
-                message = "소문자와 숫자, 하이픈만 쓸 수 있고 3~40자여야 합니다. 하이픈으로 시작하거나 끝낼 수 없습니다.")
+                message = "소문자와 숫자, 하이픈으로 3~40자를 입력해 주세요. 처음과 끝에는 하이픈을 쓸 수 없어요.")
         @Nullable String desiredSlug) {
 }

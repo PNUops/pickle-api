@@ -20,7 +20,7 @@ public record AdminBulkListChange(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                 description = "적용할 값. 각 키의 현재 목록과 합친 결과가 단일 변경과 같은 규칙으로 검사됩니다.")
         @NotNull(message = "값 목록을 보내 주세요.")
-        @Size(max = 50, message = "값은 최대 50개까지 보낼 수 있습니다.")
+        @Size(max = 50, message = "값은 50개 이내로 보내 주세요.")
         List<String> values) {
 
     /** The list after this change meets {@code current}, order preserved, no repeats. */

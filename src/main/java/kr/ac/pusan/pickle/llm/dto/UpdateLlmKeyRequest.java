@@ -14,11 +14,11 @@ import org.jspecify.annotations.Nullable;
  */
 public record UpdateLlmKeyRequest(
         @Schema(description = "키 이름. 생략하면 그대로 둡니다.")
-        @Size(min = 1, max = 100, message = "키 이름은 1자 이상 100자 이하여야 합니다.")
+        @Size(min = 1, max = 100, message = "키 이름은 1~100자로 입력해 주세요.")
         @Nullable String name,
 
         @Schema(description = "사용 목적. 생략하면 그대로 둡니다.")
-        @Size(max = 2000, message = "사용 목적은 2000자 이하여야 합니다.")
+        @Size(max = 2000, message = "사용 목적은 2000자 이내로 입력해 주세요.")
         @Nullable String purpose,
 
         @Schema(description = """
