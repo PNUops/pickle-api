@@ -123,7 +123,7 @@ class DomainRequestKindTest {
         // reviewer meets the cap one approval at a time, for a conflict the
         // applicant caused and the reviewer cannot resolve.
         assertThat(fieldErrorsOf(() -> requestService.create(applicant, form("reqcapmore"),
-                "127.0.0.1"))).anyMatch(error -> error.message().contains("다 썼습니다"));
+                "127.0.0.1"))).anyMatch(error -> error.message().contains("도메인 한도에 도달했어요"));
     }
 
     @Test
@@ -139,7 +139,7 @@ class DomainRequestKindTest {
         // The generic collision message would tell them to pick a different
         // name — for a name that is still theirs and that they can have back.
         assertThat(fieldErrorsOf(() -> requestService.create(applicant, form("reqcomeback"),
-                "127.0.0.1"))).anyMatch(error -> error.message().contains("되살려"));
+                "127.0.0.1"))).anyMatch(error -> error.message().contains("외부 도메인은 도메인 상세에서 되살리고"));
     }
 
     /** The field errors a refused submission carries, not the generic title. */
@@ -263,7 +263,7 @@ class DomainRequestKindTest {
         // index — in front of a reviewer, for a mistake they did not make.
         assertThat(fieldErrorsOf(() -> requestService.create(applicant, form("reqcontested"),
                 "127.0.0.1"))).anyMatch(error -> error.field().equals("domain.label")
-                        && error.message().contains("검토를 기다리고"));
+                        && error.message().contains("검토를 기다리는 이름"));
     }
 
     @Test
