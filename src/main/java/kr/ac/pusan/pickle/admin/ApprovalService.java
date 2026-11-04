@@ -133,10 +133,10 @@ public class ApprovalService {
                     : RequestSpecs.workspace(internalWorkspace));
         }
         if (requestedEndFrom != null && requestedEndTo != null && requestedEndFrom.isAfter(requestedEndTo)) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("requestedEndTo", "기간의 끝은 시작 이후여야 합니다.")));
+            throw ApiException.validationFailed(List.of(new FieldValidationError("requestedEndTo", "기간의 끝은 시작과 같거나 뒤로 정해 주세요.")));
         }
         if (Boolean.TRUE.equals(reqIndefinite) && (requestedEndFrom != null || requestedEndTo != null)) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("reqIndefinite", "무기한 검색에는 종료일 범위를 함께 보내지 않습니다.")));
+            throw ApiException.validationFailed(List.of(new FieldValidationError("reqIndefinite", "무기한 검색에는 종료일 범위를 함께 지정할 수 없어요.")));
         }
         if (q != null && !q.isBlank()) { spec = spec.and(RequestSpecs.text(q)); }
         if (requestedEndFrom != null) { spec = spec.and(RequestSpecs.requestedEndFrom(requestedEndFrom)); }
@@ -199,8 +199,8 @@ public class ApprovalService {
         // being approved into a workspace nobody can reach.
         if (workspaceRepository.findByIdAndDeletedAtIsNull(request.getWorkspaceId()).isEmpty()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_DELETED,
-                    "워크스페이스가 삭제되었습니다",
-                    "삭제된 워크스페이스에는 리소스를 만들 수 없습니다. 이 신청은 반려해 주세요.");
+                    "워크스페이스가 삭제됐어요",
+                    "삭제된 워크스페이스에는 리소스를 만들 수 없어요. 이 신청은 반려해 주세요.");
         }
         RequestTypeHandler handler = handlerFor(request);
         boolean perRecipient = recipientService.hasRecipients(request);
@@ -208,7 +208,7 @@ public class ApprovalService {
         List<FieldValidationError> errors = new ArrayList<>();
         if (form.grantedStartDate() != null && form.grantedEndDate() != null
                 && form.grantedEndDate().isBefore(form.grantedStartDate())) {
-            errors.add(new FieldValidationError("grantedEndDate", "종료일은 시작일 이후여야 합니다."));
+            errors.add(new FieldValidationError("grantedEndDate", "종료일은 시작일과 같거나 뒤로 정해 주세요."));
         }
         handler.validateApprove(request, form, errors);
         if (perRecipient) {
@@ -229,8 +229,8 @@ public class ApprovalService {
             // A request with recipients owns nothing through its requester, so
             // the check is each recipient's instead, made when theirs is created.
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_REQUESTER_INELIGIBLE,
-                    "신청자가 더 이상 이 워크스페이스의 활성 구성원이 아닙니다",
-                    "승인하면 이 리소스의 소유자가 될 사람이 없습니다. 이 신청은 반려해 주세요.");
+                    "신청자가 더 이상 이 워크스페이스의 활성 구성원이 아니에요",
+                    "리소스 소유자로 등록할 수 있는 신청자가 없어요. 이 신청은 반려해 주세요.");
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(fieldPrefix.isEmpty() ? errors : errors.stream()
@@ -241,7 +241,7 @@ public class ApprovalService {
         if (request.getResourceType() == ResourceType.LLM_API_KEY && llmSupport.requiresBudget(request, form)
                 && !access.paidDecision(actor, request, rosterCommand)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "유료 정책을 승인하려면 같은 권한 원천의 키 예산 업무가 필요합니다.");
+                    "접근 권한이 없어요", "유료 정책을 승인하려면 같은 권한 원천의 키 예산 업무가 필요해요.");
         }
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
@@ -384,7 +384,7 @@ public class ApprovalService {
 
     private static ApiException requestNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 신청이 존재하지 않습니다.");
+                "리소스를 찾을 수 없어요", "해당 신청을 찾을 수 없어요.");
     }
 
     private RequestTypeHandler handlerFor(Request request) {
@@ -399,7 +399,7 @@ public class ApprovalService {
     private static void requireSubmitted(Request request) {
         if (request.getStatus() != RequestStatus.SUBMITTED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_ALREADY_DECIDED,
-                    "이미 처리된 신청입니다", "이 신청은 이미 승인, 반려 또는 취소되었습니다.");
+                    "이미 처리된 신청이에요", "이 신청은 이미 승인, 반려 또는 취소됐어요.");
         }
     }
 

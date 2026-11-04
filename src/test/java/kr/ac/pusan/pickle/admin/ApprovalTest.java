@@ -331,7 +331,7 @@ class ApprovalTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.grantedSlug"))
                 .andExpect(jsonPath("$.errors[0].message").value(
-                        "이미 쓰고 있는 이름입니다. 다른 이름을 적거나 비워서 자동으로 정하게 하세요."));
+                        "이미 등록된 이름이에요. 다른 이름을 입력해 주세요. 비워 두면 자동으로 정해요."));
         mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", requestId))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
