@@ -132,8 +132,8 @@ public class AdminTaskService {
     public MessageResponse retry(AuthenticatedUser actor, UUID publicTaskId, String ip) {
         ProvisioningTask task = taskRepository.findByPublicId(publicTaskId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
-                        ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
-                        "작업을 찾을 수 없습니다."));
+                        ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요",
+                        "작업을 찾을 수 없어요."));
         if (taskRepository.requeueForAdminRetry(task.getId(), Instant.now()) == 0) {
             throw notRetryable();
         }
@@ -154,12 +154,12 @@ public class AdminTaskService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.TASK_RETRY,
                 "provisioning_task", task.getPublicId(),
                 Map.of("vmId", auditIds.vm(vmId), "kind", task.getKind().name()), ip);
-        return new MessageResponse("작업 재시도를 접수했습니다. 잠시 후 작업 상태가 갱신됩니다.");
+        return new MessageResponse("작업 재시도 요청을 접수했어요.");
     }
 
     private ApiException notRetryable() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.TASK_NOT_RETRYABLE,
-                "재시도할 수 없는 작업입니다",
-                "관리자 개입 대기(NEEDS_ADMIN) 상태의 작업만 재시도할 수 있습니다.");
+                "다시 시도할 수 없는 작업이에요",
+                "관리자 확인이 필요한 NEEDS_ADMIN 상태의 작업만 다시 시도할 수 있어요.");
     }
 }
