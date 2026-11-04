@@ -57,16 +57,16 @@ public class SubdomainPolicy {
         String value = label.toLowerCase(Locale.ROOT);
         if (!LABEL.matcher(value).matches()) {
             errors.add(new FieldValidationError(field,
-                    "서브도메인은 소문자·숫자·하이픈 3~40자여야 하며 하이픈으로 시작/끝날 수 없습니다."));
+                    "서브도메인은 소문자와 숫자, 하이픈으로 3~40자를 입력해 주세요. 하이픈으로 시작하거나 끝날 수 없어요."));
             return;
         }
         if (settingsService.stringList(SettingsService.RESERVED_SUBDOMAINS).contains(value)) {
             errors.add(new FieldValidationError(field,
-                    "'" + value + "'은(는) 사용할 수 없는 예약 서브도메인입니다."));
+                    "'" + value + "' 이름은 예약된 서브도메인이라 사용할 수 없어요."));
         }
         if (settingsService.stringList(SettingsService.PROFANITY_SUBDOMAINS).stream()
                 .anyMatch(value::contains)) {
-            errors.add(new FieldValidationError(field, "사용할 수 없는 단어가 포함된 서브도메인입니다."));
+            errors.add(new FieldValidationError(field, "사용할 수 없는 단어가 포함된 서브도메인이에요."));
         }
     }
 
@@ -74,7 +74,7 @@ public class SubdomainPolicy {
     public void validateRootDomain(String rootDomain, String field, List<FieldValidationError> errors) {
         if (rootDomain != null && !isAllowedRootDomain(rootDomain)) {
             errors.add(new FieldValidationError(field,
-                    "'" + rootDomain + "'은(는) 허용된 루트 도메인이 아닙니다."));
+                    "'" + rootDomain + "' 루트 도메인은 허용되지 않아요."));
         }
     }
 

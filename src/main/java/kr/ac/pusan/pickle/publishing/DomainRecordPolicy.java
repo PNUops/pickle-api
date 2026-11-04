@@ -135,7 +135,7 @@ public class DomainRecordPolicy {
     public void validate(List<DesiredSet> sets, String field, List<FieldValidationError> errors) {
         if (sets.size() > MAX_SETS_PER_DOMAIN) {
             errors.add(new FieldValidationError(field,
-                    "레코드는 도메인당 최대 " + MAX_SETS_PER_DOMAIN + "개까지 등록할 수 있습니다."));
+                    "레코드 세트는 도메인당 최대 " + MAX_SETS_PER_DOMAIN + "개까지 등록할 수 있어요."));
         }
         Set<String> seen = new HashSet<>();
         Set<String> cnamed = new HashSet<>();
@@ -147,7 +147,7 @@ public class DomainRecordPolicy {
             validateValues(set, at, errors);
             if (!seen.add(set.name() + "/" + set.type())) {
                 errors.add(new FieldValidationError(at,
-                        "같은 이름과 종류의 레코드를 두 번 지정했습니다."));
+                        "같은 이름과 종류의 레코드를 두 번 지정했어요."));
             }
             if (set.type() == DnsRecordType.CNAME) {
                 cnamed.add(set.name());
@@ -159,7 +159,7 @@ public class DomainRecordPolicy {
         for (DesiredSet set : sets) {
             if (set.type() != DnsRecordType.CNAME && cnamed.contains(set.name())) {
                 errors.add(new FieldValidationError(field,
-                        "'" + display(set.name()) + "'에 CNAME과 다른 종류를 함께 둘 수 없습니다."));
+                        "'" + display(set.name()) + "'에는 CNAME과 다른 종류의 레코드를 함께 둘 수 없어요."));
                 break;
             }
         }
@@ -167,7 +167,7 @@ public class DomainRecordPolicy {
 
     private void validateName(String name, String at, List<FieldValidationError> errors) {
         if (name == null) {
-            errors.add(new FieldValidationError(at, "레코드 이름이 필요합니다."));
+            errors.add(new FieldValidationError(at, "레코드 이름 필드를 보내 주세요."));
             return;
         }
         if (name.isEmpty()) {
@@ -175,12 +175,12 @@ public class DomainRecordPolicy {
         }
         if (!NAME.matcher(name).matches()) {
             errors.add(new FieldValidationError(at,
-                    "레코드 이름은 소문자와 숫자, 하이픈, 밑줄만 쓸 수 있고 점으로 끝날 수 없습니다."));
+                    "레코드 이름에는 소문자와 숫자, 하이픈, 밑줄, 구분용 점을 쓸 수 있어요. 끝에는 점을 붙일 수 없어요."));
             return;
         }
         for (String label : name.split("\\.")) {
             if (label.length() > MAX_LABEL) {
-                errors.add(new FieldValidationError(at, "레코드 이름의 각 라벨은 63자를 넘을 수 없습니다."));
+                errors.add(new FieldValidationError(at, "레코드 이름의 각 라벨은 63자까지 입력해 주세요."));
                 return;
             }
         }
@@ -189,26 +189,26 @@ public class DomainRecordPolicy {
     private void validateTtl(int ttl, String at, List<FieldValidationError> errors) {
         if (ttl < MIN_TTL || ttl > MAX_TTL) {
             errors.add(new FieldValidationError(at,
-                    "TTL은 " + MIN_TTL + "초에서 " + MAX_TTL + "초 사이여야 합니다."));
+                    "TTL은 " + MIN_TTL + "초 이상 " + MAX_TTL + "초 이하로 설정해 주세요."));
         }
     }
 
     private void validateValues(DesiredSet set, String at, List<FieldValidationError> errors) {
         List<String> values = set.rrdatas();
         if (values == null || values.isEmpty()) {
-            errors.add(new FieldValidationError(at, "레코드 값이 하나 이상 필요합니다."));
+            errors.add(new FieldValidationError(at, "레코드 값을 하나 이상 입력해 주세요."));
             return;
         }
         if (values.size() > MAX_VALUES_PER_SET) {
             errors.add(new FieldValidationError(at,
-                    "한 레코드에는 값을 최대 " + MAX_VALUES_PER_SET + "개까지 둘 수 있습니다."));
+                    "한 레코드 세트에는 값을 최대 " + MAX_VALUES_PER_SET + "개까지 넣을 수 있어요."));
         }
         if (set.type() == DnsRecordType.CNAME && values.size() > 1) {
-            errors.add(new FieldValidationError(at, "CNAME은 값을 하나만 가질 수 있습니다."));
+            errors.add(new FieldValidationError(at, "CNAME에는 값을 하나만 넣을 수 있어요."));
         }
         for (String value : values) {
             if (value == null || value.isBlank()) {
-                errors.add(new FieldValidationError(at, "빈 레코드 값은 둘 수 없습니다."));
+                errors.add(new FieldValidationError(at, "빈 레코드 값은 사용할 수 없어요."));
                 continue;
             }
             switch (set.type()) {
@@ -216,7 +216,7 @@ public class DomainRecordPolicy {
                 case AAAA -> validateAddress(value, false, at, errors);
                 case CNAME -> validateTarget(value, at, errors);
                 case TXT -> validateText(value, at, errors);
-                default -> errors.add(new FieldValidationError(at, "지원하지 않는 레코드 종류입니다."));
+                default -> errors.add(new FieldValidationError(at, "지원하지 않는 레코드 종류예요."));
             }
         }
     }
@@ -230,11 +230,11 @@ public class DomainRecordPolicy {
             // than for the address that is actually being published.
             address = InetAddress.ofLiteral(value.strip());
         } catch (IllegalArgumentException e) {
-            errors.add(new FieldValidationError(at, "'" + value + "'은(는) 올바른 IP 주소가 아닙니다."));
+            errors.add(new FieldValidationError(at, "'" + value + "' 값은 올바른 IP 주소가 아니에요."));
             return;
         }
         if (wantV4 && !(address instanceof Inet4Address)) {
-            errors.add(new FieldValidationError(at, "A 레코드에는 IPv4 주소를 적어야 합니다."));
+            errors.add(new FieldValidationError(at, "A 레코드에는 IPv4 주소를 입력해 주세요."));
             return;
         }
         if (!wantV4 && !(address instanceof Inet6Address)) {
@@ -242,17 +242,17 @@ public class DomainRecordPolicy {
             // written into a AAAA record it would publish a v4 address as though
             // it were v6, which resolvers hand to clients that cannot use it.
             errors.add(new FieldValidationError(at,
-                    "AAAA 레코드에는 IPv6 주소를 적어야 합니다. IPv4 주소를 IPv6 형식으로 감싼 값은 쓸 수 없습니다."));
+                    "AAAA 레코드에는 IPv6 주소를 입력해 주세요. IPv4 주소를 IPv6 형식으로 감싼 값은 쓸 수 없어요."));
             return;
         }
         if (isOurs(address)) {
             errors.add(new FieldValidationError(at,
-                    "이 플랫폼이 응답하는 주소는 지정할 수 없습니다. 도메인 리소스는 플랫폼 밖 대상을 위한 것입니다."));
+                    "플랫폼 주소나 교내 대역 주소는 대상으로 지정할 수 없어요."));
             return;
         }
         if (!isDestination(address)) {
             errors.add(new FieldValidationError(at,
-                    "'" + value + "'은(는) 공개 인터넷에서 도달할 수 있는 주소가 아닙니다."));
+                    "'" + value + "' 주소는 공개 인터넷용 대상 주소로 쓸 수 없어요."));
         }
     }
 
@@ -260,7 +260,7 @@ public class DomainRecordPolicy {
         String target = value.strip().toLowerCase(Locale.ROOT);
         String bare = target.endsWith(".") ? target.substring(0, target.length() - 1) : target;
         if (bare.isEmpty() || !bare.contains(".") || !NAME.matcher(bare).matches()) {
-            errors.add(new FieldValidationError(at, "'" + value + "'은(는) 올바른 대상 이름이 아닙니다."));
+            errors.add(new FieldValidationError(at, "'" + value + "' 값은 올바른 대상 이름이 아니에요."));
             return;
         }
         // A CNAME into a platform root would tie this name to one the platform
@@ -270,7 +270,7 @@ public class DomainRecordPolicy {
             String lower = root.toLowerCase(Locale.ROOT);
             if (bare.equals(lower) || bare.endsWith("." + lower)) {
                 errors.add(new FieldValidationError(at,
-                        "플랫폼이 관리하는 이름을 대상으로 지정할 수 없습니다."));
+                        "플랫폼이 관리하는 이름은 대상으로 지정할 수 없어요."));
                 return;
             }
         }
@@ -280,7 +280,7 @@ public class DomainRecordPolicy {
         for (String suffix : CAMPUS_SUFFIXES) {
             if (bare.equals(suffix) || bare.endsWith("." + suffix)) {
                 errors.add(new FieldValidationError(at,
-                        "교내 도메인을 대상으로 지정할 수 없습니다."));
+                        "교내 도메인은 대상으로 지정할 수 없어요."));
                 return;
             }
         }
@@ -289,13 +289,13 @@ public class DomainRecordPolicy {
     private void validateText(String value, String at, List<FieldValidationError> errors) {
         if (TxtValues.octets(value) > TxtValues.MAX_OCTETS) {
             errors.add(new FieldValidationError(at,
-                    "TXT 값은 " + TxtValues.MAX_OCTETS + "바이트를 넘을 수 없습니다."));
+                    "TXT 값은 " + TxtValues.MAX_OCTETS + "바이트까지 입력해 주세요."));
         }
         String lower = value.strip().toLowerCase(Locale.ROOT);
         for (String prefix : MAIL_POLICY_PREFIXES) {
             if (lower.startsWith(prefix)) {
                 errors.add(new FieldValidationError(at,
-                        "메일 정책 레코드는 등록할 수 없습니다. 상위 도메인의 발신 평판에 영향을 줍니다."));
+                        "메일 정책 레코드는 등록할 수 없어요. 상위 도메인의 발신 평판에 영향을 줘요."));
                 return;
             }
         }
