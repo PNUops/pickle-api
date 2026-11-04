@@ -75,23 +75,23 @@ public class RosterService {
         rateLimitService.hit(RESOLVE_CALL_SCOPE, "user:" + actor.id(), RESOLVE_CALLS_PER_MINUTE);
         Workspace workspace = workspaceRepository.findByPublicIdAndDeletedAtIsNull(publicWorkspaceId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "리소스를 찾을 수 없습니다", "해당 워크스페이스가 존재하지 않습니다."));
+                        "리소스를 찾을 수 없어요", "해당 워크스페이스를 찾을 수 없어요."));
         WorkspaceMember membership = workspaceMemberRepository
                 .findByWorkspaceIdAndUserId(workspace.getId(), actor.id()).orElse(null);
         Long orgId = request.orgId() == null ? null
                 : orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null);
         if (request.type() != null && InstitutionRequestAccess.rosterWork(request.type()).isEmpty()) {
-            throw ApiException.validationFailed(List.of(new kr.ac.pusan.pickle.common.error.FieldValidationError("type", "VM과 LLM API 키 신청만 명단을 확인할 수 있습니다.")));
+            throw ApiException.validationFailed(List.of(new kr.ac.pusan.pickle.common.error.FieldValidationError("type", "VM과 LLM API 키 신청의 명단만 확인할 수 있어요.")));
         }
         if (!(membership != null && membership.getRole() == kr.ac.pusan.pickle.workspace.WorkspaceMemberRole.OWNER)
                 && !access.roster(actor, request.type(), orgId, workspace.getId())) {
             throw forbidden("이 워크스페이스의 신청 대상자는 워크스페이스 소유자나 해당 명단 발급 업무가 있는 담당자만 "
-                    + "확인할 수 있습니다.");
+                    + "확인할 수 있어요.");
         }
         // Asked after the role so the kind of a workspace the caller may not
         // act on is not answered either.
         if (workspace.getKind() == WorkspaceKind.PERSONAL) {
-            throw forbidden("개인 워크스페이스에는 학번으로 대상자를 지정할 수 없습니다.");
+            throw forbidden("개인 워크스페이스에는 학번으로 대상자를 지정할 수 없어요.");
         }
 
         // Every entry sent counts, charged for the whole request up front; a
@@ -101,8 +101,8 @@ public class RosterService {
                     request.studentNos().size());
         } catch (ApiException limited) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, ErrorCodes.RATE_LIMITED,
-                    "요청이 너무 많습니다", "한 시간에 확인할 수 있는 학번(" + RESOLVE_ENTRIES_PER_HOUR
-                            + "건)을 넘었습니다. 잠시 후 다시 시도해 주세요.",
+                    "요청이 너무 많아요", "한 시간에 확인할 수 있는 학번(" + RESOLVE_ENTRIES_PER_HOUR
+                            + "건)을 넘었어요. 잠시 후 다시 시도해 주세요.",
                     null, limited.getRetryAfterSeconds());
         }
 
@@ -134,6 +134,6 @@ public class RosterService {
 
     private static ApiException forbidden(String detail) {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.REQUEST_RECIPIENTS_FORBIDDEN,
-                "대상자를 지정할 권한이 없습니다", detail);
+                "대상자를 지정할 권한이 없어요", detail);
     }
 }

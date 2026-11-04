@@ -183,7 +183,7 @@ class RequestTest {
                 .andExpect(status().isNotFound());
         postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.flavorId", SeedFixtures.UNKNOWN_ID))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail").value("해당 사양이 존재하지 않습니다."));
+                .andExpect(jsonPath("$.detail").value("해당 사양을 찾을 수 없어요."));
 
         // DISABLED image → 422
         OsImage disabled = imageRepository.save(new OsImage("vmr-disabled", "비활성 OS 이미지",
@@ -199,7 +199,7 @@ class RequestTest {
         postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.reqDiskGb", 5))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.reqDiskGb"))
-                .andExpect(jsonPath("$.errors[0].message").value("이 OS의 최소 디스크 크기는 10GiB입니다."));
+                .andExpect(jsonPath("$.errors[0].message").value("이 OS의 최소 디스크 크기는 10GiB예요."));
 
         // spec above the chosen preset requires specReason (contract prose rule)
         postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.reqMemoryMb", 4096))
@@ -263,7 +263,7 @@ class RequestTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"))
                 .andExpect(jsonPath("$.errors[0].message")
-                        .value("선택한 사양을 초과하는 신청에는 사유를 입력해야 합니다."));
+                        .value("선택한 사양을 초과하려면 사유를 입력해 주세요."));
         postJson("/api/v1/requests", requesterToken,
                 with(bodyFor(workspaceId, cpuFlavor), "vm.reqMemoryMb", 2048))
                 .andExpect(status().isUnprocessableContent())
@@ -306,7 +306,7 @@ class RequestTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"))
                 .andExpect(jsonPath("$.errors[0].message")
-                        .value("기본값보다 큰 사양을 직접 적을 때는 사유를 입력해야 합니다."));
+                        .value("기본값보다 큰 사양을 직접 입력할 때는 사유를 적어 주세요."));
 
         // 사유가 있으면 어떤 사양도 가리키지 않은 채로 접수된다
         postJson("/api/v1/requests", requesterToken, with(freeformBody(workspaceId),
@@ -367,7 +367,7 @@ class RequestTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("vm.flavorId"))
-                .andExpect(jsonPath("$.errors[0].message").value("더 이상 선택할 수 없는 사양입니다."));
+                .andExpect(jsonPath("$.errors[0].message").value("지금은 선택할 수 없는 사양이에요."));
 
         // both axes retired → one error per axis, and the spec check is skipped
         OsImage retiredImage = imageRepository.save(new OsImage("vmr-disabled-os",
@@ -413,14 +413,14 @@ class RequestTest {
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                     .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"))
                     .andExpect(jsonPath("$.errors[0].message")
-                            .value("더 이상 선택할 수 없는 OS 이미지입니다."));
+                            .value("지금은 선택할 수 없는 OS 이미지예요."));
 
             // an id that never existed → 404 with a stated reason, not a 500
             postJson("/api/v1/requests", requesterToken,
                     with(validBody(workspaceId), "vm.imageId", SeedFixtures.UNKNOWN_ID))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
-                    .andExpect(jsonPath("$.detail").value("해당 OS 이미지가 존재하지 않습니다."));
+                    .andExpect(jsonPath("$.detail").value("해당 OS 이미지를 찾을 수 없어요."));
 
             // nothing to pick ⇒ the field left out entirely → 422, never a null deref
             Map<String, Object> withoutImage = validBody(workspaceId);
@@ -513,7 +513,7 @@ class RequestTest {
                 with(validBody(workspaceId), "vm.desiredSlug", "vmr-slug-mine"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.desiredSlug"))
-                .andExpect(jsonPath("$.errors[0].message").value("이미 신청 중인 호스트명입니다."));
+                .andExpect(jsonPath("$.errors[0].message").value("이미 신청 중인 호스트명이에요."));
 
         // an existing vms.hostname blocks the slug — even soft-deleted (never recycled)
         long vmReqId = submit(requesterToken, workspaceId);
@@ -527,7 +527,7 @@ class RequestTest {
                 with(validBody(workspaceId), "vm.desiredSlug", "vmr-slug-taken"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.desiredSlug"))
-                .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중인 호스트명입니다."));
+                .andExpect(jsonPath("$.errors[0].message").value("이미 등록된 호스트명이에요. 다른 이름을 입력해 주세요."));
 
         // a rejected request is terminal — its desired slug is submittable again
         User orgAdmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
@@ -568,7 +568,7 @@ class RequestTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"))
-                .andExpect(jsonPath("$.errors[0].message").value("사용 종료일을 정해 주세요. 끝나지 않는 기간이 필요하면 무기한을 고릅니다."));
+                .andExpect(jsonPath("$.errors[0].message").value("사용 종료일을 정해 주세요. 기간 제한이 필요 없으면 무기한을 선택해 주세요."));
 
         // 항목과 날짜를 함께 보내면 → 422
         postJson("/api/v1/requests", requesterToken,
@@ -581,7 +581,7 @@ class RequestTest {
                 withPreset(workspaceId, SeedFixtures.UNKNOWN_ID))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
-                .andExpect(jsonPath("$.detail").value("해당 사용 기간이 존재하지 않습니다."));
+                .andExpect(jsonPath("$.detail").value("해당 사용 기간을 찾을 수 없어요."));
 
         // 직접 적는 종료일은 과거일 수 없고 2년을 넘을 수 없다
         postJson("/api/v1/requests", requesterToken,
@@ -624,7 +624,7 @@ class RequestTest {
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                     .andExpect(jsonPath("$.errors[0].field").value("periodPresetId"))
                     .andExpect(jsonPath("$.errors[0].message")
-                            .value("더 이상 신청할 수 없는 사용 기간입니다."));
+                            .value("지금은 신청할 수 없는 사용 기간이에요."));
 
             // 신청 화면의 기간 목록에도 나오지 않는다
             mockMvc.perform(get("/api/v1/request-periods")

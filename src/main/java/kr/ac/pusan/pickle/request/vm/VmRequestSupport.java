@@ -101,10 +101,10 @@ public class VmRequestSupport implements RequestTypeHandler {
         // validateSpec 이 정한다 — 직접 적었다는 것만으로는 필요하지 않다.
         VmFlavor flavor = spec.flavorId() == null ? null
                 : flavorRepository.findByPublicId(spec.flavorId())
-                        .orElseThrow(() -> notFound("해당 사양이 존재하지 않습니다."));
+                        .orElseThrow(() -> notFound("해당 사양을 찾을 수 없어요."));
         boolean axesActive = image != null;
         if (flavor != null && flavor.getStatus() != CatalogStatus.ACTIVE) {
-            errors.add(new FieldValidationError("vm.flavorId", "더 이상 선택할 수 없는 사양입니다."));
+            errors.add(new FieldValidationError("vm.flavorId", "지금은 선택할 수 없는 사양이에요."));
             axesActive = false;
         }
         if (axesActive) {
@@ -147,13 +147,13 @@ public class VmRequestSupport implements RequestTypeHandler {
         OsImage image = selectableImage(spec.grantedImageId(), "vm.grantedImageId", errors, false);
         if (image != null && spec.grantedDiskGb() < image.getMinDiskGb()) {
             errors.add(new FieldValidationError("vm.grantedDiskGb",
-                    "이 OS 이미지의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
+                    "이 OS 이미지의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB예요."));
         }
         if (spec.nodeId() != null) {
             Long nodeId = nodeRepository.findByPublicId(spec.nodeId())
                     .map(kr.ac.pusan.pickle.inventory.Node::getId).orElse(null);
             if (nodeId == null) {
-                errors.add(new FieldValidationError("vm.nodeId", "존재하지 않는 노드입니다."));
+                errors.add(new FieldValidationError("vm.nodeId", "선택한 노드를 찾을 수 없어요."));
             } else if (image != null && imageRepository.findByNameAndVersionAndNodeIdAndStatus(
                             image.getName(), image.getVersion(), nodeId, CatalogStatus.ACTIVE)
                     .filter(candidate -> kr.ac.pusan.pickle.inventory.OsImageReplicaResolver
@@ -161,7 +161,7 @@ public class VmRequestSupport implements RequestTypeHandler {
                 // Forced node must host the granted image — the provisioning
                 // pipeline clones the image on the placed node, so a node without it
                 // guarantees a mid-pipeline clone failure.
-                errors.add(new FieldValidationError("vm.nodeId", "선택한 노드에 해당 OS 이미지가 없습니다."));
+                errors.add(new FieldValidationError("vm.nodeId", "선택한 노드에서 사용할 수 있는 OS 이미지를 찾을 수 없어요."));
             }
         }
         // Publishing is self-service (v0.22.0): approval no longer touches
@@ -177,7 +177,7 @@ public class VmRequestSupport implements RequestTypeHandler {
             slugPolicy.validateSlug(grantedSlug, "vm.grantedSlug", errors);
             if (errors.size() == slugErrorsBefore && vmRepository.existsByHostname(grantedSlug)) {
                 errors.add(new FieldValidationError("vm.grantedSlug",
-                        "이미 쓰고 있는 이름입니다. 다른 이름을 적거나 비워서 자동으로 정하게 하세요."));
+                        "이미 등록된 이름이에요. 다른 이름을 입력해 주세요. 비워 두면 자동으로 정해요."));
             }
         }
     }
@@ -217,7 +217,7 @@ public class VmRequestSupport implements RequestTypeHandler {
         // display name plus a random suffix, as an unnamed approval does.
         if (form.vm() != null && Texts.blankToNull(form.vm().grantedSlug()) != null) {
             errors.add(new FieldValidationError("vm.grantedSlug",
-                    "대상자가 여러 명인 신청에는 호스트 이름을 정할 수 없습니다. 비워 두면 VM마다 자동으로 정합니다."));
+                    "대상자를 지정한 신청에는 호스트 이름을 정할 수 없어요. 비워 두면 VM마다 자동으로 정해요."));
         }
     }
 
@@ -325,7 +325,7 @@ public class VmRequestSupport implements RequestTypeHandler {
 
     private static ApiException notFound(String detail) {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", detail);
+                "리소스를 찾을 수 없어요", detail);
     }
 
     private OsImage selectableImage(UUID publicId, String field, List<FieldValidationError> errors,
@@ -334,13 +334,13 @@ public class VmRequestSupport implements RequestTypeHandler {
             return imageCatalog.requireSelectable(publicId);
         } catch (OsImageCatalogService.UnknownImageException missing) {
             if (unknownIsNotFound) {
-                throw notFound("해당 OS 이미지가 존재하지 않습니다.");
+                throw notFound("해당 OS 이미지를 찾을 수 없어요.");
             }
-            errors.add(new FieldValidationError(field, "사용할 수 없는 OS 이미지입니다."));
+            errors.add(new FieldValidationError(field, "사용할 수 없는 OS 이미지예요."));
             return null;
         } catch (OsImageCatalogService.UnavailableImageException unavailable) {
             errors.add(new FieldValidationError(field, unknownIsNotFound
-                    ? "더 이상 선택할 수 없는 OS 이미지입니다." : "사용할 수 없는 OS 이미지입니다."));
+                    ? "지금은 선택할 수 없는 OS 이미지예요." : "사용할 수 없는 OS 이미지예요."));
             return null;
         }
     }
@@ -400,7 +400,7 @@ public class VmRequestSupport implements RequestTypeHandler {
             @Nullable VmFlavor flavor, List<FieldValidationError> errors) {
         if (spec.reqDiskGb() < image.getMinDiskGb()) {
             errors.add(new FieldValidationError("vm.reqDiskGb",
-                    "이 OS의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
+                    "이 OS의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB예요."));
         }
         if (Texts.blankToNull(spec.specReason()) != null) {
             return;
@@ -418,7 +418,7 @@ public class VmRequestSupport implements RequestTypeHandler {
                     || spec.reqMemoryMb() > CUSTOM_BASE_MEMORY_MB
                     || spec.reqDiskGb() > baseDisk) {
                 errors.add(new FieldValidationError("vm.specReason",
-                        "기본값보다 큰 사양을 직접 적을 때는 사유를 입력해야 합니다."));
+                        "기본값보다 큰 사양을 직접 입력할 때는 사유를 적어 주세요."));
             }
         } else if (spec.reqVcpu() > flavor.getVcpu()
                 || spec.reqMemoryMb() > flavor.getMemoryMb()
@@ -427,7 +427,7 @@ public class VmRequestSupport implements RequestTypeHandler {
                 // 화면에는 그 사양에서 고칠 칸이 없어 되돌아갈 곳 없는 422가 된다.
                 || spec.reqDiskGb() > Math.max(flavor.getDiskGb(), image.getMinDiskGb())) {
             errors.add(new FieldValidationError("vm.specReason",
-                    "선택한 사양을 초과하는 신청에는 사유를 입력해야 합니다."));
+                    "선택한 사양을 초과하려면 사유를 입력해 주세요."));
         }
     }
 
@@ -451,8 +451,8 @@ public class VmRequestSupport implements RequestTypeHandler {
         long maxMemoryMb = nodes.stream().mapToLong(Node::getMemoryMb).max().orElse(0);
         if (spec.reqMemoryMb() > maxMemoryMb) {
             errors.add(new FieldValidationError("vm.reqMemoryMb",
-                    "요청한 메모리를 수용할 수 있는 노드가 없습니다. 가장 큰 노드의 메모리는 "
-                            + maxMemoryMb + "MiB입니다."));
+                    "등록된 활성 노드 용량으로는 요청한 메모리를 수용할 수 없어요. 최대 메모리는 "
+                            + maxMemoryMb + "MiB예요."));
         }
         OptionalLong maxDiskGb = nodes.stream()
                 .map(Node::getDiskCapacityGb)
@@ -461,8 +461,8 @@ public class VmRequestSupport implements RequestTypeHandler {
                 .max();
         if (maxDiskGb.isPresent() && spec.reqDiskGb() > maxDiskGb.getAsLong()) {
             errors.add(new FieldValidationError("vm.reqDiskGb",
-                    "요청한 디스크를 수용할 수 있는 노드가 없습니다. 가장 큰 노드의 디스크는 "
-                            + maxDiskGb.getAsLong() + "GiB입니다."));
+                    "용량이 확인된 활성 노드 중 요청한 디스크를 수용할 노드가 없어요. 확인된 최대 디스크는 "
+                            + maxDiskGb.getAsLong() + "GiB예요."));
         }
     }
 
@@ -481,10 +481,10 @@ public class VmRequestSupport implements RequestTypeHandler {
             return;
         }
         if (vmRepository.existsByHostname(desiredSlug)) {
-            errors.add(new FieldValidationError("vm.desiredSlug", "이미 사용 중인 호스트명입니다."));
+            errors.add(new FieldValidationError("vm.desiredSlug", "이미 등록된 호스트명이에요. 다른 이름을 입력해 주세요."));
         } else if (detailRepository.existsByDesiredSlugAndRequestStatus(desiredSlug,
                 RequestStatus.SUBMITTED)) {
-            errors.add(new FieldValidationError("vm.desiredSlug", "이미 신청 중인 호스트명입니다."));
+            errors.add(new FieldValidationError("vm.desiredSlug", "이미 신청 중인 호스트명이에요."));
         }
     }
 

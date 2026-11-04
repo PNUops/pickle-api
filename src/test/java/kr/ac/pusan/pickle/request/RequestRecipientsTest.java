@@ -728,7 +728,7 @@ class RequestRecipientsTest {
                 .containsExactly("CANCELED", "CANCELED");
         assertThat(jdbcTemplate.queryForObject(
                 "select reason from request_recipients where request_id = ? and user_id = ?",
-                String.class, requestId, member.getId())).isEqualTo("워크스페이스가 삭제되었습니다.");
+                String.class, requestId, member.getId())).isEqualTo("워크스페이스가 삭제됐어요.");
         materializer.run();
         assertThat(keyCount(requestId)).isZero();
     }
@@ -788,7 +788,7 @@ class RequestRecipientsTest {
         assertThat(recipientStatusByInvitation(requestId, invitation)).isEqualTo("CANCELED");
         assertThat(jdbcTemplate.queryForObject(
                 "select reason from request_recipients where request_id = ?", String.class, requestId))
-                .isEqualTo("초대가 취소되었습니다.");
+                .isEqualTo("초대가 취소됐어요.");
     }
 
     // ------------------------------------------------------------ money

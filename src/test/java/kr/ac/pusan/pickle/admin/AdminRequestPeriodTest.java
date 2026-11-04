@@ -142,7 +142,7 @@ class AdminRequestPeriodTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("name"))
-                .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중인 기간 이름입니다."));
+                .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중인 기간 이름이에요."));
 
         // 이름은 대소문자를 무시하고 유일하다. API 는 소문자만 받으므로 섞인 이름은
         // 직접 써 넣어야 하고, 그때 서비스의 사전 검사(정확히 일치)는 비켜 간다.
@@ -160,7 +160,7 @@ class AdminRequestPeriodTest {
                                 """.formatted(mixedCase, today().plusMonths(1))))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("name"))
-                .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중인 기간 이름입니다."));
+                .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중인 기간 이름이에요."));
 
         // bean validation still applies: the name is a slug, not free text
         mockMvc.perform(post("/api/v1/admin/request-periods")
@@ -212,7 +212,7 @@ class AdminRequestPeriodTest {
         patchPeriod(SeedFixtures.UNKNOWN_ID, sysAdminToken, "{\"displayOrder\": 1}")
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
-                .andExpect(jsonPath("$.detail").value("해당 사용 기간이 존재하지 않습니다."));
+                .andExpect(jsonPath("$.detail").value("해당 사용 기간을 찾을 수 없어요."));
     }
 
     @Test

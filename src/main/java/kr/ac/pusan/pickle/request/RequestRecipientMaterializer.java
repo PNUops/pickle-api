@@ -88,9 +88,9 @@ public class RequestRecipientMaterializer {
     /** Arbitrary but fixed key for the run-wide advisory lock. */
     private static final long ADVISORY_LOCK_KEY = 0x5049434b52435054L;
 
-    static final String REASON_WORKSPACE_GONE = "워크스페이스가 삭제되어 만들지 않았습니다.";
-    static final String REASON_EXPIRED = "사용 기간이 이미 끝나 만들지 않았습니다.";
-    static final String REASON_FAILED = "리소스를 만들지 못했습니다. 관리자가 다시 시도할 수 있습니다.";
+    static final String REASON_WORKSPACE_GONE = "워크스페이스가 삭제되어 만들지 않았어요.";
+    static final String REASON_EXPIRED = "사용 기간이 이미 끝나 만들지 않았어요.";
+    static final String REASON_FAILED = "리소스를 만들지 못했어요. 관리자에게 재시도를 요청해 주세요.";
 
     /**
      * AT_CAPACITY: every active node is at the VM limit, so no VM recipient
