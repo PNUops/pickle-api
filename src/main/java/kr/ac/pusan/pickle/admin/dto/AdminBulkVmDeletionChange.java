@@ -17,6 +17,6 @@ public record AdminBulkVmDeletionChange(
         @Nullable Instant scheduledFor,
 
         @Schema(description = "삭제 사유. SCHEDULE에서는 필수이고 워크스페이스에 안내됩니다.")
-        @Size(max = 2000, message = "삭제 사유는 2000자 이하여야 합니다.")
+        @Size(max = 2000, message = "삭제 사유는 2000자 이내로 입력해 주세요.")
         @Nullable String reason) {
 }

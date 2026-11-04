@@ -17,7 +17,7 @@ public record ApproveRequestRequest(
 
         @Nullable LocalDate grantedEndDate,
 
-        @Size(max = 2000, message = "승인 의견은 2000자 이하여야 합니다.")
+        @Size(max = 2000, message = "승인 의견은 2000자 이내로 입력해 주세요.")
         @Nullable String comment,
 
         /** Required when approving a VM request, ignored otherwise. */

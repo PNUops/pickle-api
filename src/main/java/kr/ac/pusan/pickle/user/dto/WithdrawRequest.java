@@ -11,7 +11,7 @@ public record WithdrawRequest(
         @NotBlank(message = "비밀번호를 입력해 주세요.")
         String password,
 
-        @Pattern(regexp = "^[0-9]{6}$", message = "TOTP 코드는 6자리 숫자입니다.")
+        @Pattern(regexp = "^[0-9]{6}$", message = "TOTP 코드는 숫자 6자리로 입력해 주세요.")
         String totpCode,
 
         String recoveryCode) {

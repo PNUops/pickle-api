@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
 public record InviteWorkspaceMembersRequest(
         @Schema(description = "초대할 사람 목록. 1명에서 200명까지이며, 한 항목에는 이메일과 학번 중 하나만 씁니다.")
         @NotNull(message = "초대할 사람을 한 명 이상 입력해 주세요.")
-        @Size(min = 1, max = 200, message = "한 번에 1명에서 200명까지 초대할 수 있습니다.")
+        @Size(min = 1, max = 200, message = "한 번에 1~200명을 초대해 주세요.")
         @Valid
         List<WorkspaceInvitationEntry> entries,
         @Valid @Nullable AccessConfirmation confirmation) {
@@ -23,7 +23,7 @@ public record InviteWorkspaceMembersRequest(
     public record WorkspaceInvitationEntry(
             @Schema(description = "초대할 사람의 이메일. 학번과 함께 쓸 수 없습니다.",
                     example = "student@pusan.ac.kr")
-            @Size(max = 254, message = "이메일은 254자 이하여야 합니다.")
+            @Size(max = 254, message = "이메일은 254자 이내로 입력해 주세요.")
             @Nullable String email,
 
             @Schema(description = "초대할 사람의 학번. 학번은 학생 직책 계정에만 등록되므로 교수·연구원·직원은 "

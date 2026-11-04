@@ -25,11 +25,11 @@ public class UpdateOpenRouterAccountRequest {
     private OpenRouterAccountStatus status;
     private boolean statusSet;
 
-    @Size(max = 50, message = "모델은 최대 50개까지 허용할 수 있습니다.")
+    @Size(max = 50, message = "허용할 모델은 50개 이내로 지정해 주세요.")
     private @Nullable List<String> defaultCreditAllowedModels;
     private boolean defaultCreditAllowedModelsSet;
 
-    @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
+    @Size(max = 50, message = "차단할 모델은 50개 이내로 지정해 주세요.")
     private @Nullable List<String> defaultCreditDeniedModels;
     private boolean defaultCreditDeniedModelsSet;
 

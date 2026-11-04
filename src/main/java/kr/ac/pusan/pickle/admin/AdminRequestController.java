@@ -61,7 +61,7 @@ public class AdminRequestController {
             @RequestParam(required = false) ResourceType type,
             @RequestParam(required = false) UUID orgId,
             @RequestParam(required = false) UUID workspaceId,
-            @RequestParam(required = false) @Size(max = 100, message = "검색어는 100자 이하여야 합니다.") String q,
+            @RequestParam(required = false) @Size(max = 100, message = "검색어는 100자 이내로 입력해 주세요.") String q,
             @RequestParam(required = false) LocalDate requestedEndFrom,
             @RequestParam(required = false) LocalDate requestedEndTo,
             @RequestParam(required = false) Boolean reqIndefinite,

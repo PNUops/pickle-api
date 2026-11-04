@@ -14,6 +14,6 @@ public record AdminBulkLlmKeyStatusChange(
         AdminBulkLlmKeyStatusAction action,
 
         @Schema(description = "정지 사유. SUSPEND에서는 필수이고 감사 기록에 남습니다.")
-        @Size(max = 500, message = "정지 사유는 500자 이하여야 합니다.")
+        @Size(max = 500, message = "정지 사유는 500자 이내로 입력해 주세요.")
         @Nullable String reason) {
 }

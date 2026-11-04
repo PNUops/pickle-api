@@ -24,25 +24,25 @@ import org.jspecify.annotations.Nullable;
  */
 public record ApproveLlmKeyRequestSpec(
         @Schema(description = "부여 분당 요청 수. 비우면 서비스 기본값이 적용됩니다.")
-        @Min(value = 1, message = "분당 요청 수는 1 이상이어야 합니다.")
-        @Max(value = 10000, message = "분당 요청 수가 너무 큽니다.")
+        @Min(value = 1, message = "분당 요청 수는 1 이상으로 입력해 주세요.")
+        @Max(value = 10000, message = "분당 요청 수는 10000 이하로 입력해 주세요.")
         @Nullable Integer grantedRpm,
 
         @Schema(description = "부여 분당 토큰 수. 비우면 서비스 기본값이 적용됩니다.")
-        @Min(value = 1, message = "분당 토큰 수는 1 이상이어야 합니다.")
+        @Min(value = 1, message = "분당 토큰 수는 1 이상으로 입력해 주세요.")
         @Nullable Integer grantedTpm,
 
         @Schema(description = "부여 동시 요청 수. 비우면 서비스 기본값이 적용됩니다.")
-        @Min(value = 1, message = "동시 요청 수는 1 이상이어야 합니다.")
-        @Max(value = 100, message = "동시 요청 수가 너무 큽니다.")
+        @Min(value = 1, message = "동시 요청 수는 1 이상으로 입력해 주세요.")
+        @Max(value = 100, message = "동시 요청 수는 100 이하로 입력해 주세요.")
         @Nullable Integer grantedConcurrency,
 
         @Schema(description = "부여 일일 토큰 수. 비우면 일일 한도가 없습니다. 0이면 자체 서빙(토큰) 축을 쓸 수 없습니다.")
-        @Min(value = 0, message = "일일 토큰 수는 0 이상이어야 합니다.")
+        @Min(value = 0, message = "일일 토큰 수는 0 이상으로 입력해 주세요.")
         @Nullable Long grantedDailyTokens,
 
         @Schema(description = "부여 금액 한도(USD 크레딧). 비우거나 0이면 유료 모델을 쓸 수 없습니다.")
-        @DecimalMin(value = "0", message = "금액 한도는 0 이상이어야 합니다.")
+        @DecimalMin(value = "0", message = "금액 한도는 0 이상으로 입력해 주세요.")
         @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.")
         @Nullable BigDecimal grantedCreditLimit,
 
@@ -52,14 +52,14 @@ public record ApproveLlmKeyRequestSpec(
         @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 비우면 제한이 없고, 자체 서빙 "
                 + "모델은 이 목록과 무관합니다."
                 + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
-        @Size(max = 50, message = "모델은 최대 50개까지 허용할 수 있습니다.")
+        @Size(max = 50, message = "허용할 모델은 50개 이내로 지정해 주세요.")
         @Nullable List<String> grantedCreditAllowedModels,
 
         @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 비우면 차단하는 모델이 없고, "
                 + "허용 목록과 함께 걸리면 차단이 이깁니다. 허용 목록과 달리 금액 한도가 "
                 + "0이어도 남습니다. 자체 서빙 모델은 이 목록과 무관합니다."
                 + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
-        @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
+        @Size(max = 50, message = "차단할 모델은 50개 이내로 지정해 주세요.")
         @Nullable List<String> grantedCreditDeniedModels,
 
         @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
@@ -75,7 +75,7 @@ public record ApproveLlmKeyRequestSpec(
                         + "채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, "
                         + "images, embeddings, rerank, speech, transcriptions이고, web_search와 pdf_ocr은 chat과 함께 "
                         + "부여해야 합니다. 모델 조회는 이 목록과 무관합니다."))
-        @Size(max = 20, message = "기능은 최대 20개까지 허용할 수 있습니다.")
+        @Size(max = 20, message = "허용할 기능은 20개 이내로 지정해 주세요.")
         @Nullable List<String> grantedPassthroughEndpoints,
 
         @Schema(description = "유료 모델을 결제할 기관 사업 계정. 하나뿐이면 생략할 수 있습니다.")

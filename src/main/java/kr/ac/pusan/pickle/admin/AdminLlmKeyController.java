@@ -89,7 +89,7 @@ public class AdminLlmKeyController {
             @Parameter(description = "true이면 현재 허용된 금액 제안의 읽기 projection을 포함합니다. false이면 제안 파라미터를 보내지 않습니다. 저장·계정 결합·외부 호출을 하지 않습니다.")
             @RequestParam(defaultValue = "false") boolean projectLimits,
             @Parameter(description = "제안 금액(USD). 생략은 현재 값 유지, 빈 값·null은 허용하지 않습니다. 0 이상, 정수 10자리·소수 2자리까지이며 0은 유료 모델을 닫습니다.")
-            @RequestParam(required = false) @DecimalMin(value = "0", message = "금액 한도는 0 이상이어야 합니다.")
+            @RequestParam(required = false) @DecimalMin(value = "0", message = "금액 한도는 0 이상으로 입력해 주세요.")
             @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.") BigDecimal proposedCreditLimit,
             @Parameter(description = "false는 리셋 제안 없음, true이면서 proposedCreditLimitReset 생략은 명시한 총액 한도입니다.")
             @RequestParam(defaultValue = "false") boolean proposedCreditLimitResetSet,

@@ -12,11 +12,11 @@ import org.jspecify.annotations.Nullable;
  */
 public class UpdateWorkspaceRequest {
 
-    @Size(max = 100, message = "워크스페이스 이름은 100자 이하여야 합니다.")
+    @Size(max = 100, message = "워크스페이스 이름은 100자 이내로 입력해 주세요.")
     private String name;
     private boolean nameSet;
 
-    @Size(max = 500, message = "설명은 500자 이하여야 합니다.")
+    @Size(max = 500, message = "설명은 500자 이내로 입력해 주세요.")
     private @Nullable String description;
     private boolean descriptionSet;
 

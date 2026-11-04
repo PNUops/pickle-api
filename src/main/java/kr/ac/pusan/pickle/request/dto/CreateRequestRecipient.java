@@ -21,6 +21,6 @@ public record CreateRequestRecipient(
                 + "그 사람이 가입하면 리소스를 만듭니다. 추가와 초대는 신청이 나중에 반려되거나 취소되어도 남고, "
                 + "신청자의 시간당 초대 인원 한도에 포함됩니다. 개인 워크스페이스에는 쓸 수 없습니다.",
                 example = "209900001")
-        @Size(max = 64, message = "학번은 64자 이하여야 합니다.")
+        @Size(max = 64, message = "학번은 64자 이내로 입력해 주세요.")
         @Nullable String studentNo) {
 }
