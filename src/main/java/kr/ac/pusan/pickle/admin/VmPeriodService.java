@@ -126,7 +126,7 @@ public class VmPeriodService {
     public static @Nullable FieldValidationError endBeforeStart(LocalDate endDate,
             @Nullable LocalDate startDate) {
         if (startDate != null && endDate.isBefore(startDate)) {
-            return new FieldValidationError("endDate", "종료일은 시작일보다 이르면 안 됩니다.");
+            return new FieldValidationError("endDate", "종료일은 시작일보다 앞설 수 없어요.");
         }
         return null;
     }
@@ -147,7 +147,7 @@ public class VmPeriodService {
         boolean clearing = Boolean.TRUE.equals(request.clearEndDate());
         if (clearing && request.endDate() != null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("endDate",
-                    "종료일을 지우면서 동시에 지정할 수는 없습니다.")));
+                    "종료일을 지우는 요청과 새 종료일을 함께 보낼 수 없어요.")));
         }
         if (clearing) {
             return null;
@@ -174,15 +174,15 @@ public class VmPeriodService {
     /** The date rule that depends on nothing but the calendar. */
     public static @Nullable FieldValidationError beforeToday(LocalDate endDate, Clock clock) {
         if (endDate.isBefore(ClockConfig.todayKst(clock))) {
-            return new FieldValidationError("endDate", "종료일은 오늘(KST) 이후여야 합니다.");
+            return new FieldValidationError("endDate", "종료일은 오늘(KST) 또는 그 뒤여야 해요.");
         }
         return null;
     }
 
     private static ApiException deletionBound() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                "현재 상태에서는 수행할 수 없는 작업입니다",
-                "삭제가 예약되었거나 진행 중인 VM은 기간을 변경할 수 없습니다.");
+                "현재 상태에서는 사용할 수 없어요",
+                "삭제가 예약됐거나 삭제 중인 VM은 기간을 바꿀 수 없어요.");
     }
 
 }
