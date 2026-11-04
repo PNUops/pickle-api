@@ -195,7 +195,7 @@ class AdminOpenRouterAccountTest {
                 "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
                     assertThat(error.getStatus().value()).isEqualTo(409);
                     assertThat(error.getCode()).isEqualTo("OPENROUTER_CREDENTIAL_INVALID_STATE");
-                    assertThat(error.getDetail()).contains("교체할 ACTIVE credential이 없습니다");
+                    assertThat(error.getDetail()).contains("교체할 활성 관리용 키가 없어요");
                 });
         // The guard is worth nothing if it fires after the round trip: a
         // rotation aimed at an empty account must cost the vendor nothing.
@@ -216,7 +216,7 @@ class AdminOpenRouterAccountTest {
                 "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
                     assertThat(error.getStatus().value()).isEqualTo(409);
                     assertThat(error.getCode()).isEqualTo("OPENROUTER_CREDENTIAL_INVALID_STATE");
-                    assertThat(error.getDetail()).contains("이미 등록된 credential이 있습니다");
+                    assertThat(error.getDetail()).contains("등록된 관리용 키가 이미 있어요");
                 });
 
         service.stage(sysAdmin, created.id(),
@@ -226,7 +226,7 @@ class AdminOpenRouterAccountTest {
                 "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
                     assertThat(error.getStatus().value()).isEqualTo(409);
                     assertThat(error.getCode()).isEqualTo("OPENROUTER_CREDENTIAL_INVALID_STATE");
-                    assertThat(error.getDetail()).contains("이미 등록된 credential이 있습니다");
+                    assertThat(error.getDetail()).contains("등록된 관리용 키가 이미 있어요");
                 });
 
         service.activate(sysAdmin, created.id(),
@@ -235,7 +235,7 @@ class AdminOpenRouterAccountTest {
                 new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "중복 사업"),
                 "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
                     assertThat(error.getStatus().value()).isEqualTo(409);
-                    assertThat(error.getDetail()).contains("이미 등록된 credential이 있습니다");
+                    assertThat(error.getDetail()).contains("등록된 관리용 키가 이미 있어요");
                 });
     }
 
@@ -374,7 +374,7 @@ class AdminOpenRouterAccountTest {
                 new StageOpenRouterCredentialRequest(ROTATION_KEY, "내 사업"),
                 "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
                     assertThat(error.getStatus().value()).isEqualTo(409);
-                    assertThat(error.getDetail()).contains("같은 OpenRouter billing account");
+                    assertThat(error.getDetail()).contains("같은 OpenRouter 결제 계정");
                 });
     }
 
@@ -391,7 +391,7 @@ class AdminOpenRouterAccountTest {
         assertThatThrownBy(() -> service.registerCredential(sysAdmin, created.id(),
                 new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "이월 사업"),
                 "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error ->
-                        assertThat(error.getDetail()).contains("이미 등록된 credential이 있습니다"));
+                        assertThat(error.getDetail()).contains("등록된 관리용 키가 이미 있어요"));
         // Both new guards match this state, and the one that names an action
         // has to win: the row is a rotation someone started, not an account
         // with nothing to rotate.
@@ -399,7 +399,7 @@ class AdminOpenRouterAccountTest {
                 new StageOpenRouterCredentialRequest(ROTATION_KEY, "이월 사업"),
                 "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error ->
                         assertThat(error.getDetail())
-                                .contains("이미 진행 중인 credential rotation이 있습니다"));
+                                .contains("이미 관리용 키 교체가 진행 중이에요"));
 
         OpenRouterAccountResponse activated = service.activate(sysAdmin, created.id(),
                 new ConfirmOpenRouterAccountRequest("이월 사업"), "127.0.0.1");
@@ -432,7 +432,7 @@ class AdminOpenRouterAccountTest {
                     // added alongside this path answers with the same status
                     // and the same code, and would keep this test green while
                     // the cross-billing-account check never ran.
-                    assertThat(error.getDetail()).contains("같은 OpenRouter billing account");
+                    assertThat(error.getDetail()).contains("같은 OpenRouter 결제 계정");
                 });
         assertThat(credentialRepository.findByAccountIdOrderByIdAsc(
                 accountRepository.findByPublicId(candidate.id()).orElseThrow().getId()))
@@ -461,7 +461,7 @@ class AdminOpenRouterAccountTest {
                     assertThat(error.getStatus().value()).isEqualTo(409);
                     assertThat(error.getCode()).isEqualTo(
                             "OPENROUTER_CREDENTIAL_INVALID_STATE");
-                    assertThat(error.getDetail()).contains("같은 OpenRouter billing account");
+                    assertThat(error.getDetail()).contains("같은 OpenRouter 결제 계정");
                 });
     }
 
@@ -478,7 +478,7 @@ class AdminOpenRouterAccountTest {
                     assertThat(error.getStatus().value()).isEqualTo(409);
                     assertThat(error.getCode()).isEqualTo(
                             "OPENROUTER_CREDENTIAL_INVALID_STATE");
-                    assertThat(error.getDetail()).contains("identity marker");
+                    assertThat(error.getDetail()).contains("OpenRouter 계정 식별을 위해 관리용 키를 먼저 교체");
                 });
         assertThat(credentialRepository.findByAccountIdAndStatus(existing.getId(),
                 OpenRouterCredentialStatus.ACTIVE)).isPresent();
