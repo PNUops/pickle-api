@@ -14,7 +14,7 @@ public final class TerminationConfirmations {
             throw ApiException.validationFailed(List.of(new FieldValidationError("confirmation", "현재 대상과 종료 영향을 명시적으로 확인해 주세요.")));
         }
         if (!fingerprint.equals(confirmation.fingerprint())) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.TERMINATION_IMPACT_CHANGED, "종료 영향이 변경되었습니다",
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.TERMINATION_IMPACT_CHANGED, "종료 영향이 달라졌어요",
                     "현재 대상과 상태를 다시 조회하고 확인해 주세요.");
         }
     }
