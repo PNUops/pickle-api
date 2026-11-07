@@ -188,7 +188,7 @@ class VmNetworkPolicyIntegrationTest {
                 + " pending_power_action_at = now() where id = ?", vmId);
         update(editorToken, 0).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value(
-                        org.hamcrest.Matchers.containsString("작성 중인 규칙은 그대로")));
+                        org.hamcrest.Matchers.containsString("작성 중인 규칙을 유지하고")));
 
         jdbc.update("update vms set pending_power_action = null, pending_power_action_at = null,"
                 + " power_operation_id = ? where id = ?", UUID.randomUUID(), vmId);

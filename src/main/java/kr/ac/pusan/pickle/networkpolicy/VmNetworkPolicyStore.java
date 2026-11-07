@@ -111,7 +111,7 @@ public class VmNetworkPolicyStore {
                    and a.vm_id = v.id and a.status = 'ALLOCATED'
                 """, rs -> {
             if (!rs.next()) {
-                throw new IllegalStateException("VM 방화벽 target tuple을 확인할 수 없습니다.");
+                throw new IllegalStateException("VM 방화벽 target tuple을 확인할 수 없어요.");
             }
             return new Target(rs.getLong("id"), rs.getLong("node_id"),
                     rs.getString("api_host"), rs.getString("name"),
@@ -135,8 +135,8 @@ public class VmNetworkPolicyStore {
                 """, rs -> rs.next() ? new MutationTarget(rs.getLong(1), rs.getBoolean(2)) : null,
                 vmId);
         if (target == null || !target.allowed()) {
-            throw unavailable("VM 생성 또는 전원·장치 작업 중에는 통신 정책을 변경할 수 없습니다."
-                    + " 작성 중인 규칙은 그대로 두고 작업이 끝난 뒤 다시 시도해 주세요.");
+            throw unavailable("VM이 생성 중이거나 전원 또는 장치 작업이 남아 있으면 통신 정책을 바꿀 수 없어요."
+                    + " 작성 중인 규칙을 유지하고 VM 상태와 남은 작업을 확인해 주세요.");
         }
         return target.nodeId();
     }
@@ -159,7 +159,7 @@ public class VmNetworkPolicyStore {
             }
             throw new ApiException(HttpStatus.CONFLICT,
                     ErrorCodes.VM_NETWORK_POLICY_REVISION_CONFLICT,
-                    "VM 통신 정책이 먼저 변경되었습니다",
+                    "VM 통신 정책 버전이 맞지 않아요",
                     "최신 정책을 다시 불러온 뒤 변경 내용을 확인해 주세요.");
         }
         jdbc.update("delete from vm_network_policy_rules where vm_id = ?", vmId);
@@ -224,7 +224,7 @@ public class VmNetworkPolicyStore {
                 target.allocationId(), target.ip(), target.apiHost(), target.nodeName(),
                 target.bridge(), target.mtu());
         if (!Boolean.TRUE.equals(current)) {
-            throw unavailable("VM 통신 정책 또는 대상 정보가 변경되어 전원 작업을 중단했습니다.");
+            throw unavailable("VM 통신 정책이나 대상 정보가 달라 전원 작업을 중단했어요.");
         }
     }
 
@@ -265,12 +265,12 @@ public class VmNetworkPolicyStore {
     }
 
     public static ApiException unavailable() {
-        return unavailable("이 VM은 아직 통신 정책 적용 대상으로 준비되지 않았습니다.");
+        return unavailable("이 VM은 통신 정책을 적용할 준비가 되지 않았어요.");
     }
 
     public static ApiException unavailable(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_NETWORK_POLICY_UNAVAILABLE,
-                "VM 통신 정책을 사용할 수 없습니다",
+                "VM 통신 정책을 사용할 수 없어요",
                 detail);
     }
 
