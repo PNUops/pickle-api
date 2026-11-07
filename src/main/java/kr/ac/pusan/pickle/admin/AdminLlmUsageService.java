@@ -113,10 +113,10 @@ public class AdminLlmUsageService {
             LlmConsumerSort consumerSort, int reviewPage, int reviewSize) {
         if (days != 7 && days != 30 && days != 90) {
             throw ApiException.validationFailed(List.of(new FieldValidationError(
-                    "days", "조회 기간은 7일, 30일, 90일 중 하나여야 합니다.")));
+                    "days", "조회 기간은 7일, 30일, 90일 중에서 선택해 주세요.")));
         }
         if (!institutionQueries.observationReader(actor)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "기관 LLM 관측 업무가 필요합니다.");
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "기관 LLM 관측 업무 권한이 필요해요.");
         }
         ScopeContext context = resolveScope(actor, orgId, workspaceId);
         Instant generatedAt = clock.instant();
@@ -232,7 +232,7 @@ public class AdminLlmUsageService {
             LocalDate from, LocalDate to, int size, int page, LlmConsumerSort sort) {
         if (sort == LlmConsumerSort.REPORTED_COST_DESC && !completeMoneyProjection(context)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "현재 조회 범위에서는 금액순 정렬을 제공할 수 없습니다.");
+                    "접근 권한이 없어요", "현재 조회 범위에서는 금액순으로 정렬할 수 없어요.");
         }
         LlmUsageConsumerLevel level = context.workspace() != null
                 ? LlmUsageConsumerLevel.KEY
@@ -802,7 +802,7 @@ public class AdminLlmUsageService {
 
     private static ApiException workspaceNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 워크스페이스를 찾을 수 없습니다.");
+                "리소스를 찾을 수 없어요", "해당 워크스페이스를 찾을 수 없어요.");
     }
 
     private record ScopeContext(OrgScope scope, @Nullable Workspace workspace, AuthenticatedUser actor) {

@@ -67,7 +67,7 @@ public class LlmApiKeyService {
         LlmApiKey key = writable(actor, keyId, ResourceRole.OWNER);
         if (key.getStatus() == LlmApiKeyStatus.REVOKED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.LLM_KEY_REVOKED,
-                    "폐기된 키입니다", "폐기된 키는 다시 발급할 수 없습니다. 새로 신청해 주세요.");
+                    "폐기된 키예요", "폐기된 키는 다시 발급할 수 없어요. 새로 신청해 주세요.");
         }
         boolean rotation = key.isIssued();
         String token = LlmApiKeyTokens.newToken();
@@ -82,7 +82,7 @@ public class LlmApiKeyService {
                 .map(LlmApiKey::getStatus)
                 .orElse(LlmApiKeyStatus.REVOKED) == LlmApiKeyStatus.REVOKED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.LLM_KEY_REVOKED,
-                    "폐기된 키입니다", "폐기된 키는 다시 발급할 수 없습니다. 새로 신청해 주세요.");
+                    "폐기된 키예요", "폐기된 키는 다시 발급할 수 없어요. 새로 신청해 주세요.");
         }
         key.issue(LlmApiKeyTokens.hash(token), LlmApiKeyTokens.visiblePrefix(token), Instant.now());
 

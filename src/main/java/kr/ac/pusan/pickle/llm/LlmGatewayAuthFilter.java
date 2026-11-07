@@ -148,13 +148,13 @@ public class LlmGatewayAuthFilter extends OncePerRequestFilter {
     private void unauthorized(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         problemJsonWriter.write(request, response, HttpServletResponse.SC_UNAUTHORIZED,
-                ErrorCodes.AUTH_TOKEN_INVALID, "인증이 필요합니다", "유효한 인증 토큰이 필요합니다.");
+                ErrorCodes.AUTH_TOKEN_INVALID, "인증이 필요해요", "유효한 인증 토큰이 필요해요.");
     }
 
     private void forbidden(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         problemJsonWriter.write(request, response, HttpServletResponse.SC_FORBIDDEN,
-                ErrorCodes.ACCESS_DENIED, "접근이 거부되었습니다", "허용되지 않은 접근입니다.");
+                ErrorCodes.ACCESS_DENIED, "접근이 거부됐어요", "허용되지 않은 접근이에요.");
     }
 
     private void rateLimited(HttpServletRequest request, HttpServletResponse response,
@@ -169,7 +169,7 @@ public class LlmGatewayAuthFilter extends OncePerRequestFilter {
     private void payloadTooLarge(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         problemJsonWriter.write(request, response, 413, ErrorCodes.VALIDATION_FAILED,
-                "요청 본문이 너무 큽니다", "요청 본문이 허용 크기를 초과했습니다.");
+                "요청 본문이 너무 커요", "요청 본문이 허용 크기를 넘었어요.");
     }
 
     /** Where a sub-path's calls are counted. */

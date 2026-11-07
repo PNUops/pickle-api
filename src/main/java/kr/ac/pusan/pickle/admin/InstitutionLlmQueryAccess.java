@@ -116,12 +116,12 @@ public class InstitutionLlmQueryAccess {
         }
         if (institutions.isEmpty()) {
             throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
-                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "기관 LLM 관측 업무가 필요합니다.");
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "기관 LLM 관측 업무 권한이 필요해요.");
         }
         if (publicInstitution != null) {
             if (actualInstitution == null || !institutions.contains(actualInstitution)) {
                 throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.NOT_FOUND,
-                        kr.ac.pusan.pickle.common.error.ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
+                        kr.ac.pusan.pickle.common.error.ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요", "해당 기관을 찾을 수 없어요.");
             }
             return kr.ac.pusan.pickle.orgs.OrgScope.of(actualInstitution);
         }

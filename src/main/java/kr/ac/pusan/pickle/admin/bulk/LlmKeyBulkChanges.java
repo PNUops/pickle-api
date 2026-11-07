@@ -133,7 +133,7 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
                 }
                 if (limits.isCreditLimitSet() && limits.getCreditLimit() == null) {
                     errors.add(new FieldValidationError(LIMITS_FIELD + "creditLimit",
-                            "금액 한도는 null일 수 없습니다. 유료 모델을 닫으려면 0을 보내 주세요."));
+                            "금액 한도는 null일 수 없어요. 유료 모델을 닫으려면 0을 보내 주세요."));
                 }
                 // The values of a list operation are normalized here, once for
                 // the whole request, so a misspelt capability is a 422 rather

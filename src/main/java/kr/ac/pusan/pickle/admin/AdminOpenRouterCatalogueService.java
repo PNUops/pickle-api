@@ -49,7 +49,7 @@ public class AdminOpenRouterCatalogueService {
                 kr.ac.pusan.pickle.security.institution.InstitutionWork.LLM_MODEL_CATALOGUE_READ,
                 kr.ac.pusan.pickle.security.institution.InstitutionWorkTarget.global()).allowed()) {
             throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
-                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "모델 카탈로그를 읽을 권한이 없습니다.");
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "모델 카탈로그를 읽을 권한이 없어요.");
         }
         OpenRouterCatalogueRepository.CatalogueState state = catalogue.state();
         List<OpenRouterCatalogueResponse.OpenRouterCatalogueModel> models = catalogue.listed().stream()

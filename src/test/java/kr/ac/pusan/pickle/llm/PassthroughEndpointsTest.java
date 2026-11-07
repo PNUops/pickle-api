@@ -40,7 +40,7 @@ class PassthroughEndpointsTest {
         assertThat(errors.getFirst().field()).isEqualTo("endpoints[0]");
         // The message names what is available, because "unknown" alone does not
         // tell somebody who mistyped one character what to type instead.
-        assertThat(errors.getFirst().message()).startsWith("알 수 없는 기능입니다.")
+        assertThat(errors.getFirst().message()).startsWith("알 수 없는 기능이에요.")
                 .contains("embeddings").contains("images");
     }
 
@@ -92,7 +92,7 @@ class PassthroughEndpointsTest {
                 .containsExactly("chat");
         assertThat(errors).hasSize(1);
         assertThat(errors.getFirst().field()).isEqualTo("endpoints[1]");
-        assertThat(errors.getFirst().message()).startsWith("아직 부여할 수 없는 기능입니다.")
+        assertThat(errors.getFirst().message()).startsWith("아직 부여할 수 없는 기능이에요.")
                 .contains("chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions");
     }
 
