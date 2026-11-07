@@ -354,11 +354,11 @@ public class AdminSummaryService {
 
     static ApiException dashboardDenied(UUID orgId) {
         return orgId != null ? orgNotFound() : new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                "조회 권한이 없습니다", "요약의 신청·자원 조회 업무가 필요합니다.");
+                "조회 권한이 없어요", "이 요약을 조회할 업무 권한이 필요해요.");
     }
 
     private static ApiException orgNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
+                "리소스를 찾을 수 없어요", "해당 기관을 찾을 수 없어요.");
     }
 }

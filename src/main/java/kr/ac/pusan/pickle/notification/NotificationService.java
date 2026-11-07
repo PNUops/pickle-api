@@ -339,10 +339,10 @@ public class NotificationService {
                 .filter(row -> row.getUserId() == actorUserId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
                         ErrorCodes.RESOURCE_NOT_FOUND,
-                        "리소스를 찾을 수 없습니다", "해당 알림이 존재하지 않습니다."));
+                        "리소스를 찾을 수 없어요", "해당 알림을 찾을 수 없어요."));
         if (!usageAccess.readableNotification(notification.getId(), actorUserId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없습니다", "해당 알림이 존재하지 않습니다.");
+                    "리소스를 찾을 수 없어요", "해당 알림을 찾을 수 없어요.");
         }
         // microsecond precision: what PostgreSQL stores — the immediate
         // response and every later read then render the identical timestamp

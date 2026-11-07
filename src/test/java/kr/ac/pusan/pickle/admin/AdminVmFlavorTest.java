@@ -169,7 +169,7 @@ class AdminVmFlavorTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("name"))
-                .andExpect(jsonPath("$.errors[0].message").value("이미 존재하는 프리셋 이름입니다."));
+                .andExpect(jsonPath("$.errors[0].message").value("이미 등록된 프리셋 이름이에요."));
 
         // bean validation still applies
         mockMvc.perform(post("/api/v1/admin/vm-flavors")

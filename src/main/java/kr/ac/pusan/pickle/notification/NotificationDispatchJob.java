@@ -382,9 +382,9 @@ public class NotificationDispatchJob {
         String list = bundle.lines().stream().map(line -> "- " + line)
                 .collect(Collectors.joining("\n"));
         String rest = bundle.unlisted() > 0
-                ? "\n\n이 밖의 알림 " + bundle.unlisted() + "건은 콘솔 알림에서 확인할 수 있습니다."
+                ? "\n\n이 밖의 알림 " + bundle.unlisted() + "건은 콘솔 알림에서 확인해 주세요."
                 : "";
-        return "관리자 알림 " + bundle.count() + "건을 한 통으로 모았습니다.\n\n" + list + rest;
+        return "관리자 알림 " + bundle.count() + "건을 한 통으로 모았어요.\n\n" + list + rest;
     }
 
     private String bundleText(Bundle bundle) {

@@ -94,7 +94,7 @@ public class AdminUserQueryService {
         boolean support = studentPolicy.canReadStudentSupport(actor);
         if (orgId != null && !support) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "기관 소속 관계 필터에는 학생 지원 조회 권한이 필요합니다.");
+                    "접근 권한이 없어요", "기관 필터를 사용하려면 학생 지원 조회 권한이 필요해요.");
         }
         OrgScope scope = scopeOrgId(actor, orgId);
         StringBuilder where = new StringBuilder(" where 1 = 1");
@@ -297,7 +297,7 @@ public class AdminUserQueryService {
         String order = SORTS.get(sort);
         if (order == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("sort",
-                    "정렬 기준은 " + new java.util.TreeSet<>(SORTS.keySet()) + " 중 하나여야 합니다.")));
+                    "정렬 기준은 " + new java.util.TreeSet<>(SORTS.keySet()) + " 중에서 선택해 주세요.")));
         }
         return order + ", u.id desc";
     }
@@ -308,7 +308,7 @@ public class AdminUserQueryService {
 
     private static ApiException userNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다.");
+                "사용자를 찾을 수 없어요", "해당 ID의 사용자를 찾을 수 없어요.");
     }
 
     /** Optional derived institution-membership filter, independent of support authorization. */

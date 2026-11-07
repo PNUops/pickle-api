@@ -103,9 +103,9 @@ public class NoticeQueryService {
         Notice notice = noticeRepository.findByPublicId(noticeId)
                 .filter(candidate -> visibleTo(candidate, reader, now)
                         || manageableBy(reader))
-                .orElseThrow(() -> notFound("해당 공지가 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 공지를 찾을 수 없어요."));
         NoticeImageContent content = noticeImageStore.load(notice.getId(), imageId)
-                .orElseThrow(() -> notFound("해당 이미지가 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 이미지를 찾을 수 없어요."));
         // A shared cache may keep this only if an anonymous request for the same
         // URL would succeed right now — which is precisely what the visibility
         // rule answers with no reader. Deriving the directive from the rule
@@ -150,7 +150,7 @@ public class NoticeQueryService {
     public AdminNoticeView getForAdmin(AuthenticatedUser actor, UUID noticeId) {
         requireAdminRead(actor);
         Notice notice = noticeRepository.findByPublicId(noticeId)
-                .orElseThrow(() -> notFound("해당 공지가 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 공지를 찾을 수 없어요."));
         List<Notice> selected = List.of(notice);
         return AdminNoticeView.from(notice, authorNamesOf(selected).get(notice.getCreatedBy()),
                 imagesOf(selected).getOrDefault(notice.getId(), List.of()), Instant.now());
@@ -161,7 +161,7 @@ public class NoticeQueryService {
         Instant now = Instant.now();
         return noticeRepository.findByPublicId(noticeId)
                 .filter(candidate -> visibleTo(candidate, reader, now))
-                .orElseThrow(() -> notFound("해당 공지가 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 공지를 찾을 수 없어요."));
     }
 
     /**
@@ -197,7 +197,7 @@ public class NoticeQueryService {
     private void requireAdminRead(AuthenticatedUser actor) {
         if (!manageableBy(actor)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "공지를 관리 조회할 권한이 없습니다.");
+                    "접근 권한이 없어요", "공지 관리 정보를 조회할 권한이 없어요.");
         }
     }
 
@@ -217,6 +217,6 @@ public class NoticeQueryService {
 
     private static ApiException notFound(String detail) {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", detail);
+                "리소스를 찾을 수 없어요", detail);
     }
 }

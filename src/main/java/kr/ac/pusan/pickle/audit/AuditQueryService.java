@@ -207,12 +207,12 @@ public class AuditQueryService {
                 .distinct().toList();
         if (allowed.isEmpty()) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "기관 감사 기록을 조회할 권한이 없습니다.");
+                    "접근 권한이 없어요", "기관 감사 기록을 조회할 권한이 없어요.");
         }
         if (orgId != null) {
             if (requested == null || !allowed.contains(requested)) {
                 throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
+                        "리소스를 찾을 수 없어요", "해당 기관을 찾을 수 없어요.");
             }
             return OrgScope.of(requested);
         }
