@@ -15,7 +15,7 @@ class DisabledMailSenderTest {
 
         assertThatThrownBy(() -> new DisabledMailSender().send(message))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("비활성화");
+                .hasMessageContaining("메일 발송이 꺼져 있어요");
     }
 
     @Test

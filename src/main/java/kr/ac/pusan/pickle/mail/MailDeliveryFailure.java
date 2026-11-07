@@ -116,12 +116,12 @@ public record MailDeliveryFailure(String code, boolean definiteFailure) {
 
         private ClassifiedFailure(MailDeliveryFailure evidence) {
             this(evidence, switch (evidence.code()) {
-                case "MAIL_DELIVERY_DISABLED" -> "격리 검증 환경에서는 메일 발송이 비활성화되어 있습니다.";
-                case "SMTP_REJECTED" -> "메일 서버가 발송을 거절했습니다.";
-                case "MAIL_PREPARATION_FAILED" -> "메일 구성을 완료하지 못했습니다.";
-                case "MAIL_AUTHENTICATION_FAILED" -> "메일 서버 인증을 완료하지 못했습니다.";
-                case "MAIL_CONNECTION_FAILED" -> "메일 서버에 연결하지 못했습니다.";
-                default -> "메일 서버 인계 결과를 확인하지 못했습니다.";
+                case "MAIL_DELIVERY_DISABLED" -> "메일 발송이 꺼져 있어요.";
+                case "SMTP_REJECTED" -> "메일 서버가 발송을 거절했어요.";
+                case "MAIL_PREPARATION_FAILED" -> "메일 구성을 완료하지 못했어요.";
+                case "MAIL_AUTHENTICATION_FAILED" -> "메일 서버 인증을 완료하지 못했어요.";
+                case "MAIL_CONNECTION_FAILED" -> "메일 서버에 연결하지 못했어요.";
+                default -> "메일 서버 인계 결과를 확인하지 못했어요.";
             });
         }
 

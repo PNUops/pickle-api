@@ -52,7 +52,7 @@ public class AnnouncementQueryService {
                 ? announcementRepository.findVisibleByPublicId(id, AnnouncementScope.ALL, readableInstitutions(actor))
                 : announcementRepository.findByPublicId(id)).orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "발송건을 찾을 수 없습니다", "조회할 수 있는 발송건이 없습니다."));
+                        "발송건을 찾을 수 없어요", "조회할 수 있는 발송건을 찾을 수 없어요."));
         var view = toView(announcement);
         return AnnouncementDetailResponse.from(announcement, view.orgId(), view.workspaceId());
     }
@@ -66,7 +66,7 @@ public class AnnouncementQueryService {
                 .map(source -> source.source().institutionId()).distinct().toList();
         if (institutions.isEmpty()) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "발송 이력을 조회할 권한이 없습니다.");
+                    "접근 권한이 없어요", "발송 이력을 조회할 권한이 없어요.");
         }
         return institutions;
     }

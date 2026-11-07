@@ -82,7 +82,7 @@ public class AdminService {
     public OrgDetailResponse updateOrg(AuthenticatedUser actor, UUID orgId, UpdateOrgRequest request, String ip) {
         Org org = orgRepository.findByPublicId(orgId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "리소스를 찾을 수 없습니다", "해당 기관이 존재하지 않습니다."));
+                        "리소스를 찾을 수 없어요", "해당 기관을 찾을 수 없어요."));
         if (request.isEmpty()) {
             throw ApiException.validationFailed(List.of(
                     new FieldValidationError("name", "수정할 값을 하나 이상 보내 주세요.")));
@@ -90,7 +90,7 @@ public class AdminService {
         if (request.isNameSet()) {
             if (request.getName() == null || request.getName().isBlank()) {
                 throw ApiException.validationFailed(List.of(
-                        new FieldValidationError("name", "기관 이름은 비울 수 없습니다.")));
+                        new FieldValidationError("name", "기관 이름은 비울 수 없어요.")));
             }
             org.setName(request.getName().strip());
         }
@@ -100,14 +100,14 @@ public class AdminService {
         if (request.isStatusSet()) {
             if (request.getStatus() == null) {
                 throw ApiException.validationFailed(List.of(
-                        new FieldValidationError("status", "status는 ACTIVE 또는 DISABLED여야 합니다.")));
+                        new FieldValidationError("status", "status에는 ACTIVE나 DISABLED를 지정해 주세요.")));
             }
             org.setStatus(request.getStatus());
         }
         if (request.isHiddenSet()) {
             if (request.getHidden() == null) {
                 throw ApiException.validationFailed(List.of(
-                        new FieldValidationError("hidden", "hidden은 true 또는 false여야 합니다.")));
+                        new FieldValidationError("hidden", "hidden에는 true나 false를 지정해 주세요.")));
             }
             org.setHidden(request.getHidden());
         }
@@ -128,11 +128,11 @@ public class AdminService {
         actor = lifecycleActors.currentAfterAdministrationLock(actor);
         if (actor.role() != UserRole.SYS_ADMIN) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "전역 역할 변경은 시스템 관리자만 할 수 있습니다.");
+                    "접근 권한이 없어요", "전역 역할은 시스템 관리자만 바꿀 수 있어요.");
         }
         User user = userRepository.findByPublicId(userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다."));
+                        "사용자를 찾을 수 없어요", "해당 ID의 사용자를 찾을 수 없어요."));
         if (request.isEmpty()) {
             throw ApiException.validationFailed(List.of(
                     new FieldValidationError("role", "수정할 값을 하나 이상 보내 주세요.")));
@@ -143,7 +143,7 @@ public class AdminService {
         List<Long> previousOrgIds = userOrgRoleService.scopeOf(user.getId()).orgIds();
         if (!previousOrgIds.isEmpty()) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("role",
-                    "기관 역할이 남아 있습니다. 기관별 역할을 모두 회수한 뒤 전역 역할을 변경해 주세요.")));
+                    "기관 역할이 남아 있어요. 기관별 역할을 모두 회수한 뒤 전역 역할을 변경해 주세요.")));
         }
 
         if (targetRole != previousRole) {

@@ -111,11 +111,11 @@ public class AdminResourceDeadlineQueryService {
             @Nullable Boolean expired, String sort, int page, int size) {
         if (!actor.role().isSysTier() && metadataWork().stream().allMatch(work -> authorization.sources(actor, work).isEmpty())) {
             throw new ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
-                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "조회 권한이 없습니다", "종류별 자원 정보 조회 업무가 필요합니다.");
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "조회 권한이 없어요", "종류별 리소스 정보를 조회할 업무 권한이 필요해요.");
         }
         String order = ORDERS.get(sort);
         if (order == null) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("sort", "지원하지 않는 정렬 기준입니다.")));
+            throw ApiException.validationFailed(List.of(new FieldValidationError("sort", "지원하는 정렬 기준을 선택해 주세요.")));
         }
         Long org = orgId == null ? null : orgs.findByPublicId(orgId).map(value -> value.getId()).orElse(null);
         Long workspace = workspaceId == null ? null : workspaces.findByPublicId(workspaceId).map(value -> value.getId()).orElse(null);

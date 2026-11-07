@@ -65,7 +65,7 @@ public class AdminUserProfileImpactService {
             }
             if (status != UserStatus.DISABLED) {
                 throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_NOT_DISABLED,
-                        "활성화할 수 없는 계정입니다", "비활성화 상태의 계정만 활성화할 수 있습니다. 탈퇴한 계정은 되돌릴 수 없습니다.");
+                        "비활성화를 해제할 수 없는 계정이에요", "비활성화된 계정만 이전 상태로 되돌릴 수 있어요. 탈퇴한 계정은 되돌릴 수 없어요.");
             }
             status = AdminUserProfileChanges.restoredStatus(user, statusChanges);
         } else {

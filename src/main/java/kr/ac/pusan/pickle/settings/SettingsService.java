@@ -226,7 +226,7 @@ public class SettingsService {
         JsonNode old = read(key);
         if (editable == null || old == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없습니다", "해당 설정 키가 존재하지 않거나 수정할 수 없습니다.");
+                    "리소스를 찾을 수 없어요", "해당 설정 키가 없거나 바꿀 수 없는 항목이에요.");
         }
         JsonNode normalized = validateAndNormalize(key, editable, value);
         jdbcTemplate.update("update settings set value = ?::jsonb, updated_at = now() where key = ?",
@@ -243,7 +243,7 @@ public class SettingsService {
     private JsonNode validateAndNormalize(String key, Editable editable, JsonNode value) {
         if (value == null || value.isNull()) {
             throw ApiException.validationFailed(List.of(
-                    new FieldValidationError("value", "값은 비어 있을 수 없습니다.")));
+                    new FieldValidationError("value", "설정 값은 null일 수 없어요.")));
         }
         List<FieldValidationError> errors = editable.validator().apply(value);
         if (!errors.isEmpty()) {
@@ -299,10 +299,10 @@ public class SettingsService {
         }
         map.put(GPU_LOW_UTIL_THRESHOLD_PERCENT, new Editable(SettingValueType.NUMBER, value ->
                 value.isNumber() && Double.isFinite(value.asDouble()) && value.asDouble() >= 0 && value.asDouble() <= 100
-                ? List.of() : List.of(new FieldValidationError("value", "0 이상 100 이하의 숫자여야 합니다."))));
+                ? List.of() : List.of(new FieldValidationError("value", "0 이상 100 이하의 숫자를 입력해 주세요."))));
         map.put(GPU_LEASE_NOTICE_HOURS, new Editable(SettingValueType.JSON, value -> {
             if (!value.isArray() || value.size() > 5) {
-                return List.of(new FieldValidationError("value", "알림 시점은 최대 5개의 시간 배열이어야 합니다."));
+                return List.of(new FieldValidationError("value", "알림 시점은 최대 5개의 시간을 담은 배열로 입력해 주세요."));
             }
             Set<Integer> seen = new LinkedHashSet<>();
             for (JsonNode item : value) {
@@ -363,18 +363,18 @@ public class SettingsService {
 
     private static Function<JsonNode, List<FieldValidationError>> bool() {
         return value -> value.isBoolean() ? List.of()
-                : List.of(new FieldValidationError("value", "true 또는 false여야 합니다."));
+                : List.of(new FieldValidationError("value", "true나 false를 입력해 주세요."));
     }
 
     /** A string (empty allowed) up to {@code max} chars. */
     private static Function<JsonNode, List<FieldValidationError>> stringMaxLength(int max) {
         return value -> {
             if (!value.isString()) {
-                return List.of(new FieldValidationError("value", "문자열이어야 합니다."));
+                return List.of(new FieldValidationError("value", "문자열로 입력해 주세요."));
             }
             if (value.asString().length() > max) {
                 return List.of(new FieldValidationError("value",
-                        max + "자 이하의 문자열이어야 합니다."));
+                        max + "자 이하의 문자열로 입력해 주세요."));
             }
             return List.of();
         };
@@ -384,14 +384,14 @@ public class SettingsService {
     private static Function<JsonNode, List<FieldValidationError>> emailOrEmpty() {
         return value -> {
             if (!value.isString()) {
-                return List.of(new FieldValidationError("value", "문자열이어야 합니다."));
+                return List.of(new FieldValidationError("value", "문자열로 입력해 주세요."));
             }
             String email = value.asString();
             if (email.isEmpty()) {
                 return List.of();
             }
             if (email.length() > MAX_EMAIL_LENGTH || !EMAIL.matcher(email).matches()) {
-                return List.of(new FieldValidationError("value", "올바른 이메일 주소여야 합니다."));
+                return List.of(new FieldValidationError("value", "올바른 이메일 주소나 빈 문자열을 입력해 주세요."));
             }
             return List.of();
         };
@@ -400,12 +400,12 @@ public class SettingsService {
     private static Function<JsonNode, List<FieldValidationError>> intInRange(int min, int max) {
         return value -> {
             if (!value.isIntegralNumber() || !value.canConvertToInt()) {
-                return List.of(new FieldValidationError("value", "정수여야 합니다."));
+                return List.of(new FieldValidationError("value", "정수를 입력해 주세요."));
             }
             int v = value.asInt();
             if (v < min || v > max) {
                 return List.of(new FieldValidationError("value",
-                        min + " 이상 " + max + " 이하의 정수여야 합니다."));
+                        min + " 이상 " + max + " 이하의 정수를 입력해 주세요."));
             }
             return List.of();
         };
@@ -421,14 +421,14 @@ public class SettingsService {
             int max) {
         return value -> {
             if (!value.isIntegralNumber() || !value.canConvertToInt()) {
-                return List.of(new FieldValidationError("value", "정수여야 합니다."));
+                return List.of(new FieldValidationError("value", "정수를 입력해 주세요."));
             }
             int v = value.asInt();
             if (v == 0 || (v >= min && v <= max)) {
                 return List.of();
             }
             return List.of(new FieldValidationError("value",
-                    "0(무기한) 또는 " + min + " 이상 " + max + " 이하의 정수여야 합니다."));
+                    "0(무기한) 또는 " + min + " 이상 " + max + " 이하의 정수를 입력해 주세요."));
         };
     }
 
@@ -436,12 +436,12 @@ public class SettingsService {
             double minExclusive, double maxInclusive) {
         return value -> {
             if (!value.isNumber()) {
-                return List.of(new FieldValidationError("value", "숫자여야 합니다."));
+                return List.of(new FieldValidationError("value", "숫자를 입력해 주세요."));
             }
             double v = value.asDouble();
             if (!(v > minExclusive) || v > maxInclusive) {
                 return List.of(new FieldValidationError("value",
-                        minExclusive + " 초과 " + maxInclusive + " 이하의 숫자여야 합니다."));
+                        minExclusive + " 초과 " + maxInclusive + " 이하의 숫자를 입력해 주세요."));
             }
             return List.of();
         };
@@ -450,11 +450,11 @@ public class SettingsService {
     private static Function<JsonNode, List<FieldValidationError>> hostnameArray() {
         return value -> {
             if (!value.isArray()) {
-                return List.of(new FieldValidationError("value", "문자열 배열이어야 합니다."));
+                return List.of(new FieldValidationError("value", "문자열 배열로 입력해 주세요."));
             }
             if (value.size() > MAX_LIST_ENTRIES) {
                 return List.of(new FieldValidationError("value",
-                        "항목은 최대 " + MAX_LIST_ENTRIES + "개까지 허용됩니다."));
+                        "항목은 최대 " + MAX_LIST_ENTRIES + "개까지 지정할 수 있어요."));
             }
             List<FieldValidationError> errors = new ArrayList<>();
             Set<String> seen = new LinkedHashSet<>();
@@ -462,9 +462,9 @@ public class SettingsService {
                 JsonNode item = value.get(i);
                 if (!item.isString() || !HOSTNAME_SAFE.matcher(item.asString()).matches()) {
                     errors.add(new FieldValidationError("value[" + i + "]",
-                            "소문자 영숫자·하이픈·점으로 된 63자 이하의 호스트명이어야 합니다."));
+                            "소문자와 숫자, 하이픈, 점으로 된 63자 이하의 호스트명을 입력해 주세요."));
                 } else if (!seen.add(item.asString())) {
-                    errors.add(new FieldValidationError("value[" + i + "]", "중복된 항목입니다."));
+                    errors.add(new FieldValidationError("value[" + i + "]", "같은 항목을 중복해서 지정할 수 없어요."));
                 }
             }
             return errors;
@@ -474,11 +474,11 @@ public class SettingsService {
     private static Function<JsonNode, List<FieldValidationError>> expiryStages() {
         return value -> {
             if (!value.isArray()) {
-                return List.of(new FieldValidationError("value", "정수 배열이어야 합니다."));
+                return List.of(new FieldValidationError("value", "정수 배열로 입력해 주세요."));
             }
             if (value.isEmpty() || value.size() > MAX_EXPIRY_STAGES) {
                 return List.of(new FieldValidationError("value",
-                        "알림 단계는 1개 이상 " + MAX_EXPIRY_STAGES + "개 이하여야 합니다."));
+                        "알림 단계는 1개 이상 " + MAX_EXPIRY_STAGES + "개 이하로 지정해 주세요."));
             }
             List<FieldValidationError> errors = new ArrayList<>();
             Set<Integer> seen = new LinkedHashSet<>();
@@ -486,9 +486,9 @@ public class SettingsService {
                 JsonNode item = value.get(i);
                 if (!item.isIntegralNumber() || item.asInt() < 1 || item.asInt() > 90) {
                     errors.add(new FieldValidationError("value[" + i + "]",
-                            "1 이상 90 이하의 정수여야 합니다."));
+                            "1 이상 90 이하의 정수를 입력해 주세요."));
                 } else if (!seen.add(item.asInt())) {
-                    errors.add(new FieldValidationError("value[" + i + "]", "중복된 일수입니다."));
+                    errors.add(new FieldValidationError("value[" + i + "]", "같은 일수를 중복해서 지정할 수 없어요."));
                 }
             }
             return errors;
