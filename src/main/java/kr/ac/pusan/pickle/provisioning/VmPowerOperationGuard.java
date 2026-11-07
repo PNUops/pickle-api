@@ -29,15 +29,15 @@ public class VmPowerOperationGuard {
         UUID dispatch = UUID.randomUUID();
         tx.executeWithoutResult(ignored -> {
             var owners = jdbc.queryForList("select power_operation_id from vms where id = ? for update", UUID.class, vmId);
-            if (owners.isEmpty() || !operation.equals(owners.getFirst())) { throw new IllegalStateException("전원 작업 소유권이 바뀌었습니다."); }
+            if (owners.isEmpty() || !operation.equals(owners.getFirst())) { throw new IllegalStateException("전원 작업 소유권을 확인할 수 없어요."); }
             jdbc.update("insert into vm_power_dispatches(id,operation_id,vm_id) values (?,?,?)", dispatch, operation, vmId);
         });
         String upid = command.get();
-        if (upid == null || upid.isBlank()) { throw new IllegalStateException("원격 전원 작업의 접수 결과를 확인할 수 없습니다."); }
+        if (upid == null || upid.isBlank()) { throw new IllegalStateException("원격 전원 작업의 접수 결과를 확인할 수 없어요."); }
         // Persist even after an explicit force-stop superseded this operation.
         // That newer owner must still know whether our remote task has finished.
         if (jdbc.update("update vm_power_dispatches set task_upid=?,dispatch_pending=false,updated_at=? where id=? and dispatch_pending=true",
-                upid, Timestamp.from(clock.instant()), dispatch) != 1) { throw new IllegalStateException("원격 전원 작업 기록이 변경되었습니다."); }
+                upid, Timestamp.from(clock.instant()), dispatch) != 1) { throw new IllegalStateException("원격 전원 작업 기록을 확인할 수 없어요."); }
         return upid;
     }
     public void finish(long vmId, UUID operation) {

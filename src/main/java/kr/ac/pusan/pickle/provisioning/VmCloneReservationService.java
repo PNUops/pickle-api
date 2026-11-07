@@ -56,14 +56,14 @@ public class VmCloneReservationService {
     public Reservation reserve(UUID imagePublicId, @Nullable UUID forcedNodePublicId,
             NodePlacementBudget.VmPlacementResources requested, Set<Long> excludedNodeIds) {
         OsImage preRead = images.findByPublicId(imagePublicId)
-                .orElseThrow(() -> new IllegalStateException("승인할 OS 이미지가 존재하지 않습니다."));
+                .orElseThrow(() -> new IllegalStateException("승인할 OS 이미지를 찾을 수 없어요."));
         List<OsImage> revision = images.findRevisionForUpdate(preRead.getName(), preRead.getVersion());
         OsImage granted = revision.stream().filter(row -> Objects.equals(row.getId(), preRead.getId()))
-                .findFirst().orElseThrow(() -> new IllegalStateException("승인할 OS 이미지가 변경되었습니다."));
+                .findFirst().orElseThrow(() -> new IllegalStateException("승인할 OS 이미지 정보를 다시 확인해 주세요."));
         OsImage canonical = OsImageSelection.canonicalOf(granted, revision)
-                .orElseThrow(() -> new IllegalStateException("OS 이미지 revision을 확인할 수 없습니다."));
+                .orElseThrow(() -> new IllegalStateException("OS 이미지 revision을 확인할 수 없어요."));
         if (!OsImageReplicaResolver.compatible(canonical, granted)) {
-            throw new IllegalStateException("승인할 OS 이미지 revision이 일치하지 않습니다.");
+            throw new IllegalStateException("승인할 OS 이미지 revision이 일치하지 않아요.");
         }
 
         List<OsImage> replicas = revision.stream()
@@ -104,7 +104,7 @@ public class VmCloneReservationService {
     public VmClonePlacementObservation observe(UUID imagePublicId,
             NodePlacementBudget.VmPlacementResources requested, Instant observedAt) {
         OsImage preRead = images.findByPublicId(imagePublicId)
-                .orElseThrow(() -> new IllegalArgumentException("OS 이미지를 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("OS 이미지를 찾을 수 없어요."));
         List<OsImage> revision = images.findAllInDisplayOrder().stream()
                 .filter(image -> image.getName().equals(preRead.getName()) && image.getVersion() == preRead.getVersion()).toList();
         OsImage canonical = OsImageSelection.canonicalOf(preRead, revision).orElseThrow();
@@ -144,7 +144,7 @@ public class VmCloneReservationService {
 
     private static NoCapacityException noCapacity(OsImage image) {
         return new NoCapacityException("요청 사양과 OS 이미지 " + image.getName()
-                + "을(를) 수용할 수 있는 노드가 없습니다.");
+                + " 조건을 만족하는 노드가 없어요.");
     }
 
     private record Candidate(Node node, OsImage replica, double score) {

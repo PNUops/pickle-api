@@ -51,7 +51,7 @@ public class GpuOperationJob {
         for (UUID id : store.jdbc().queryForList("select id from gpu_operations where phase = 'PENDING' order by created_at", UUID.class)) { run(id); }
         for (UUID id : store.jdbc().queryForList("select id from gpu_operations where phase = 'RUNNING' and updated_at < ?", UUID.class,
                 Timestamp.from(clock.instant().minus(Duration.ofMinutes(30))))) {
-            fail(id, "작업이 중단되었을 수 있습니다. 장치 상태를 확인할 때까지 점유와 가상머신 잠금을 유지합니다.");
+            fail(id, "작업이 중단됐을 수 있어요. 장치 상태를 확인할 때까지 점유와 VM 잠금을 유지해요.");
         }
     }
 
@@ -76,19 +76,19 @@ public class GpuOperationJob {
             Vm vm = vms.findById(op.vmId()).orElseThrow();
             Node node = nodes.findById(op.nodeId()).orElseThrow();
             if (vm.getProxmoxVmid() == null || vm.getNodeId() != gpu.nodeId() || op.nodeId() != gpu.nodeId()) {
-                throw new IllegalStateException("GPU와 가상머신의 실제 노드가 일치하지 않습니다.");
+                throw new IllegalStateException("GPU와 VM의 노드 및 VMID 정보를 확인해 주세요.");
             }
             checkOwnership(op, worker);
             if ("ATTACH".equals(op.kind()) && guestReadiness.blockingReason(vm) != null) {
-                throw new IllegalStateException("게스트 GPU 준비 상태가 변경되었습니다.");
+                throw new IllegalStateException("게스트 GPU 준비 조건이 맞지 않아요.");
             }
             GpuDeviceState state = inspect(node, vm);
             state.requireKnown(gpu);
             boolean attach = "ATTACH".equals(op.kind());
-            if (attach && !state.absent(gpu)) { throw new IllegalStateException("장착 전에 GPU가 이미 연결되어 있습니다."); }
-            if (!attach && !state.attached(gpu)) { throw new IllegalStateException("해제할 GPU의 연결 상태가 예상과 다릅니다."); }
+            if (attach && !state.absent(gpu)) { throw new IllegalStateException("연결 작업 전에 GPU 연결 설정이 이미 남아 있어요."); }
+            if (!attach && !state.attached(gpu)) { throw new IllegalStateException("해제할 GPU의 연결 상태가 예상과 달라요."); }
             if (!"VM_DELETE".equals(op.kind()) && op.wasRunning() == state.stopped()) {
-                throw new IllegalStateException("가상머신의 전원 상태가 연결 요청 후 바뀌었습니다.");
+                throw new IllegalStateException("VM 전원 상태가 연결 요청 때와 달라요.");
             }
             advance(op, worker, "SHUTDOWN");
             if (!state.stopped()) {
@@ -100,7 +100,7 @@ public class GpuOperationJob {
             checkOwnership(op, worker);
             state = inspect(node, vm);
             state.requireKnown(gpu);
-            if (!state.stopped()) { throw new IllegalStateException("가상머신이 정상 종료되지 않았습니다. 강제 종료하지 않습니다."); }
+            if (!state.stopped()) { throw new IllegalStateException("VM이 정상 종료되지 않았어요. 강제로 종료하지 않아요."); }
             advance(op, worker, "WRITE_CONFIG");
             markDispatch(op, worker);
             proxmox.config(node.getApiHost(), node.getName(), vm.getProxmoxVmid(), attach
@@ -111,7 +111,7 @@ public class GpuOperationJob {
             state = inspect(node, vm);
             state.requireKnown(gpu);
             if (!state.stopped() || (attach ? !state.attached(gpu) : !state.absent(gpu))) {
-                throw new IllegalStateException("GPU 설정이 실제 가상머신에 적용되지 않았습니다.");
+                throw new IllegalStateException("VM에서 요청한 GPU 설정을 확인하지 못했어요.");
             }
             advance(op, worker, "VERIFIED_CONFIG");
             if (op.wasRunning()) {
@@ -124,14 +124,14 @@ public class GpuOperationJob {
                 state = inspect(node, vm);
                 state.requireKnown(gpu);
                 if (state.stopped() || (attach ? !state.attached(gpu) : !state.absent(gpu))) {
-                    throw new IllegalStateException("가상머신이 원하는 GPU 연결 상태로 기동되지 않았습니다. 반복 기동하지 않습니다.");
+                    throw new IllegalStateException("VM 기동 후 요청한 GPU 연결 상태를 확인하지 못했어요. 반복해서 기동하지 않아요.");
                 }
             }
             complete(op, worker, attach);
         } catch (RuntimeException e) {
             log.warn("GPU operation {} stopped: {}", id, e.toString());
             rollbackVerifiedAttach(id, worker);
-            fail(id, "GPU 작업이 완료되지 않았습니다. 관리자 상태 확인이 필요합니다.");
+            fail(id, "GPU 작업 완료를 확인하지 못했어요. 관리자에게 상태 확인을 요청해 주세요.");
         }
     }
 
@@ -179,7 +179,7 @@ public class GpuOperationJob {
                     attached ? Timestamp.from(now) : null, released ? Timestamp.from(now) : null, Timestamp.from(now), a.id(), op.id());
             int operationUpdated = store.jdbc().update("update gpu_operations set phase = 'DONE', step = 'DONE', updated_at = ? where id = ? and worker_id = ? and phase = 'RUNNING'",
                     Timestamp.from(now), op.id(), worker);
-            if (allocationUpdated != 1 || operationUpdated != 1) { throw new IllegalStateException("GPU 완료 처리의 소유권이 바뀌었습니다."); }
+            if (allocationUpdated != 1 || operationUpdated != 1) { throw new IllegalStateException("GPU 완료 처리의 작업 소유권을 확인할 수 없어요."); }
             releaseClaim(op);
             if (!"VM_DELETE".equals(op.kind())) {
                 store.jdbc().update("update vms set status = ?::vm_status, updated_at = ? where id = ? and delete_kind is null",
@@ -189,7 +189,7 @@ public class GpuOperationJob {
                     op.actorId() == null ? VmActorKind.SYSTEM : op.adminAction() ? VmActorKind.ADMIN : VmActorKind.MEMBER,
                     attached ? "GPU 연결 완료" : "GPU 연결 해제 완료"));
             notices.holders(a, attached ? "GPU 연결 완료" : "GPU 연결 해제 완료",
-                    released ? "GPU를 반납했습니다." : attached ? "GPU를 가상머신에 연결했습니다." : "가상머신 연결을 해제했습니다. GPU 임대는 유지됩니다.", "gpu.operation:" + op.id());
+                    released ? "GPU를 반납했어요." : attached ? "GPU를 VM에 연결했어요." : "VM 연결을 해제했어요. GPU 임대는 유지돼요.", "gpu.operation:" + op.id());
         });
     }
 
@@ -212,29 +212,29 @@ public class GpuOperationJob {
             lockOperation(op.id());
             checkOwnership(op, worker);
             int changed = store.jdbc().update("update gpu_operations set remote_dispatch_pending = true, task_upid = null, updated_at = ? where id = ? and worker_id = ? and phase = 'RUNNING'", Timestamp.from(clock.instant()), op.id(), worker);
-            if (changed != 1) { throw new IllegalStateException("원격 명령의 작업 소유권이 바뀌었습니다."); }
+            if (changed != 1) { throw new IllegalStateException("원격 명령의 작업 소유권을 확인할 수 없어요."); }
         });
     }
     private void finishSynchronousDispatch(Operation op, UUID worker) {
         int changed = store.jdbc().update("update gpu_operations set remote_dispatch_pending = false, updated_at = ? where id = ? and worker_id = ? and phase in ('RUNNING','ERROR') and remote_dispatch_pending = true", Timestamp.from(clock.instant()), op.id(), worker);
-        if (changed != 1) { throw new IllegalStateException("원격 명령 결과를 확정할 수 없습니다."); }
+        if (changed != 1) { throw new IllegalStateException("원격 명령 결과를 확정할 수 없어요."); }
     }
     private void saveUpid(Operation op, UUID worker, String upid) {
-        if (upid == null || upid.isBlank()) { throw new IllegalStateException("원격 작업 식별자가 없습니다."); }
+        if (upid == null || upid.isBlank()) { throw new IllegalStateException("원격 작업 식별자가 없어요."); }
         int changed = store.jdbc().update("update gpu_operations set task_upid = ?, remote_dispatch_pending = false, updated_at = ? where id = ? and worker_id = ? and phase in ('RUNNING','ERROR') and remote_dispatch_pending = true", upid, Timestamp.from(clock.instant()), op.id(), worker);
-        if (changed != 1) { throw new IllegalStateException("원격 작업 결과를 기록할 수 없습니다."); }
+        if (changed != 1) { throw new IllegalStateException("원격 작업 결과를 기록하지 못했어요."); }
     }
     public RemoteProof requireRemoteTaskFinished(UUID operationId, Node node) {
         RemoteProof proof = remoteProof(operationId);
-        if (proof.pending()) { throw new IllegalStateException("원격 작업 접수 결과를 확인할 수 없습니다."); }
+        if (proof.pending()) { throw new IllegalStateException("원격 작업 접수 결과를 확인할 수 없어요."); }
         if (proof.upid() != null && !proxmox.taskStatus(node.getApiHost(), node.getName(), proof.upid()).isStopped()) {
-            throw new IllegalStateException("원격 전원 작업이 아직 진행 중입니다.");
+            throw new IllegalStateException("원격 전원 작업이 아직 진행 중이에요.");
         }
         return proof;
     }
     public void requireUnchangedRemoteProof(UUID id, RemoteProof proof) {
         lockOperation(id);
-        if (!proof.equals(remoteProof(id))) { throw new IllegalStateException("상태 확인 중 원격 작업 기록이 변경되었습니다."); }
+        if (!proof.equals(remoteProof(id))) { throw new IllegalStateException("상태 확인 중 원격 작업 기록이 바뀌었어요."); }
     }
     private RemoteProof remoteProof(UUID id) {
         return store.jdbc().queryForObject("select task_upid, remote_dispatch_pending, updated_at from gpu_operations where id = ?",
@@ -245,7 +245,7 @@ public class GpuOperationJob {
     private void advance(Operation op, UUID worker, String step) {
         checkOwnership(op, worker);
         if (store.jdbc().update("update gpu_operations set step = ?, updated_at = ? where id = ? and worker_id = ? and phase = 'RUNNING'",
-                step, Timestamp.from(clock.instant()), op.id(), worker) != 1) { throw new IllegalStateException("GPU 작업 소유권이 바뀌었습니다."); }
+                step, Timestamp.from(clock.instant()), op.id(), worker) != 1) { throw new IllegalStateException("GPU 작업 소유권을 확인할 수 없어요."); }
     }
     private boolean deletionStillRequested(Operation op) {
         if (vmSettings.bool(op.vmId(), kr.ac.pusan.pickle.vmsettings.VmSettingsService.DELETION_PROTECTION)) { return false; }
@@ -262,7 +262,7 @@ public class GpuOperationJob {
         tx.executeWithoutResult(ignored -> {
             store.lock(op.allocationId()); lockOperation(op.id()); checkOwnership(op, worker);
             int changed = store.jdbc().update("update gpu_operations set phase = 'DONE', step = 'CANCELED', updated_at = now() where id = ? and worker_id = ? and phase = 'RUNNING' and step = 'CLAIMED'", op.id(), worker);
-            if (changed != 1) { throw new IllegalStateException("연결 취소 상태가 바뀌었습니다."); }
+            if (changed != 1) { throw new IllegalStateException("연결 취소 상태를 확인할 수 없어요."); }
             store.jdbc().update("update gpu_allocations set connection_status = 'NONE', vm_id = null, operation_id = null, updated_at = now() where id = ? and operation_id = ?", op.allocationId(), op.id());
             releaseClaim(op);
         });
@@ -278,18 +278,18 @@ public class GpuOperationJob {
         });
     }
     private void checkOwnership(Operation op, UUID worker) {
-        if ("VM_DELETE".equals(op.kind()) && !deletionStillRequested(op)) { throw new IllegalStateException("삭제 의도가 바뀌어 GPU 작업을 중단했습니다."); }
+        if ("VM_DELETE".equals(op.kind()) && !deletionStillRequested(op)) { throw new IllegalStateException("삭제 조건이 맞지 않아 GPU 작업을 중단했어요."); }
         Boolean owned = store.jdbc().queryForObject("""
                 select exists(select 1 from gpu_operations o join vms v on v.id = o.vm_id
                   join gpu_allocations a on a.id = o.allocation_id
                  where o.id = ? and o.worker_id = ? and o.phase = 'RUNNING'
                    and v.power_operation_id = o.id and a.operation_id = o.id)
                 """, Boolean.class, op.id(), worker);
-        if (!Boolean.TRUE.equals(owned)) { throw new IllegalStateException("GPU 작업 소유권이 바뀌었습니다."); }
+        if (!Boolean.TRUE.equals(owned)) { throw new IllegalStateException("GPU 작업 소유권을 확인할 수 없어요."); }
     }
     void releaseClaim(Operation op) {
         if (store.jdbc().update("update vms set pending_power_action = null, pending_power_action_at = null, power_operation_id = null where id = ? and power_operation_id = ?",
-                op.vmId(), op.id()) != 1) { throw new IllegalStateException("GPU가 소유한 가상머신 잠금을 확인할 수 없습니다."); }
+                op.vmId(), op.id()) != 1) { throw new IllegalStateException("GPU 작업이 가진 VM 잠금을 확인할 수 없어요."); }
     }
     Operation load(UUID id) {
         return store.jdbc().queryForObject("select * from gpu_operations where id = ?", (rs, row) -> new Operation(

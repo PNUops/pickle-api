@@ -49,7 +49,7 @@ public final class OsImageSelection {
 
     private static Map<OsImageRevisionIdentity, List<OsImage>> groups(List<OsImage> rows) {
         if (rows.stream().anyMatch(image -> image.getId() == null)) {
-            throw new IllegalArgumentException("등록되지 않은 이미지는 카탈로그에서 선택할 수 없습니다.");
+            throw new IllegalArgumentException("등록되지 않은 이미지는 카탈로그에서 선택할 수 없어요.");
         }
         return rows.stream().collect(Collectors.groupingBy(OsImageSelection::identity,
                 LinkedHashMap::new, Collectors.toList()));

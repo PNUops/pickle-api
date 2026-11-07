@@ -65,7 +65,7 @@ public class GpuMutationService {
                 .filter(vm -> access.standing(ResourceType.VM, vm.getId(), vm.getWorkspaceId(), actor.id()).role() != null)
                 .map(vm -> {
                     String reason = !editor || !vmAccess.of(vm, actor.id()).atLeast(ResourceRole.EDITOR)
-                            ? "GPU와 가상머신 모두 편집자 이상의 권한이 필요합니다." : readiness.blockingReason(a, vm);
+                            ? "GPU와 VM 모두 편집자 이상의 접근 권한이 필요해요." : readiness.blockingReason(a, vm);
                     return new GpuAttachmentOption(vm.getPublicId(), vm.getName(), nodes.findById(vm.getNodeId()).orElseThrow().getPublicId(), reason == null, reason);
                 }).toList();
     }
@@ -73,10 +73,10 @@ public class GpuMutationService {
     @Transactional
     public GpuAllocationView attach(AuthenticatedUser actor, UUID id, UUID vmId, String ip) {
         GpuAllocation a = store.lock(requireEditor(actor, id).id());
-        Vm vm = vmAccess.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR, "권한이 없습니다", "가상머신 편집 권한이 필요합니다.");
+        Vm vm = vmAccess.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR, "권한이 없어요", "VM 편집 권한이 필요해요.");
         if (a.workspaceId() != vm.getWorkspaceId()) { throw GpuErrors.invalid("vmId", "같은 워크스페이스의 가상머신을 선택해 주세요."); }
         if (a.leaseEndsAt() == null || !a.leaseEndsAt().isAfter(clock.instant())) {
-            throw GpuErrors.conflict(ErrorCodes.GPU_LEASE_ENDED, "GPU 임대 기간이 종료되었습니다.");
+            throw GpuErrors.conflict(ErrorCodes.GPU_LEASE_ENDED, "GPU 임대 종료 시각이 없거나 임대가 끝났어요.");
         }
         String reason = readiness.blockingReason(a, vm);
         if (reason != null) { throw GpuErrors.conflict(ErrorCodes.GPU_ATTACHMENT_NOT_READY, reason); }
@@ -89,10 +89,10 @@ public class GpuMutationService {
     public GpuAllocationView detach(AuthenticatedUser actor, UUID id, String ip) {
         GpuAllocation a = store.lock(requireEditor(actor, id).id());
         if (a.status() != GpuAllocationStatus.ALLOCATED || a.connectionStatus() != GpuConnectionStatus.ATTACHED) {
-            throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "연결된 GPU만 연결 해제할 수 있습니다.");
+            throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "연결된 GPU만 연결을 해제할 수 있어요.");
         }
         Vm vm = vms.findById(a.vmId()).orElseThrow(GpuErrors::notFound);
-        vmAccess.of(vm, actor.id()).requireAtLeast(ResourceRole.EDITOR, "권한이 없습니다", "가상머신 편집 권한이 필요합니다.");
+        vmAccess.of(vm, actor.id()).requireAtLeast(ResourceRole.EDITOR, "권한이 없어요", "VM 편집 권한이 필요해요.");
         beginOperation(a, vm, "DETACH", actor.id(), false);
         record(actor, a, "gpu.detach", Map.of(), ip);
         return currentView(actor, a, false);
@@ -132,16 +132,16 @@ public class GpuMutationService {
         if (a.releaseReason() != null) { reason = a.releaseReason(); }
         if (a.status() == GpuAllocationStatus.RELEASED || a.status() == GpuAllocationStatus.CANCELED) { return; }
         if (a.connectionStatus() == GpuConnectionStatus.ERROR || a.operationId() != null) {
-            throw GpuErrors.conflict(ErrorCodes.GPU_OPERATION_IN_PROGRESS, "GPU 작업 상태를 먼저 확인해야 합니다. 점유는 유지됩니다.");
+            throw GpuErrors.conflict(ErrorCodes.GPU_OPERATION_IN_PROGRESS, "GPU 작업 상태를 먼저 확인해 주세요. 점유는 유지해요.");
         }
         Instant now = clock.instant();
         if (a.connectionStatus() == GpuConnectionStatus.NONE) {
             String status = a.status() == GpuAllocationStatus.QUEUED ? "CANCELED" : "RELEASED";
             store.jdbc().update("update gpu_allocations set status = ?::gpu_allocation_status, release_reason = ?, released_at = ?, updated_at = ? where id = ?",
                     status, reason.name(), Timestamp.from(now), Timestamp.from(now), a.id());
-            notices.holders(a, "GPU 반납 완료", "GPU를 반납했습니다. 이용 기록은 남습니다.", "gpu.released:" + a.id());
+            notices.holders(a, "GPU 반납 완료", "GPU 반납 처리를 마쳤어요. 이용 기록은 남아요.", "gpu.released:" + a.id());
         } else {
-            if (a.connectionStatus() != GpuConnectionStatus.ATTACHED) { throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "GPU 연결 작업이 진행 중입니다."); }
+            if (a.connectionStatus() != GpuConnectionStatus.ATTACHED) { throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "GPU 연결 작업 상태를 먼저 확인해 주세요."); }
             store.jdbc().update("update gpu_allocations set status = 'RELEASING', release_reason = ?, updated_at = ? where id = ?",
                     reason.name(), Timestamp.from(now), a.id());
             beginOperation(a, vms.findById(a.vmId()).orElseThrow(), "RELEASE", actorId, admin);
@@ -154,16 +154,16 @@ public class GpuMutationService {
         GpuAllocation a = admin ? store.allocation(id).orElseThrow(GpuErrors::notFound) : requireEditor(actor, id);
         if (admin) { requireAdminWrite(actor, a, kr.ac.pusan.pickle.security.institution.InstitutionWork.GPU_PERIOD); if (reason == null || reason.isBlank()) { throw GpuErrors.invalid("reason", "연장 사유를 입력해 주세요."); } }
         a = store.lock(a.id());
-        if (a.status() != GpuAllocationStatus.ALLOCATED || !a.leaseEndsAt().isAfter(clock.instant())) { throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "진행 중인 임대만 연장할 수 있습니다."); }
+        if (a.status() != GpuAllocationStatus.ALLOCATED || !a.leaseEndsAt().isAfter(clock.instant())) { throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "진행 중인 임대만 연장할 수 있어요."); }
         if (!admin && Boolean.TRUE.equals(store.jdbc().queryForObject("select exists(select 1 from gpu_allocations where status = 'QUEUED')", Boolean.class))) {
-            throw GpuErrors.conflict(ErrorCodes.GPU_EXTENSION_BLOCKED, "대기 중인 신청이 있어 연장할 수 없습니다.");
+            throw GpuErrors.conflict(ErrorCodes.GPU_EXTENSION_BLOCKED, "대기 중인 신청이 있어 연장할 수 없어요.");
         }
         Instant until = a.leaseEndsAt().plus(Duration.ofHours(hours));
         if (a.grantedEndDate() != null && until.isAfter(a.grantedEndDate().plusDays(1).atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant())) {
-            throw GpuErrors.conflict(ErrorCodes.GPU_EXTENSION_BLOCKED, "승인된 사용 종료일을 넘겨 연장할 수 없습니다.");
+            throw GpuErrors.conflict(ErrorCodes.GPU_EXTENSION_BLOCKED, "승인된 사용 종료일을 넘겨 연장할 수 없어요.");
         }
         int total;
-        try { total = Math.addExact(a.grantedLeaseHours(), hours); } catch (ArithmeticException e) { throw GpuErrors.invalid("hours", "입력한 시간이 너무 큽니다."); }
+        try { total = Math.addExact(a.grantedLeaseHours(), hours); } catch (ArithmeticException e) { throw GpuErrors.invalid("hours", "입력한 시간이 너무 커요."); }
         store.jdbc().update("update gpu_allocations set granted_lease_hours = ?, lease_ends_at = ?, updated_at = ? where id = ?", total, Timestamp.from(until), Timestamp.from(clock.instant()), a.id());
         record(actor, a, "gpu.extend", Map.of("hours", hours, "reason", reason == null ? "" : reason, "adminException", admin), ip);
         return admin ? query.commandReference(actor, store.allocation(a.id()).orElseThrow()) : currentView(actor, a, false);
@@ -174,7 +174,7 @@ public class GpuMutationService {
         requireSystemOperator(actor);
         store.jdbc().execute("select pg_advisory_xact_lock(734891206)");
         GpuAllocation a = store.lock(store.allocation(id).orElseThrow(GpuErrors::notFound).id());
-        if (a.status() != GpuAllocationStatus.QUEUED) { throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "대기 중인 할당의 우선순위만 바꿀 수 있습니다."); }
+        if (a.status() != GpuAllocationStatus.QUEUED) { throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "대기 중인 할당의 우선순위만 바꿀 수 있어요."); }
         store.jdbc().update("update gpu_allocations set priority = ?, updated_at = ? where id = ?", priority, Timestamp.from(clock.instant()), a.id());
         record(actor, a, "gpu.priority", Map.of("priority", priority, "reason", reason), ip);
         return currentView(actor, a, true);
@@ -221,7 +221,7 @@ public class GpuMutationService {
                    and (delete_kind is null or ? = 'VM_DELETE')
                    and not exists(select 1 from vm_power_dispatches d where d.vm_id = vms.id and d.terminal = false)
                 """, "GPU_" + kind, Timestamp.from(now), operation, vm.getId(), kind, kind);
-        if (claimed != 1) { throw GpuErrors.conflict(ErrorCodes.GPU_VM_BUSY, "가상머신의 다른 작업이 진행 중입니다."); }
+        if (claimed != 1) { throw GpuErrors.conflict(ErrorCodes.GPU_VM_BUSY, "VM의 다른 작업이나 현재 상태를 먼저 확인해 주세요."); }
         store.jdbc().update("""
                 insert into gpu_operations(id, allocation_id, vm_id, node_id, kind, was_running, actor_id, admin_action,
                     delete_requested_at, delete_scheduled_for, delete_kind)

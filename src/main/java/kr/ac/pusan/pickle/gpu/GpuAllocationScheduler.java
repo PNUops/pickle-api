@@ -54,7 +54,7 @@ public class GpuAllocationScheduler {
                     update gpu_allocations set gpu_id = ?, status = 'ALLOCATED', allocated_at = ?, lease_ends_at = ?,
                         unattached_since = ?, updated_at = ? where id = ? and status = 'QUEUED'
                     """, gpuId, Timestamp.from(now), Timestamp.from(until), Timestamp.from(now), Timestamp.from(now), a.id());
-            notices.holders(a, "GPU 할당 완료", "GPU가 할당되어 임대 시간이 시작되었습니다. 임대 종료는 " + java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Seoul")).format(until) + " (한국 시간)입니다. 콘솔에서 가상머신을 선택하고 연결해 주세요. 가상머신 연결은 동의한 뒤 진행됩니다.", "gpu.allocated:" + a.id());
+            notices.holders(a, "GPU 할당 완료", "GPU가 할당돼 임대 시간이 시작됐어요. 임대 종료는 " + java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Seoul")).format(until) + " (한국 시간)이에요. 콘솔에서 VM을 선택하고 연결해 주세요. 연결은 동의한 뒤 진행해요.", "gpu.allocated:" + a.id());
         }
     }
 }
