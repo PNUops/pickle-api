@@ -80,7 +80,7 @@ public class SourcePolicyStore {
         }
         if (changed.isEmpty()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.SOURCE_POLICY_REVISION_CONFLICT,
-                    "출발지 정책이 먼저 변경되었습니다",
+                    "출발지 정책 버전이 맞지 않아요",
                     "최신 정책을 다시 불러온 뒤 변경 내용을 확인해 주세요.");
         }
         return changed.getFirst();

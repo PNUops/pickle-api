@@ -31,7 +31,7 @@ public class VmNetworkPublishedPathStore {
                 """, Boolean.class, vmId, vmId);
         if (Boolean.TRUE.equals(legacy)) {
             throw VmNetworkPolicyStore.unavailable(
-                    "기존 flow 부재가 입증되지 않은 legacy 공개 경로가 있어 VM 정책 opt-in을 거부했습니다.");
+                    "기존 flow 부재가 입증되지 않은 legacy 공개 경로가 있어 VM 정책 opt-in을 거부했어요.");
         }
     }
 

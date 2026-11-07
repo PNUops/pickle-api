@@ -80,7 +80,7 @@ public class VmNetworkPathCoordinatorJob {
         }
         if (!operations.liveForVm(vmId).isEmpty()) {
             throw new IllegalStateException(
-                    "외부 경로 retirement ACK와 VM 방화벽 제거 적용을 기다리고 있습니다.");
+                    "외부 경로 retirement ACK와 VM 방화벽 제거 적용을 기다리고 있어요.");
         }
     }
 
@@ -122,12 +122,12 @@ public class VmNetworkPathCoordinatorJob {
         if (operation.ownerKind() == OwnerKind.HTTP_ROUTE) {
             ApplyOutcome.Kind outcome = routeApply.applyNow(operation.ownerId());
             if (outcome != ApplyOutcome.Kind.APPLIED && outcome != ApplyOutcome.Kind.STALE) {
-                throw new IllegalStateException("HTTP consumer가 경로 적용을 확인하지 않았습니다.");
+                throw new IllegalStateException("HTTP consumer의 경로 적용을 확인하지 못했어요.");
             }
             Route route = routes.findById(operation.ownerId()).orElseThrow();
             if (route.getAppliedGeneration() == null
                     || route.getAppliedGeneration() < route.getGeneration()) {
-                throw new IllegalStateException("HTTP consumer generation ACK를 기다리고 있습니다.");
+                throw new IllegalStateException("HTTP consumer generation ACK를 아직 확인하지 못했어요.");
             }
             if (operation.oldPathId() != null) {
                 operations.finishHttpConsumer(operation, Phase.POLICY_REMOVE,
@@ -138,7 +138,7 @@ public class VmNetworkPathCoordinatorJob {
             return;
         }
         if (!relayApplied(operation.ownerId(), operation.consumerGeneration())) {
-            throw new IllegalStateException("relay consumer generation ACK를 기다리고 있습니다.");
+            throw new IllegalStateException("relay consumer generation ACK를 아직 확인하지 못했어요.");
         }
         finishPortConsumer(operation);
     }
@@ -155,7 +155,7 @@ public class VmNetworkPathCoordinatorJob {
             operation = operations.find(operation.id()).orElseThrow();
         }
         if (!retirements.confirmed(retirement)) {
-            throw new IllegalStateException("exact relay retirement receipt를 기다리고 있습니다.");
+            throw new IllegalStateException("exact relay retirement receipt를 아직 확인하지 못했어요.");
         }
         operations.finishRetirement(operation);
     }
@@ -181,7 +181,7 @@ public class VmNetworkPathCoordinatorJob {
                 ? null : retirements.findByMapping(operation.ownerId());
         if (operation.retirementId() != null
                 && (retirement == null || !retirements.confirmed(retirement))) {
-            throw new IllegalStateException("ACK된 relay retirement 정본을 찾을 수 없습니다.");
+            throw new IllegalStateException("ACK된 relay retirement 정본을 찾을 수 없어요.");
         }
         if (operation.action() == Action.SUSPEND) {
             jdbc.update("""
@@ -191,10 +191,10 @@ public class VmNetworkPathCoordinatorJob {
                     """, operation.ownerId());
         }
         if (!operations.move(operation, Phase.DONE, generation, null, null)) {
-            throw new IllegalStateException("경로 작업 완료 상태가 변경되었습니다.");
+            throw new IllegalStateException("경로 작업의 완료 상태를 갱신하지 못했어요.");
         }
         if (retirement != null && !retirements.deleteAcknowledged(retirement)) {
-            throw new IllegalStateException("ACK된 relay retirement을 정리하지 못했습니다.");
+            throw new IllegalStateException("ACK된 relay retirement을 정리하지 못했어요.");
         }
         if (operation.action() == Action.DELETE) {
             jdbc.update("delete from port_mappings where id = ? and status = 'REMOVING'",
@@ -211,7 +211,7 @@ public class VmNetworkPathCoordinatorJob {
                     properties, paths.find(vmId), current.rules());
             desired.set(policies.refreshDerived(vmId, hash));
         })) {
-            throw VmNetworkPolicyStore.unavailable("VM 통신 정책을 다른 작업이 처리 중입니다.");
+            throw VmNetworkPolicyStore.unavailable("다른 작업이 VM 통신 정책을 사용 중이에요.");
         }
         policyApply.apply(vmId);
         VmNetworkPolicyStore.Snapshot applied = policies.find(vmId)
@@ -220,7 +220,7 @@ public class VmNetworkPathCoordinatorJob {
                 || applied.appliedGeneration() == null
                 || applied.appliedGeneration() != applied.desiredGeneration()
                 || !applied.desiredHash().equals(applied.appliedHash())) {
-            throw new IllegalStateException("VM derived allow 적용을 기다리고 있습니다.");
+            throw new IllegalStateException("VM derived allow 적용을 아직 확인하지 못했어요.");
         }
         return applied.desiredGeneration();
     }
@@ -250,12 +250,12 @@ public class VmNetworkPathCoordinatorJob {
                      where id = ? and status = 'PENDING' and delivery_state = 'PENDING'
                     """, generation, operation.ownerId());
             if (updated != 1) {
-                throw new IllegalStateException("port mapping activation 상태가 변경되었습니다.");
+                throw new IllegalStateException("port mapping activation 상태를 갱신하지 못했어요.");
             }
             afterMappingActivated.run();
             if (!operations.move(operation, Phase.CONSUMER_APPLY,
                     policyGeneration, generation, null)) {
-                throw new IllegalStateException("port mapping activation 작업 상태가 변경되었습니다.");
+                throw new IllegalStateException("port mapping activation 작업 상태를 갱신하지 못했어요.");
             }
         });
     }
@@ -271,7 +271,7 @@ public class VmNetworkPathCoordinatorJob {
                      where id = ? and status = 'PENDING' and delivery_state = 'ACTIVE'
                     """, operation.ownerId());
             if (updated != 1) {
-                throw new IllegalStateException("port mapping consumer 완료 상태가 변경되었습니다.");
+                throw new IllegalStateException("port mapping consumer 완료 상태를 갱신하지 못했어요.");
             }
             return true;
         });

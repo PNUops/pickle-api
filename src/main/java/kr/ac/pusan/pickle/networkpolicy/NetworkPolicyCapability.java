@@ -22,13 +22,13 @@ public class NetworkPolicyCapability {
 
     public void requireSourceAcl(Set<String> reportedCapabilities) {
         if (!sourceAclAvailable(reportedCapabilities)) {
-            throw new IllegalStateException("이 공개 경로에는 출발지 접근 정책이 구성되지 않았습니다.");
+            throw new IllegalStateException("이 공개 경로에서 출발지 접근 정책을 사용할 수 없어요.");
         }
     }
 
     public void requireVmBackend(boolean configured, boolean healthy) {
         if (!properties.enabled() || !configured || !healthy) {
-            throw new IllegalStateException("이 노드에는 VM 네트워크 정책이 구성되지 않았습니다.");
+            throw new IllegalStateException("이 노드에서 VM 네트워크 정책을 사용할 수 없어요.");
         }
     }
 }

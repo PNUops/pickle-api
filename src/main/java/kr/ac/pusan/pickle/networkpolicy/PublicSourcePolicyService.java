@@ -67,8 +67,8 @@ public class PublicSourcePolicyService {
     public void requireEnabled() {
         if (!properties.enabled()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.SOURCE_POLICY_DISABLED,
-                    "출발지 정책 기능이 비활성화되어 있습니다",
-                    "이 환경에서는 아직 공개 경로의 출발지 정책을 변경할 수 없습니다.");
+                    "출발지 정책 기능이 꺼져 있어요",
+                    "이 환경에서는 공개 경로의 출발지 정책을 바꿀 수 없어요.");
         }
     }
 
@@ -80,8 +80,8 @@ public class PublicSourcePolicyService {
                     properties.campusPreset(ipv6).cidrValues());
         } catch (IllegalArgumentException | IllegalStateException unavailable) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.SOURCE_POLICY_UNAVAILABLE,
-                    "교내 출발지 preset을 사용할 수 없습니다",
-                    "이 환경에는 확인된 교내 출발지 IP 범위가 설정되어 있지 않습니다.");
+                    "교내 출발지 preset을 사용할 수 없어요",
+                    "이 환경의 교내 출발지 IP 범위를 사용할 수 없어요. 설정을 확인해 주세요.");
         }
     }
 
@@ -138,7 +138,7 @@ public class PublicSourcePolicyService {
                 mapping.getId());
         if (stillPresent.isEmpty()) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없습니다", "해당 포트 포워딩이 존재하지 않습니다.");
+                    "리소스를 찾을 수 없어요", "해당 포트 포워딩을 찾을 수 없어요.");
         }
         Stored saved = store.replacePortMapping(mapping.getId(), expectedRevision, cidrs, actor.id());
         mapping.setLastChangeGeneration(generation);
@@ -159,14 +159,14 @@ public class PublicSourcePolicyService {
             List<CidrBlock> blocks = new ArrayList<>(input.size());
             for (String raw : input) {
                 if (raw == null) {
-                    throw new IllegalArgumentException("빈 출발지 주소는 사용할 수 없습니다.");
+                    throw new IllegalArgumentException("빈 출발지 주소는 사용할 수 없어요.");
                 }
                 String value = raw.strip();
                 blocks.add(value.contains("/") ? CidrBlock.parse(value) : CidrBlock.host(value));
             }
             SourcePolicy policy = new SourcePolicy(blocks);
             if (!ipv6Supported && blocks.stream().anyMatch(CidrBlock::ipv6)) {
-                throw new IllegalArgumentException("포트 포워딩은 IPv4 출발지만 지원합니다.");
+                throw new IllegalArgumentException("포트 포워딩은 IPv4 출발지만 지원해요.");
             }
             return policy.cidrValues();
         } catch (IllegalArgumentException invalid) {
@@ -178,7 +178,7 @@ public class PublicSourcePolicyService {
     private static void requireServedDomain(Domain domain) {
         if (domain.getKind() == DomainKind.EXTERNAL || domain.getVmId() == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "도메인을 찾을 수 없습니다", "해당 공개 도메인이 존재하지 않습니다.");
+                    "도메인을 찾을 수 없어요", "해당 공개 도메인을 찾을 수 없어요.");
         }
     }
 

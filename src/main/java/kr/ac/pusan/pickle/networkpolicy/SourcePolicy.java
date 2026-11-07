@@ -11,7 +11,7 @@ public record SourcePolicy(List<CidrBlock> allowedCidrs) {
     public SourcePolicy {
         if (allowedCidrs == null || allowedCidrs.size() > MAX_CIDRS
                 || allowedCidrs.stream().anyMatch(java.util.Objects::isNull)) {
-            throw new IllegalArgumentException("출발지 CIDR은 최대 " + MAX_CIDRS + "개까지 지정할 수 있습니다.");
+            throw new IllegalArgumentException("출발지 CIDR 목록에는 null 없이 최대 " + MAX_CIDRS + "개까지 지정할 수 있어요.");
         }
         allowedCidrs = List.copyOf(allowedCidrs);
         if (new HashSet<>(allowedCidrs).size() != allowedCidrs.size()) {
@@ -25,7 +25,7 @@ public record SourcePolicy(List<CidrBlock> allowedCidrs) {
         }
         SourcePolicy policy = new SourcePolicy(cidrs.stream().map(CidrBlock::parse).toList());
         if (!ipv6Supported && policy.allowedCidrs.stream().anyMatch(CidrBlock::ipv6)) {
-            throw new IllegalArgumentException("이 공개 경로는 IPv6 출발지를 지원하지 않습니다.");
+            throw new IllegalArgumentException("이 공개 경로는 IPv6 출발지를 지원하지 않아요.");
         }
         return policy;
     }

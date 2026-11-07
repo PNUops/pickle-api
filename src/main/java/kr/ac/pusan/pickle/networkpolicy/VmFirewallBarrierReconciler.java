@@ -65,7 +65,7 @@ public class VmFirewallBarrierReconciler {
         verifyControlPrefix(rules, desired.controlRules());
         rejectUnknownEnabled(rules, desired.controlRules().size());
         if (!finalRulesMatch(rules, desired)) {
-            throw new ReconcileException("VM 방화벽 최종 readback이 desired policy와 다릅니다.");
+            throw new ReconcileException("VM 방화벽의 최종 readback이 desired policy와 달라요.");
         }
         return requireRuntimeStatus(target, expectedRuntimeStatuses);
     }
@@ -90,7 +90,7 @@ public class VmFirewallBarrierReconciler {
             verifyControlPrefix(applied, desired.controlRules());
             rejectUnknownEnabled(applied, desired.controlRules().size());
             if (!finalRulesMatch(applied, desired)) {
-                throw new ReconcileException("VM 방화벽 최종 readback이 desired policy와 다릅니다.");
+                throw new ReconcileException("VM 방화벽의 최종 readback이 desired policy와 달라요.");
             }
             verifySupportedVm(target, desired);
         } catch (RuntimeException failure) {
@@ -107,13 +107,13 @@ public class VmFirewallBarrierReconciler {
     private void verifyFirewallBackend(Target target) {
         Map<String, Object> cluster = proxmox.clusterFirewallOptions(target.apiHost());
         if (!enabled(cluster)) {
-            throw new ReconcileException("cluster firewall이 enable되지 않았습니다.");
+            throw new ReconcileException("cluster firewall이 enable 상태가 아니에요.");
         }
         Map<String, Object> node = proxmox.nodeFirewallOptions(target.apiHost(), target.node());
         // PVE omits nftables for the legacy backend; an explicit truthy value
         // is the only unsupported selection.
         if (enabledValue(node.get("nftables"))) {
-            throw new ReconcileException("노드의 지원되는 legacy firewall backend를 확인할 수 없습니다.");
+            throw new ReconcileException("노드의 지원되는 legacy firewall backend를 확인할 수 없어요.");
         }
     }
 
@@ -125,14 +125,14 @@ public class VmFirewallBarrierReconciler {
         if (matching.size() != 1
                 || !VmFirewallPolicyProperties.BARRIER_COMMENT.equals(
                         text(matching.getFirst().get("comment")))) {
-            throw new ReconcileException("immutable VM firewall barrier group을 확인할 수 없습니다.");
+            throw new ReconcileException("immutable VM firewall barrier group을 확인할 수 없어요.");
         }
         List<Map<String, Object>> rules = proxmox.clusterFirewallGroupRules(
                 apiHost, properties.barrierGroup());
         if (rules.size() != 2
                 || !containsExactDrop(rules, "in")
                 || !containsExactDrop(rules, "out")) {
-            throw new ReconcileException("immutable VM firewall barrier group 내용이 변경되었습니다.");
+            throw new ReconcileException("immutable VM firewall barrier group 내용이 예상과 달라요.");
         }
     }
 
@@ -152,7 +152,7 @@ public class VmFirewallBarrierReconciler {
                 target.apiHost(), target.node(), target.vmid());
         if (config.keySet().stream().anyMatch(key -> key.matches("net[1-9][0-9]*"))
                 || config.containsKey("args")) {
-            throw new ReconcileException("net0 밖의 NIC 또는 custom QEMU network args는 지원하지 않습니다.");
+            throw new ReconcileException("net0 밖의 NIC 또는 custom QEMU args는 지원하지 않아요.");
         }
         Map<String, String> net0 = parseNet0(config.get("net0"));
         if (!"1".equals(net0.get("firewall"))
@@ -160,7 +160,7 @@ public class VmFirewallBarrierReconciler {
                 || !target.expectedBridge().equals(net0.get("bridge"))
                 || !String.valueOf(target.expectedMtu()).equals(net0.get("mtu"))
                 || net0.containsKey("tag") || net0.containsKey("trunks")) {
-            throw new ReconcileException("net0 firewall/MAC/bridge/MTU 준비 상태를 확인할 수 없습니다.");
+            throw new ReconcileException("net0의 firewall, MAC, bridge, MTU 준비 상태를 확인할 수 없어요.");
         }
     }
 
@@ -169,7 +169,7 @@ public class VmFirewallBarrierReconciler {
                 target.apiHost(), target.node(), target.vmid());
         for (Map.Entry<String, String> expected : desired.options().entrySet()) {
             if (!expected.getValue().equals(text(options.get(expected.getKey())))) {
-                throw new ReconcileException("VM firewall immutable options가 desired state와 다릅니다.");
+                throw new ReconcileException("VM firewall immutable options가 desired state와 달라요.");
             }
         }
         List<Map<String, Object>> entries = proxmox.vmFirewallIpSet(
@@ -177,11 +177,11 @@ public class VmFirewallBarrierReconciler {
         if (entries.stream().anyMatch(entry -> enabledValue(entry.get("nomatch"))
                 || hasProviderErrors(entry)
                 || !IPSET_MARKER.equals(text(entry.get("comment"))))) {
-            throw new ReconcileException("ipfilter-net0 entry의 nomatch/error 상태를 거부했습니다.");
+            throw new ReconcileException("ipfilter-net0 entry의 nomatch 또는 error 상태나 소유권 표시가 맞지 않아요.");
         }
         List<String> cidrs = entries.stream().map(entry -> canonicalCidr(entry.get("cidr"))).toList();
         if (!cidrs.equals(desired.ipFilterNet0())) {
-            throw new ReconcileException("ipfilter-net0가 할당 IPv4와 다릅니다.");
+            throw new ReconcileException("ipfilter-net0가 할당 IPv4와 달라요.");
         }
     }
 
@@ -207,7 +207,7 @@ public class VmFirewallBarrierReconciler {
         String actual = text(proxmox.currentVmStatus(
                 target.apiHost(), target.node(), target.vmid()).get("status"));
         if (!expected.contains(actual)) {
-            throw new ReconcileException("VM runtime 상태가 허용된 전원 상태와 다릅니다.");
+            throw new ReconcileException("VM runtime 상태가 허용된 전원 상태와 달라요.");
         }
         return actual;
     }
@@ -219,7 +219,7 @@ public class VmFirewallBarrierReconciler {
         unexpected.remove("digest");
         unexpected.removeAll(desired.options().keySet());
         if (!unexpected.isEmpty()) {
-            throw new ReconcileException("플랫폼 소유가 아닌 VM firewall option이 있습니다.");
+            throw new ReconcileException("플랫폼 소유가 아닌 VM firewall option이 있어요.");
         }
         boolean exact = desired.options().entrySet().stream()
                 .allMatch(entry -> entry.getValue().equals(text(options.get(entry.getKey()))));
@@ -231,7 +231,7 @@ public class VmFirewallBarrierReconciler {
                 target.apiHost(), target.node(), target.vmid());
         for (Map.Entry<String, String> expected : desired.options().entrySet()) {
             if (!expected.getValue().equals(text(applied.get(expected.getKey())))) {
-                throw new ReconcileException("VM firewall option 초기 readback이 다릅니다.");
+                throw new ReconcileException("VM firewall option 초기 readback이 예상과 달라요.");
             }
         }
     }
@@ -250,7 +250,7 @@ public class VmFirewallBarrierReconciler {
         }
         if (matching.size() != 1 || hasProviderErrors(matching.getFirst())
                 || !IPSET_MARKER.equals(text(matching.getFirst().get("comment")))) {
-            throw new ReconcileException("ipfilter-net0 소유권을 확인할 수 없습니다.");
+            throw new ReconcileException("ipfilter-net0 소유권을 확인할 수 없어요.");
         }
         List<Map<String, Object>> entries = proxmox.vmFirewallIpSet(
                 target.apiHost(), target.node(), target.vmid(), "ipfilter-net0");
@@ -273,13 +273,13 @@ public class VmFirewallBarrierReconciler {
                 matching = withComment(readRules(target), marker);
             }
             if (matching.size() != 1) {
-                throw new ReconcileException("immutable control rule 소유권을 확인할 수 없습니다.");
+                throw new ReconcileException("immutable control rule 소유권을 확인할 수 없어요.");
             }
             Map<String, String> disabledExpected = new LinkedHashMap<>(controls.get(index));
             disabledExpected.put("enable", "0");
             Map<String, String> shape = semantic(matching.getFirst());
             if (!shape.equals(disabledExpected) && !shape.equals(controls.get(index))) {
-                throw new ReconcileException("immutable control rule 내용이 변경되었습니다.");
+                throw new ReconcileException("immutable control rule 내용이 예상과 달라요.");
             }
         }
         for (int index = 0; index < controls.size(); index++) {
@@ -304,7 +304,7 @@ public class VmFirewallBarrierReconciler {
     private static String requiredDigest(Map<String, Object> value) {
         String digest = text(value.get("digest"));
         if (digest.isBlank()) {
-            throw new ReconcileException("VM firewall option digest를 확인할 수 없습니다.");
+            throw new ReconcileException("VM firewall option digest를 확인할 수 없어요.");
         }
         return digest;
     }
@@ -346,11 +346,11 @@ public class VmFirewallBarrierReconciler {
     private static void verifyControlPrefix(List<Map<String, Object>> actual,
             List<Map<String, String>> controls) {
         if (actual.size() < controls.size()) {
-            throw new ReconcileException("immutable control rule이 누락되었습니다.");
+            throw new ReconcileException("immutable control rule이 누락됐어요.");
         }
         for (int index = 0; index < controls.size(); index++) {
             if (!semantic(actual.get(index)).equals(controls.get(index))) {
-                throw new ReconcileException("immutable control rule의 내용이나 순서가 변경되었습니다.");
+                throw new ReconcileException("immutable control rule의 내용이나 순서가 예상과 달라요.");
             }
         }
     }
@@ -362,7 +362,7 @@ public class VmFirewallBarrierReconciler {
             boolean owned = BARRIER_MARKER.equals(comment) || comment.startsWith(MUTABLE_PREFIX)
                     || comment.startsWith(CONTROL_PREFIX);
             if (!owned && enabled(rule)) {
-                throw new ReconcileException("플랫폼 소유가 아닌 enabled VM firewall rule이 있습니다.");
+                throw new ReconcileException("플랫폼 소유가 아닌 enabled VM firewall rule이 있어요.");
             }
         }
     }
@@ -382,7 +382,7 @@ public class VmFirewallBarrierReconciler {
             barriers = withComment(rules, BARRIER_MARKER);
         }
         if (barriers.size() != 1) {
-            throw new ReconcileException("VM firewall barrier reference가 중복되거나 누락되었습니다.");
+            throw new ReconcileException("VM firewall barrier reference가 중복되거나 누락됐어요.");
         }
         int position = integer(barriers.getFirst().get("pos"));
         if (position != controlCount) {
@@ -394,7 +394,7 @@ public class VmFirewallBarrierReconciler {
         }
         Map<String, Object> barrier = barriers.getFirst();
         if (!barrierShape(barrier, false) && !barrierShape(barrier, true)) {
-            throw new ReconcileException("VM firewall barrier reference 내용이 변경되었습니다.");
+            throw new ReconcileException("VM firewall barrier reference 내용이 예상과 달라요.");
         }
         if (!barrierShape(barrier, true)) {
             int pos = integer(barrier.get("pos"));
@@ -404,7 +404,7 @@ public class VmFirewallBarrierReconciler {
         }
         rules = readRules(target);
         if (!barrierAt(rules, controlCount)) {
-            throw new ReconcileException("VM firewall barrier를 enable한 상태로 확인하지 못했습니다.");
+            throw new ReconcileException("VM firewall barrier를 enable한 상태로 확인하지 못했어요.");
         }
     }
 
@@ -417,12 +417,12 @@ public class VmFirewallBarrierReconciler {
         for (int position : positions) {
             rules = readRules(target);
             if (!barrierAt(rules, controlCount)) {
-                throw new ReconcileException("managed rule 삭제 전에 enabled barrier가 없습니다.");
+                throw new ReconcileException("managed rule 삭제 전에 enabled barrier를 확인할 수 없어요.");
             }
             Map<String, Object> current = rules.stream()
                     .filter(rule -> integer(rule.get("pos")) == position).findFirst().orElseThrow();
             if (!text(current.get("comment")).startsWith(MUTABLE_PREFIX)) {
-                throw new ReconcileException("삭제할 managed rule의 위치가 변경되었습니다.");
+                throw new ReconcileException("삭제할 managed rule의 위치나 소유권 표시가 달라요.");
             }
             proxmox.deleteVmFirewallRule(target.apiHost(), target.node(), target.vmid(),
                     position, digest(rules));
@@ -439,7 +439,7 @@ public class VmFirewallBarrierReconciler {
             String marker = rules.get(index).get("comment");
             List<Map<String, Object>> matching = withComment(current, marker);
             if (matching.size() != 1 || enabled(matching.getFirst())) {
-                throw new ReconcileException("새 managed rule을 disabled 상태로 확인하지 못했습니다.");
+                throw new ReconcileException("새 managed rule을 disabled 상태로 확인하지 못했어요.");
             }
             int barrierPos = barrierPosition(current);
             int rulePos = integer(matching.getFirst().get("pos"));
@@ -451,7 +451,7 @@ public class VmFirewallBarrierReconciler {
             current = readRules(target);
             matching = withComment(current, marker);
             if (matching.size() != 1 || integer(matching.getFirst().get("pos")) <= barrierPosition(current)) {
-                throw new ReconcileException("새 managed rule이 barrier 아래에 있지 않습니다.");
+                throw new ReconcileException("새 managed rule이 barrier 아래에 있는지 확인할 수 없어요.");
             }
             Map<String, String> enabledRule = new LinkedHashMap<>(rules.get(index));
             enabledRule.put("enable", "1");
@@ -472,7 +472,7 @@ public class VmFirewallBarrierReconciler {
         if (barrier != desired.controlRules().size()
                 || !semanticList(rules.subList(barrier + 1, rules.size()), true)
                         .equals(desired.mutableRules())) {
-            throw new ReconcileException("barrier 아래의 managed desired rules가 일치하지 않습니다.");
+            throw new ReconcileException("barrier 아래의 managed desired rules가 일치하지 않아요.");
         }
         rejectUnknownEnabled(rules, desired.controlRules().size());
     }
@@ -549,7 +549,7 @@ public class VmFirewallBarrierReconciler {
     private int barrierPosition(List<Map<String, Object>> rules) {
         List<Map<String, Object>> matches = withComment(rules, BARRIER_MARKER);
         if (matches.size() != 1 || !barrierShape(matches.getFirst(), true)) {
-            throw new ReconcileException("enabled barrier reference를 확인할 수 없습니다.");
+            throw new ReconcileException("enabled barrier reference를 확인할 수 없어요.");
         }
         return integer(matches.getFirst().get("pos"));
     }
@@ -564,7 +564,7 @@ public class VmFirewallBarrierReconciler {
         rules.stream().map(rule -> text(rule.get("digest"))).filter(value -> !value.isBlank())
                 .forEach(digests::add);
         if (digests.size() != 1) {
-            throw new ReconcileException("VM firewall rule digest를 확인할 수 없습니다.");
+            throw new ReconcileException("VM firewall rule digest를 확인할 수 없어요.");
         }
         return digests.iterator().next();
     }
@@ -585,7 +585,7 @@ public class VmFirewallBarrierReconciler {
         try {
             return Integer.parseInt(text(value));
         } catch (NumberFormatException invalid) {
-            throw new ReconcileException("VM firewall rule position을 확인할 수 없습니다.");
+            throw new ReconcileException("VM firewall rule position을 확인할 수 없어요.");
         }
     }
 
@@ -598,7 +598,7 @@ public class VmFirewallBarrierReconciler {
                 && failure.getMessage() != null && !failure.getMessage().isBlank()) {
             return failure.getMessage();
         }
-        return "Proxmox VM 방화벽 설정 상태를 확인할 수 없습니다.";
+        return "Proxmox VM 방화벽 설정 상태를 확인할 수 없어요.";
     }
 
     public record Target(String apiHost, String node, int vmid, String expectedBridge,
@@ -607,7 +607,7 @@ public class VmFirewallBarrierReconciler {
             if (expectedBridge == null
                     || !expectedBridge.matches("[A-Za-z][A-Za-z0-9_.-]{0,14}")
                     || expectedMtu < 1280 || expectedMtu > 1500) {
-                throw new IllegalArgumentException("VM network target 준비 정보가 올바르지 않습니다.");
+                throw new IllegalArgumentException("VM network target 준비 정보가 올바르지 않아요.");
             }
         }
     }

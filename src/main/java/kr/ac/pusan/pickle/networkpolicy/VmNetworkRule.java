@@ -20,13 +20,13 @@ public record VmNetworkRule(Direction direction, Action action, Protocol protoco
             throw new IllegalArgumentException("포트 범위의 시작과 끝을 모두 지정해 주세요.");
         }
         if (portStart != null && (portStart < 1 || portEnd > 65535 || portStart > portEnd)) {
-            throw new IllegalArgumentException("포트 범위는 1부터 65535 사이여야 합니다.");
+            throw new IllegalArgumentException("포트 범위는 1~65535로 지정하고 시작이 끝보다 크지 않게 입력해 주세요.");
         }
         if (portStart != null && protocol != Protocol.TCP && protocol != Protocol.UDP) {
-            throw new IllegalArgumentException("포트 범위는 TCP 또는 UDP 규칙에만 지정할 수 있습니다.");
+            throw new IllegalArgumentException("포트 범위는 TCP 또는 UDP 규칙에만 지정할 수 있어요.");
         }
         if (peer.ipv6()) {
-            throw new IllegalArgumentException("VM 통신 정책은 현재 IPv4만 지원합니다.");
+            throw new IllegalArgumentException("VM 통신 정책은 현재 IPv4만 지원해요.");
         }
     }
 
