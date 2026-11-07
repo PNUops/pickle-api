@@ -81,7 +81,7 @@ class VmBulkChanges extends BulkChangeHandler<Vm> {
                 boolean clearing = Boolean.TRUE.equals(period.clearEndDate());
                 if (clearing && period.endDate() != null) {
                     errors.add(new FieldValidationError("change.vmPeriod.endDate",
-                            "종료일을 지우면서 동시에 지정할 수는 없습니다."));
+                            "종료일을 지우면서 동시에 지정할 수는 없어요."));
                 } else if (!clearing && period.endDate() == null) {
                     errors.add(new FieldValidationError("change.vmPeriod.endDate",
                             "종료일을 정하거나 무기한으로 바꿔 주세요."));
@@ -104,7 +104,7 @@ class VmBulkChanges extends BulkChangeHandler<Vm> {
                             "삭제 예정 시각을 지정해 주세요."));
                 } else if (!deletion.scheduledFor().isAfter(now)) {
                     errors.add(new FieldValidationError("change.vmDeletion.scheduledFor",
-                            "삭제 예정일은 미래 시각이어야 합니다."));
+                            "삭제 예정 시각은 미래로 지정해 주세요."));
                 }
                 if (deletion.reason() == null || deletion.reason().isBlank()) {
                     errors.add(new FieldValidationError("change.vmDeletion.reason",

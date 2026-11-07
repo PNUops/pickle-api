@@ -148,8 +148,8 @@ public final class PassthroughEndpoints {
             String value = entry.trim().toLowerCase(Locale.ROOT);
             if (!GRANTABLE.contains(value)) {
                 errors.add(new FieldValidationError(field + "[" + i + "]",
-                        (KNOWN.contains(value) ? "아직 부여할 수 없는 기능입니다. "
-                                : "알 수 없는 기능입니다. ")
+                        (KNOWN.contains(value) ? "아직 부여할 수 없는 기능이에요. "
+                                : "알 수 없는 기능이에요. ")
                                 + String.join(", ", GRANTABLE) + " 중에서 골라 주세요."));
                 continue;
             }
@@ -157,7 +157,7 @@ public final class PassthroughEndpoints {
         }
         if (kept.size() > MAX_ENTRIES) {
             errors.add(new FieldValidationError(field,
-                    "기능은 최대 " + MAX_ENTRIES + "개까지 허용할 수 있습니다."));
+                    "기능은 최대 " + MAX_ENTRIES + "개까지 입력할 수 있어요."));
             return List.of();
         }
         return List.copyOf(kept);
@@ -188,7 +188,7 @@ public final class PassthroughEndpoints {
             for (String entry : entries) {
                 if (UNDER_CHAT.contains(entry)) {
                     errors.add(new FieldValidationError(field,
-                            entry + " 기능은 chat 기능과 함께 부여해야 합니다."));
+                            entry + " 기능은 chat 기능과 함께 부여해야 해요."));
                     return List.of();
                 }
             }

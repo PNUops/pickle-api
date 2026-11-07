@@ -130,7 +130,7 @@ class AdminBulkChangeStore {
         boolean usedOwnPreview = Boolean.TRUE.equals(jdbc.queryForObject(
                 "select exists(select 1 from admin_bulk_change_operations where preview_id=? and actor_id=?)",
                 Boolean.class, request.previewId(), actorId));
-        if (usedOwnPreview) { throw conflict("이 미리보기는 이미 다른 적용에 사용됐습니다. 저장된 결과를 다시 조회해 주세요."); }
+        if (usedOwnPreview) { throw conflict("이 미리보기는 이미 다른 적용에 사용됐어요. 저장된 결과를 다시 조회해 주세요."); }
         throw notFound();
     }
 
@@ -166,14 +166,14 @@ class AdminBulkChangeStore {
         AdminBulkChangeRequest saved = preview.request();
         if (saved.targetType() != request.targetType() || !saved.targetIds().equals(request.targetIds())
                 || !mapper.valueToTree(saved.change()).equals(mapper.valueToTree(request.change()))) {
-            throw conflict("저장된 미리보기와 대상 또는 변경 내용이 다릅니다.");
+            throw conflict("대상이나 변경 내용이 저장된 미리보기와 달라요.");
         }
         Map<UUID, String> fingerprints = preview.response().items().stream().collect(java.util.stream.Collectors.toMap(
                 kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem::targetId,
                 kr.ac.pusan.pickle.admin.dto.AdminBulkChangePreviewItem::fingerprint));
-        if (!fingerprints.equals(request.fingerprints())) { throw conflict("저장된 미리보기의 확인값과 일치하지 않습니다."); }
+        if (!fingerprints.equals(request.fingerprints())) { throw conflict("확인값이 저장된 미리보기와 맞지 않아요."); }
         if (!clock.instant().isBefore(preview.response().expiresAt())) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("previewId", "미리보기의 새 적용 가능 시간이 지났습니다. 다시 미리보기를 만들어 주세요.")));
+            throw ApiException.validationFailed(List.of(new FieldValidationError("previewId", "이 미리보기로 새로 적용할 수 있는 시간이 지났어요. 다시 미리보기를 만들어 주세요.")));
         }
     }
 
@@ -223,10 +223,10 @@ class AdminBulkChangeStore {
     }
 
     static ApiException conflict(String detail) {
-        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.ADMIN_BULK_CHANGE_CONFLICT, "일괄 변경 확인이 필요합니다", detail);
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.ADMIN_BULK_CHANGE_CONFLICT, "일괄 변경 내용을 확인해 주세요", detail);
     }
     static ApiException notFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다", "현재 계정으로 조회할 수 있는 일괄 변경 기록이 없습니다.");
+        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요", "현재 계정으로 조회할 수 있는 일괄 변경 기록이 없어요.");
     }
     private static OffsetDateTime timestamp(Instant instant) { return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC); }
 }

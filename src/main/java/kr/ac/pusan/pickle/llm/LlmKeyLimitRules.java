@@ -91,13 +91,13 @@ public final class LlmKeyLimitRules {
             boolean normalizePassthrough) {
         if (limits.creditLimit() == null) {
             return Outcome.refused("creditLimit",
-                    "금액 한도는 null일 수 없습니다. 유료 모델을 닫으려면 0을 보내 주세요.");
+                    "금액 한도는 null일 수 없어요. 유료 모델을 닫으려면 0을 보내 주세요.");
         }
         if (limits.tpm() != null && limits.rpm() != null && limits.tpm() < limits.rpm()) {
-            return Outcome.refused("tpm", "분당 토큰 수는 분당 요청 수보다 작을 수 없습니다.");
+            return Outcome.refused("tpm", "분당 토큰 수는 분당 요청 수보다 작을 수 없어요.");
         }
         if (limits.creditLimitReset() != null && limits.creditLimit().signum() <= 0) {
-            return Outcome.refused("creditLimit", "리셋 창을 두려면 0보다 큰 금액 한도가 필요합니다.");
+            return Outcome.refused("creditLimit", "리셋 창을 두려면 0보다 큰 금액 한도가 필요해요.");
         }
         List<FieldValidationError> listErrors = new ArrayList<>();
         List<String> allowedModels = normalizeAllowed
@@ -116,7 +116,7 @@ public final class LlmKeyLimitRules {
             return new Outcome(null, List.copyOf(listErrors));
         }
         if (!allowedModels.isEmpty() && limits.creditLimit().signum() <= 0) {
-            return Outcome.refused("creditLimit", "모델 허용 목록을 두려면 0보다 큰 금액 한도가 필요합니다.");
+            return Outcome.refused("creditLimit", "모델 허용 목록을 두려면 0보다 큰 금액 한도가 필요해요.");
         }
         // No matching rule for the deny list, and the omission is the decision.
         // An allow list with no money behind it restricts nothing, so it reads

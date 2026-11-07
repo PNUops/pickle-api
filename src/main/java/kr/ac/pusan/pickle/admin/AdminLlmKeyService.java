@@ -246,8 +246,8 @@ public class AdminLlmKeyService {
             boolean resetSet, boolean resetParameter, @Nullable CreditLimitReset reset,
             boolean accountParameter, @Nullable UUID requestedAccount) {
         actor = access.currentForRead(actor);
-        if (!project && anyDraftParameter) { throw projectionInvalid("projectLimits", "제안 값을 보내려면 금액 projection을 요청해 주세요."); }
-        if (amountSet && amount == null) { throw projectionInvalid("proposedCreditLimit", "제안 금액은 빈 값이나 null일 수 없습니다."); }
+        if (!project && anyDraftParameter) { throw projectionInvalid("projectLimits", "제안 값을 보내려면 금액 영향 미리보기를 요청해 주세요."); }
+        if (amountSet && amount == null) { throw projectionInvalid("proposedCreditLimit", "제안 금액은 비우거나 null로 보낼 수 없어요."); }
         if (amount != null && (amount.signum() < 0 || amount.precision() - amount.scale() > 10 || amount.scale() > 2)) {
             throw projectionInvalid("proposedCreditLimit", "금액은 0 이상, 정수 10자리와 소수 2자리까지 입력해 주세요.");
         }
@@ -260,7 +260,7 @@ public class AdminLlmKeyService {
         BigDecimal nextAmount = amountSet ? Objects.requireNonNull(amount) : current.creditLimit();
         CreditLimitReset nextReset = resetSet ? reset : current.creditLimitReset();
         if (nextReset != null && nextAmount.signum() <= 0) {
-            throw projectionInvalid("proposedCreditLimit", "리셋 창을 두려면 0보다 큰 금액 한도가 필요합니다.");
+            throw projectionInvalid("proposedCreditLimit", "리셋 창을 두려면 0보다 큰 금액 한도가 필요해요.");
         }
         LlmKeyLimitsDraft draft = new LlmKeyLimitsDraft(amountSet, amountSet ? amount : null,
                 resetSet, resetSet ? reset : null, requestedAccount);
@@ -285,18 +285,18 @@ public class AdminLlmKeyService {
         if (key.getOpenrouterAccountId() != null) {
             OpenRouterAccount current = accountRepository.findById(key.getOpenrouterAccountId()).orElseThrow(AdminLlmKeyService::notFound);
             if (requested != null && !current.getPublicId().equals(requested)) {
-                throw projectionInvalid("proposedOpenrouterAccountId", "이미 연결된 계정은 이 제안으로 바꿀 수 없습니다.");
+                throw projectionInvalid("proposedOpenrouterAccountId", "이미 연결된 계정은 이 제안으로 바꿀 수 없어요.");
             }
             return current;
         }
         if (!firstBindingEligible(key)) {
             if (requested != null || amount.signum() > 0) {
-                throw projectionInvalid("proposedOpenrouterAccountId", "기존 최초 계정 연결 조건을 만족하는 키만 평가할 수 있습니다.");
+                throw projectionInvalid("proposedOpenrouterAccountId", "최초 계정 연결 조건을 만족하는 키만 평가할 수 있어요.");
             }
             return null;
         }
         if (amount.signum() <= 0) {
-            if (requested != null) { throw projectionInvalid("proposedOpenrouterAccountId", "금액이 0보다 클 때만 계정을 제안할 수 있습니다."); }
+            if (requested != null) { throw projectionInvalid("proposedOpenrouterAccountId", "금액이 0보다 클 때만 계정을 제안할 수 있어요."); }
             return null;
         }
         if (requested != null) {
@@ -325,14 +325,14 @@ public class AdminLlmKeyService {
         boolean budgetAuthority = access.mutation(actor, InstitutionWork.LLM_KEY_BUDGET, key);
         if (!tokenAuthority && !budgetAuthority) { throw notFound(); }
         if (form.hasCreditLimit() && form.getCreditLimit() == null) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit", "금액 한도에 null을 보낼 수 없습니다.")));
+            throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit", "금액 한도에 null을 보낼 수 없어요.")));
         }
         if (form.hasChatEnabled() && form.getChatEnabled() == null) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("chatEnabled", "chat 허용 상태에 null을 보낼 수 없습니다.")));
+            throw ApiException.validationFailed(List.of(new FieldValidationError("chatEnabled", "chat 허용 상태에 null을 보낼 수 없어요.")));
         }
         if (form.hasChatEnabled() && form.hasPassthroughEndpoints() && form.getPassthroughEndpoints() != null
                 && form.getPassthroughEndpoints().contains(PassthroughEndpoints.CHAT) != form.getChatEnabled()) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("chatEnabled", "기능 목록의 chat 상태와 일치해야 합니다.")));
+            throw ApiException.validationFailed(List.of(new FieldValidationError("chatEnabled", "기능 목록의 chat 상태와 일치해야 해요.")));
         }
         boolean financialInput = form.hasCreditLimit() || form.hasCreditLimitReset() || form.hasCreditAllowedModels()
                 || form.hasCreditDeniedModels() || form.hasPassthroughEndpoints() || form.getOpenrouterAccountId() != null;
@@ -348,7 +348,7 @@ public class AdminLlmKeyService {
                 ? form.getPassthroughEndpoints() == null ? List.of() : form.getPassthroughEndpoints() : current.passthroughEndpoints();
         if (form.hasChatEnabled()) {
             if (form.hasPassthroughEndpoints() && endpoints.contains(PassthroughEndpoints.CHAT) != form.getChatEnabled()) {
-                throw ApiException.validationFailed(List.of(new FieldValidationError("chatEnabled", "기능 목록의 chat 상태와 일치해야 합니다.")));
+                throw ApiException.validationFailed(List.of(new FieldValidationError("chatEnabled", "기능 목록의 chat 상태와 일치해야 해요.")));
             }
             List<String> merged = new ArrayList<>(endpoints);
             merged.remove(PassthroughEndpoints.CHAT);
@@ -421,8 +421,8 @@ public class AdminLlmKeyService {
     /** The refusal a SYS_MANAGER meets on the money side, in one wording. */
     public static ApiException sysManagerMoneyGate() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                "접근 권한이 없습니다",
-                "시스템 운영자는 금액 한도와 모델 목록, 기능 권한을 변경할 수 없습니다.");
+                "접근 권한이 없어요",
+                "시스템 운영자는 금액 한도와 모델 목록, 기능 권한을 변경할 수 없어요.");
     }
 
     /**
@@ -527,7 +527,7 @@ public class AdminLlmKeyService {
         generations.bump();
         entityManager.refresh(key);
         if (key.effectiveStatus(Instant.now()) != LlmApiKeyStatus.ACTIVE) {
-            throw invalidState("활성 상태의 키만 정지할 수 있습니다.");
+            throw invalidState("활성 상태의 키만 정지할 수 있어요.");
         }
         writeSuspend(actor, key, reason, null, ip);
         return detail(actor, key, false, false);
@@ -540,7 +540,7 @@ public class AdminLlmKeyService {
         generations.bump();
         entityManager.refresh(key);
         if (key.effectiveStatus(Instant.now()) != LlmApiKeyStatus.SUSPENDED) {
-            throw invalidState("정지 상태의 키만 다시 활성화할 수 있습니다.");
+            throw invalidState("정지 상태의 키만 다시 활성화할 수 있어요.");
         }
         writeResume(actor, key, null, ip);
         return detail(actor, key, false, false);
@@ -589,7 +589,7 @@ public class AdminLlmKeyService {
     public static Instant expiresAtFor(LocalDate endDate, Clock clock) {
         if (endDate.isBefore(ClockConfig.todayKst(clock))) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("endDate",
-                    "종료일은 오늘(KST) 이후여야 합니다.")));
+                    "종료일은 오늘(KST)이나 이후 날짜로 지정해 주세요.")));
         }
         return endDate.plusDays(1).atStartOfDay(ClockConfig.KST).toInstant();
     }
@@ -597,13 +597,13 @@ public class AdminLlmKeyService {
     /** Why this key's expiry may not move to {@code newExpiresAt}, or null when it may. */
     public static @Nullable ApiException expiryRefusal(LlmApiKey key, Instant newExpiresAt) {
         if (key.getStatus() == LlmApiKeyStatus.REVOKED) {
-            return invalidState("폐기된 키의 만료일은 바꿀 수 없습니다.");
+            return invalidState("폐기된 키의 만료일은 바꿀 수 없어요.");
         }
         if (extendsProvisionedKey(key, newExpiresAt)) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.LLM_KEY_INVALID_STATE,
-                    "키 상태가 올바르지 않습니다",
-                    "유료 모델 키의 만료 연장은 아직 지원하지 않습니다. 공급자가 키의 만료일을 발급 시점에 "
-                            + "고정하기 때문이며, 앞당기는 것은 가능합니다.");
+                    "키 상태를 확인해 주세요",
+                    "유료 모델 키의 만료일은 연장할 수 없어요. "
+                            + "더 이른 날짜로 바꿔 주세요.");
         }
         return null;
     }
@@ -792,13 +792,13 @@ public class AdminLlmKeyService {
     }
 
     private static ApiException forbidden() {
-        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "이 변경에 필요한 업무 권한이 없습니다.");
+        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "이 변경에 필요한 업무 권한이 없어요.");
     }
 
     private static void requireMutableStatus(LlmApiKey key, String action) {
         LlmApiKeyStatus status = key.effectiveStatus(Instant.now());
         if (!isMutable(status)) {
-            throw invalidState(status + " 상태의 키는 " + action + " 수 없습니다.");
+            throw invalidState(status + " 상태의 키는 " + action + " 수 없어요.");
         }
     }
 
@@ -831,12 +831,12 @@ public class AdminLlmKeyService {
 
     private static ApiException notFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 LLM API 키를 찾을 수 없습니다.");
+                "리소스를 찾을 수 없어요", "해당 LLM API 키를 찾을 수 없어요.");
     }
 
     private static ApiException invalidState(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.LLM_KEY_INVALID_STATE,
-                "키 상태가 올바르지 않습니다", detail);
+                "키 상태를 확인해 주세요", detail);
     }
 
     private OpenRouterAccount resolveLimitAccount(LlmApiKey key, @Nullable UUID requested,
@@ -886,7 +886,7 @@ public class AdminLlmKeyService {
                     .orElse(null);
             return current == null
                     ? AccountResolution.refused(new FieldValidationError("openrouterAccountId",
-                            "연결된 사업 계정을 찾을 수 없습니다."))
+                            "연결된 사업 계정을 찾을 수 없어요."))
                     : AccountResolution.of(current);
         }
         if (firstBindingEligible(key)) {
@@ -898,7 +898,7 @@ public class AdminLlmKeyService {
         }
         if (creditLimit.signum() > 0) {
             return AccountResolution.refused(new FieldValidationError("creditLimit",
-                    "사업 계정 없이 발급된 키에는 금액 한도를 둘 수 없습니다."));
+                    "사업 계정 없이 발급된 키에는 금액 한도를 둘 수 없어요."));
         }
         return AccountResolution.of(null);
     }
@@ -939,7 +939,7 @@ public class AdminLlmKeyService {
     private static ApiException immutableBinding() {
         return new ApiException(HttpStatus.CONFLICT,
                 ErrorCodes.LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE,
-                "연결된 사업 계정은 바꿀 수 없습니다",
+                "연결된 사업 계정은 바꿀 수 없어요",
                 "다른 사업 계정으로 옮기려면 새 LLM API 키를 발급해 전환해 주세요.");
     }
 

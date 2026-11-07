@@ -118,7 +118,7 @@ public class AdminLlmCapacityService {
             @Nullable UUID openrouterAccountId, LlmConsumerSort sort) {
         Instant now = clock.instant();
         int bucket = bucket(from, to, now, requestedBucket);
-        if (error != null && errorTypeMissing) { throw invalid("errorTypeMissing", "errorType과 미기록 필터를 함께 지정할 수 없습니다."); }
+        if (error != null && errorTypeMissing) { throw invalid("errorTypeMissing", "errorType과 미기록 필터는 함께 지정할 수 없어요."); }
         if (!access.observationReader(actor)) { throw denied(); }
         Long requestedOrg = orgId == null ? null : orgs.findByPublicId(orgId).map(Org::getId).orElse(null);
         OrgScope scope = access.queryScope(actor, orgId, requestedOrg);
@@ -307,24 +307,24 @@ public class AdminLlmCapacityService {
     private static int bucket(Instant from, Instant to, Instant now, @Nullable Integer requested) {
         Duration duration = Duration.between(from, to);
         if (!from.isBefore(to) || to.isAfter(now) || duration.compareTo(Duration.ofDays(90)) > 0) {
-            throw invalid("from", "조회 기간은 미래가 아닌 90일 이내의 시작 포함·종료 제외 구간이어야 합니다.");
+            throw invalid("from", "미래가 아닌 90일 이내의 구간을 지정해 주세요. 시작은 포함하고 종료는 제외해요.");
         }
         long seconds = Math.max(1, duration.getSeconds());
         int selected = requested != null ? requested : seconds <= 21600 ? 60 : seconds <= 86400 ? 300
                 : seconds <= 604800 ? 3600 : seconds <= 2592000 ? 21600 : 86400;
         if (selected < 60 || selected > 86400 || (duration.toNanos() - 1) / (selected * 1_000_000_000L) + 1 > 1440) {
-            throw invalid("bucketSeconds", "버킷은 60~86400초이며 조회 구간의 버킷 수는 1440개 이하여야 합니다.");
+            throw invalid("bucketSeconds", "버킷은 60~86400초로 지정해 주세요. 조회 구간의 버킷 수는 1440개 이하여야 해요.");
         }
         return selected;
     }
 
     private static void bounded(String value, String field) {
-        if (value.isBlank() || value.length() > 256) { throw invalid(field, "필터는 1~256자의 정확한 값이어야 합니다."); }
+        if (value.isBlank() || value.length() > 256) { throw invalid(field, "필터는 1~256자의 정확한 값으로 입력해 주세요."); }
     }
 
     private static ApiException invalid(String field, String message) { return ApiException.validationFailed(List.of(new FieldValidationError(field, message))); }
-    private static ApiException denied() { return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "기관 LLM 관측 업무가 필요합니다."); }
-    private static ApiException missing() { return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다", "해당 관측 대상을 찾을 수 없습니다."); }
+    private static ApiException denied() { return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "기관 LLM 관측 업무 권한이 필요해요."); }
+    private static ApiException missing() { return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요", "해당 관측 대상을 찾을 수 없어요."); }
     private record Sql(String text, List<Object> args) { }
     private record Upstream(UUID id, String name, String ref) { }
 }

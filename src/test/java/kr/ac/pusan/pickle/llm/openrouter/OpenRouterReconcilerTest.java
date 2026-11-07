@@ -194,8 +194,8 @@ class OpenRouterReconcilerTest {
                 "hash-combined", true);
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-combined");
         assertThat(findingMessage("hash-combined"))
-                .contains("금액 한도를 다시 적용했습니다")
-                .contains("정지된 키의 OpenRouter 키를 비활성화했습니다");
+                .contains("금액 한도를 다시 적용했어요")
+                .contains("정지된 키의 OpenRouter 키를 비활성화했어요");
     }
 
     @Test
@@ -282,7 +282,7 @@ class OpenRouterReconcilerTest {
         String summary = jdbcTemplate.queryForObject(
                 "select summary from drift_findings where dedup_key like '%:key:hash-stubborn'",
                 String.class);
-        assertThat(summary).contains("비활성화하지 못했습니다");
+        assertThat(summary).contains("비활성화 결과를 확인하지 못했어요");
     }
 
     @Test
