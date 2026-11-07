@@ -41,7 +41,7 @@ public class GpuRequestSupport implements RequestTypeHandler {
         Long vmId = null;
         if (form.gpu().vmId() != null) {
             var vm = vmAccess.of(form.gpu().vmId(), request.getRequesterId()).requireAtLeast(ResourceRole.EDITOR,
-                    "권한이 없습니다", "가상머신 편집 권한이 필요합니다.");
+                    "권한이 없어요", "이 가상머신의 편집자 이상 접근 등급이 필요해요.");
             if (!vm.getWorkspaceId().equals(request.getWorkspaceId())) {
                 throw GpuErrors.invalid("gpu.vmId", "같은 워크스페이스의 가상머신을 선택해 주세요.");
             }

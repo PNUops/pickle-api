@@ -55,12 +55,12 @@ import org.springframework.stereotype.Service;
 @Service
 public class RequestRecipientService {
 
-    static final String REASON_NOT_MEMBER = "워크스페이스의 활성 구성원이 아닙니다.";
-    static final String REASON_INVITATION_CLOSED = "초대가 취소되어 더 이상 가입을 기다리지 않습니다.";
-    static final String REASON_DUPLICATE = "같은 사람이 이 신청의 대상자로 이미 들어 있습니다.";
-    static final String REASON_WORKSPACE_DELETED = "워크스페이스가 삭제되었습니다.";
-    static final String REASON_INVITATION_CANCELED = "초대가 취소되었습니다.";
-    static final String REASON_EXPIRED = "가입했을 때 사용 기간이 이미 끝나 만들지 않았습니다.";
+    static final String REASON_NOT_MEMBER = "워크스페이스의 활성 구성원이 아니에요.";
+    static final String REASON_INVITATION_CLOSED = "가입을 기다릴 수 있는 초대가 아니어서 대상에서 제외했어요.";
+    static final String REASON_DUPLICATE = "같은 사람이 이 신청의 대상자로 이미 들어 있어요.";
+    static final String REASON_WORKSPACE_DELETED = "워크스페이스가 삭제됐어요.";
+    static final String REASON_INVITATION_CANCELED = "초대가 취소됐어요.";
+    static final String REASON_EXPIRED = "대상자가 확인된 시점에 사용 기간이 이미 끝나 만들지 않았어요.";
 
     /**
      * A recipient as validated at submission: exactly one of the three set.
@@ -142,7 +142,7 @@ public class RequestRecipientService {
             if (entry.userId() != null) {
                 User user = userRepository.findByPublicId(entry.userId()).orElse(null);
                 if (user == null || !activeMember(workspace.getId(), user)) {
-                    errors.add(new FieldValidationError(field, "이 워크스페이스의 활성 구성원이 아닙니다."));
+                    errors.add(new FieldValidationError(field, "이 워크스페이스의 활성 구성원이 아니에요."));
                     continue;
                 }
                 key = user.getPublicId();
@@ -152,7 +152,7 @@ public class RequestRecipientService {
                         .findByPublicId(entry.invitationId()).orElse(null);
                 if (invitation == null || !invitation.getWorkspaceId().equals(workspace.getId())
                         || invitation.getStatus() != WorkspaceInvitationStatus.PENDING) {
-                    errors.add(new FieldValidationError(field, "이 워크스페이스의 대기 중인 초대가 아닙니다."));
+                    errors.add(new FieldValidationError(field, "이 워크스페이스의 대기 중인 초대가 아니에요."));
                     continue;
                 }
                 key = invitation.getPublicId();
@@ -163,12 +163,12 @@ public class RequestRecipientService {
                 // a 학번 could only ever name its owner.
                 if (workspace.getKind() == WorkspaceKind.PERSONAL) {
                     errors.add(new FieldValidationError(field + ".studentNo",
-                            "개인 워크스페이스에는 학번으로 대상자를 지정할 수 없습니다."));
+                            "개인 워크스페이스에는 학번으로 대상자를 지정할 수 없어요."));
                     continue;
                 }
                 if (!ProfileValidator.isStudentNoFormat(studentNo)) {
                     errors.add(new FieldValidationError(field + ".studentNo",
-                            "학번 형식이 올바르지 않습니다. (영문·숫자·하이픈 4~20자)"));
+                            "학번은 영문과 숫자, 하이픈 4~20자로 입력해 주세요."));
                     continue;
                 }
                 RosterEntry found = rosterEntry(workspace, studentNo);
@@ -188,7 +188,7 @@ public class RequestRecipientService {
                                 : new Resolved(null, null, studentNo);
             }
             if (!seen.add(key)) {
-                errors.add(new FieldValidationError(field, "같은 대상자가 두 번 들어 있습니다."));
+                errors.add(new FieldValidationError(field, "같은 대상자가 두 번 들어 있어요."));
                 continue;
             }
             resolved.add(recipient);
@@ -295,8 +295,8 @@ public class RequestRecipientService {
             if (!fresh) {
                 errors.add(new FieldValidationError("recipients[" + i + "]",
                         placement.member() == null && invitationId == null
-                                ? "학번의 초대 상태가 바뀌었습니다. 다시 시도해 주세요."
-                                : "같은 대상자가 두 번 들어 있습니다."));
+                                ? "학번의 초대 상태가 바뀌었어요. 다시 시도해 주세요."
+                                : "같은 대상자가 두 번 들어 있어요."));
                 continue;
             }
             placed.add(placement.member() != null
@@ -506,22 +506,22 @@ public class RequestRecipientService {
     public RequestRecipient retry(Request request, UUID recipientId) {
         RequestRecipient found = recipientRepository.findByPublicIdAndRequestId(recipientId, request.getId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "리소스를 찾을 수 없습니다", "해당 대상자가 존재하지 않습니다."));
+                        "리소스를 찾을 수 없어요", "해당 대상자를 찾을 수 없어요."));
         // Match deletion and materialization: workspace before recipient.
         // Refresh also replaces an earlier managed copy after the row lock waits.
         Workspace workspace = workspaceRepository.findByIdForUpdate(request.getWorkspaceId()).orElse(null);
         if (workspace != null) entityManager.refresh(workspace);
         if (workspace == null || workspace.isDeleted()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_RECIPIENT_NOT_RETRYABLE,
-                    "다시 시도할 수 없는 대상자입니다", "워크스페이스가 삭제되어 다시 시도할 수 없습니다.");
+                    "다시 시도할 수 없는 대상자예요", "워크스페이스가 삭제되어 다시 시도할 수 없어요.");
         }
         RequestRecipient recipient = recipientRepository.findWithLockById(found.getId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "리소스를 찾을 수 없습니다", "해당 대상자가 존재하지 않습니다."));
+                        "리소스를 찾을 수 없어요", "해당 대상자를 찾을 수 없어요."));
         entityManager.refresh(recipient);
         if (recipient.getStatus() != RequestRecipientStatus.FAILED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_RECIPIENT_NOT_RETRYABLE,
-                    "다시 시도할 수 없는 대상자입니다", "생성에 실패한 대상자만 다시 시도할 수 있습니다.");
+                    "다시 시도할 수 없는 대상자예요", "생성에 실패한 대상자만 다시 시도할 수 있어요.");
         }
         recipient.mark(RequestRecipientStatus.QUEUED, null);
         materializer.triggerAfterCommit();

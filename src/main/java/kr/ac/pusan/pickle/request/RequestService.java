@@ -114,7 +114,7 @@ public class RequestService {
         RequestTypeHandler handler = handlers.get(type);
         if (handler == null) {
             throw ApiException.validationFailed(List.of(
-                    new FieldValidationError("type", "아직 신청할 수 없는 리소스 종류입니다.")));
+                    new FieldValidationError("type", "아직 신청할 수 없는 리소스 종류예요.")));
         }
         return handler;
     }
@@ -126,7 +126,7 @@ public class RequestService {
         RequestTypeHandler handler = handlerFor(form.type());
         // A soft-deleted workspace cannot receive new requests.
         Workspace workspace = workspaceRepository.findByPublicIdAndDeletedAtIsNull(form.workspaceId())
-                .orElseThrow(() -> notFound("해당 워크스페이스가 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 워크스페이스를 찾을 수 없어요."));
         // Any member may ask. The rung that used to gate this was really about
         // reaching VMs, which is now the access list's business, and asking is
         // not the step that costs anything — approval is.
@@ -156,19 +156,19 @@ public class RequestService {
         // workspace they do not belong to, which approval then refuses.
         if (membership == null && !form.hasRecipients()) {
             errors.add(new FieldValidationError("recipients",
-                    "워크스페이스 구성원이 아니면 대상자를 지정해야 합니다. 본인 리소스는 구성원인 워크스페이스에서만 신청할 수 있습니다."));
+                    "워크스페이스 구성원이 아니면 대상자를 지정해 주세요. 본인 리소스는 구성원으로 참여 중인 워크스페이스에서만 신청할 수 있어요."));
         }
         List<RequestRecipientService.Resolved> recipients = List.of();
         if (form.hasRecipients()) {
             if (!handler.supportsRecipients()) {
                 errors.add(new FieldValidationError("recipients",
-                        "대상자는 VM과 LLM API 키 신청에만 지정할 수 있습니다."));
+                        "VM과 LLM API 키 신청에만 대상자를 지정할 수 있어요."));
             } else {
                 // Every recipient's VM is named from the display name with a
                 // random suffix; one chosen name cannot be several hosts.
                 if (form.vm() != null && Texts.blankToNull(form.vm().desiredSlug()) != null) {
                     errors.add(new FieldValidationError("vm.desiredSlug",
-                            "대상자가 여러 명인 신청에는 호스트 이름을 정할 수 없습니다."));
+                            "대상자를 지정한 신청에는 호스트 이름을 정할 수 없어요."));
                 }
                 recipients = recipientService.resolve(workspace, form.recipients(), errors);
             }
@@ -289,13 +289,13 @@ public class RequestService {
         if (form.approval() != null && !(form.hasRecipients() && institutionAccess.roster(actor, form.type(), orgId, workspaceId))
                 && !institutionAccess.decide(actor, form.type(), orgId, workspaceId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "해당 신청 승인 업무나 새 명단 발급 업무가 있어야 제출과 동시에 승인할 수 있습니다.");
+                    "접근 권한이 없어요", "해당 신청 승인 업무나 새 명단 발급 업무가 있어야 제출과 동시에 승인할 수 있어요.");
         }
         if (form.hasRecipients() && !(membership != null && membership.getRole() == WorkspaceMemberRole.OWNER)
                 && !institutionAccess.roster(actor, form.type(), orgId, workspaceId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.REQUEST_RECIPIENTS_FORBIDDEN,
-                    "대상자를 지정할 권한이 없습니다",
-                    "다른 사람을 대상자로 지정하려면 워크스페이스 소유자이거나 해당 명단 발급 업무가 있어야 합니다.");
+                    "대상자를 지정할 권한이 없어요",
+                    "다른 사람을 대상자로 지정하려면 워크스페이스 소유자이거나 해당 명단 발급 업무가 있어야 해요.");
         }
     }
 
@@ -387,7 +387,7 @@ public class RequestService {
             if (scopedWorkspaceId == null || workspaceMemberRepository
                     .findByWorkspaceIdAndUserId(scopedWorkspaceId, actor.id()).isEmpty()) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                        "접근 권한이 없습니다", "해당 워크스페이스의 신청을 조회할 권한이 없습니다.");
+                        "접근 권한이 없어요", "해당 워크스페이스의 신청을 조회할 권한이 없어요.");
             }
             spec = RequestSpecs.workspace(scopedWorkspaceId);
         } else {
@@ -406,12 +406,12 @@ public class RequestService {
     @Transactional(readOnly = true)
     public RequestDetailResponse get(AuthenticatedUser actor, UUID requestId) {
         Request request = requestRepository.findByPublicId(requestId)
-                .orElseThrow(() -> notFound("해당 신청이 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 신청을 찾을 수 없어요."));
         boolean participant = request.getRequesterId().equals(actor.id())
                 || workspaceMemberRepository.findByWorkspaceIdAndUserId(request.getWorkspaceId(), actor.id()).isPresent();
         if (!participant) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "신청자 또는 워크스페이스 구성원만 조회할 수 있습니다.");
+                    "접근 권한이 없어요", "신청자 또는 워크스페이스 구성원만 조회할 수 있어요.");
         }
         return assembler.toDetail(request, actor);
     }
@@ -419,7 +419,7 @@ public class RequestService {
     @Transactional
     public RequestDetailResponse cancel(AuthenticatedUser actor, UUID requestId, String ip) {
         Request request = requestRepository.findWithLockByPublicId(requestId)
-                .orElseThrow(() -> notFound("해당 신청이 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 신청을 찾을 수 없어요."));
         boolean requester = request.getRequesterId().equals(actor.id());
         boolean workspaceOwner = workspaceMemberRepository
                 .findByWorkspaceIdAndUserId(request.getWorkspaceId(), actor.id())
@@ -428,11 +428,11 @@ public class RequestService {
                 .isPresent();
         if (!requester && !workspaceOwner) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "신청자 본인 또는 워크스페이스 소유자(OWNER)만 취소할 수 있습니다.");
+                    "접근 권한이 없어요", "신청자 본인 또는 워크스페이스 소유자(OWNER)만 취소할 수 있어요.");
         }
         if (request.getStatus() != RequestStatus.SUBMITTED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_ALREADY_DECIDED,
-                    "이미 처리된 신청입니다", "이미 승인 또는 반려된 신청은 취소할 수 없습니다.");
+                    "이미 처리된 신청이에요", "처리 전인 신청만 취소할 수 있어요.");
         }
         request.setStatus(RequestStatus.CANCELED);
         recipientService.closeUndecided(request);
@@ -478,10 +478,10 @@ public class RequestService {
         // organisation and no kind to derive one never gets this far.
         Org org = (owned != null ? orgRepository.findById(owned)
                 : orgRepository.findByPublicId(form.orgId()))
-                .orElseThrow(() -> notFound("해당 기관이 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 기관을 찾을 수 없어요."));
         if (org.getStatus() != OrgStatus.ACTIVE) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                    "비활성화된 기관에는 신청할 수 없습니다.")));
+                    "활성 상태인 기관에만 신청할 수 있어요.")));
         }
         return org;
     }
@@ -493,24 +493,24 @@ public class RequestService {
         if (Boolean.TRUE.equals(form.reqIndefinite())) {
             if (form.periodPresetId() != null || form.reqEndDate() != null) {
                 errors.add(new FieldValidationError("reqIndefinite",
-                        "무기한으로 신청할 때는 기간이나 종료일을 함께 보내지 않습니다."));
+                        "무기한으로 신청할 때는 기간이나 종료일을 함께 지정할 수 없어요."));
             }
             return new ResolvedPeriod(null, null);
         }
         if (form.periodPresetId() != null) {
             if (form.reqEndDate() != null) {
                 errors.add(new FieldValidationError("reqEndDate",
-                        "기간을 골랐을 때는 종료일을 따로 보내지 않습니다."));
+                        "기간을 선택했을 때는 종료일을 따로 지정할 수 없어요."));
                 return new ResolvedPeriod(null, null);
             }
             RequestPeriodPreset preset = periodPresetRepository
                     .findByPublicId(form.periodPresetId()).orElse(null);
             if (preset == null) {
-                throw notFound("해당 사용 기간이 존재하지 않습니다.");
+                throw notFound("해당 사용 기간을 찾을 수 없어요.");
             }
             if (!preset.isOfferableOn(ClockConfig.todayKst(clock))) {
                 errors.add(new FieldValidationError("periodPresetId",
-                        "더 이상 신청할 수 없는 사용 기간입니다."));
+                        "지금은 신청할 수 없는 사용 기간이에요."));
                 return new ResolvedPeriod(null, null);
             }
             return new ResolvedPeriod(preset.getEndDate(), preset.getId());
@@ -519,23 +519,23 @@ public class RequestService {
         LocalDate endDate = form.reqEndDate();
         if (endDate == null) {
             errors.add(new FieldValidationError("reqEndDate",
-                    "사용 종료일을 정해 주세요. 끝나지 않는 기간이 필요하면 무기한을 고릅니다."));
+                    "사용 종료일을 정해 주세요. 기간 제한이 필요 없으면 무기한을 선택해 주세요."));
             return new ResolvedPeriod(null, null);
         }
         LocalDate today = ClockConfig.todayKst(clock);
         if (endDate.isBefore(today)) {
-            errors.add(new FieldValidationError("reqEndDate", "종료일은 오늘 이후여야 합니다."));
+            errors.add(new FieldValidationError("reqEndDate", "종료일은 오늘(KST)이나 그 뒤의 날짜로 정해 주세요."));
         } else if (endDate.isAfter(today.plusYears(MAX_CUSTOM_PERIOD_YEARS))) {
             errors.add(new FieldValidationError("reqEndDate",
-                    "직접 적는 종료일은 " + MAX_CUSTOM_PERIOD_YEARS
-                            + "년 이내여야 합니다. 더 긴 기간이 필요하면 사용 목적에 적어 주세요."));
+                    "직접 입력하는 종료일은 오늘부터 " + MAX_CUSTOM_PERIOD_YEARS
+                            + "년 이내로 정해 주세요. 더 긴 기간이 필요하면 사용 목적에 적어 주세요."));
         }
         return new ResolvedPeriod(endDate, null);
     }
 
     private static ApiException notFound(String detail) {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", detail);
+                "리소스를 찾을 수 없어요", detail);
     }
 
     /**
@@ -545,7 +545,7 @@ public class RequestService {
      */
     private static ApiException notWorkspaceMember() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_MEMBERSHIP_REQUIRED,
-                "워크스페이스 구성원이 아닙니다",
-                "이 워크스페이스의 구성원만 신청할 수 있습니다. 워크스페이스 소유자에게 구성원 추가를 요청해 주세요.");
+                "워크스페이스 구성원이 아니에요",
+                "이 워크스페이스의 구성원만 신청할 수 있어요. 워크스페이스 소유자에게 구성원 추가를 요청해 주세요.");
     }
 }
