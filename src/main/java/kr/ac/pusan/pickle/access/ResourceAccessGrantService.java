@@ -338,7 +338,7 @@ public class ResourceAccessGrantService {
     private ResourceRole requireWorkspaceWideRole(ResourceRole role) {
         if (role == ResourceRole.OWNER || role == ResourceRole.EDITOR) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("role",
-                    "워크스페이스 전체에는 참여자 또는 열람자까지만 부여할 수 있습니다. 그보다 높은 등급은 "
+                    "워크스페이스 전체에는 참여자나 열람자 등급만 부여할 수 있어요. 더 높은 등급은 "
                             + "구성원을 지정해 부여해 주세요.")));
         }
         return role;
@@ -350,8 +350,8 @@ public class ResourceAccessGrantService {
                 .filter(grant -> grant.getResourceType() == managed.adapter().type()
                         && grant.getResourceId() == managed.resource().id())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
-                        ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
-                        "해당 접근 권한이 존재하지 않습니다."));
+                        ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요",
+                        "해당 접근 권한 항목을 찾을 수 없어요."));
     }
 
     private void audit(AuthenticatedUser actor, Managed managed, GrantChange change,

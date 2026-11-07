@@ -116,7 +116,7 @@ public class WorkspaceService {
         Workspace workspace = findWorkspace(publicWorkspaceId);
         long workspaceId = workspace.getId();
         WorkspaceMember membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, actor.id())
-                .orElseThrow(() -> accessDenied("워크스페이스 구성원만 조회할 수 있습니다."));
+                .orElseThrow(() -> accessDenied("워크스페이스 구성원만 볼 수 있어요."));
         return toDetail(workspace, membership.getRole());
     }
 
@@ -138,7 +138,7 @@ public class WorkspaceService {
         long workspaceId = workspace.getId();
         WorkspaceMember membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, actor.id()).orElse(null);
         if (!support && (membership == null || membership.getRole() != WorkspaceMemberRole.OWNER)) {
-            throw accessDenied("워크스페이스 소유자(OWNER)만 수정할 수 있습니다.");
+            throw accessDenied("워크스페이스 소유자(OWNER)만 수정할 수 있어요.");
         }
         String previousName = workspace.getName();
         String previousDescription = workspace.getDescription();
@@ -149,7 +149,7 @@ public class WorkspaceService {
         if (request.isNameSet()) {
             if (request.getName() == null || request.getName().isBlank()) {
                 throw ApiException.validationFailed(List.of(
-                        new FieldValidationError("name", "워크스페이스 이름은 비울 수 없습니다.")));
+                        new FieldValidationError("name", "워크스페이스 이름은 비울 수 없어요.")));
             }
             workspace.setName(request.getName().strip());
         }
@@ -183,11 +183,11 @@ public class WorkspaceService {
             @Nullable CreatableWorkspaceKind requested, String ip) {
         if (requested == null) {
             throw ApiException.validationFailed(List.of(
-                    new FieldValidationError("kind", "워크스페이스 유형은 비울 수 없습니다.")));
+                    new FieldValidationError("kind", "워크스페이스 유형은 비울 수 없어요.")));
         }
         if (workspace.getKind() == WorkspaceKind.PERSONAL) {
             throw ApiException.validationFailed(List.of(
-                    new FieldValidationError("kind", "개인 워크스페이스는 유형을 바꿀 수 없습니다.")));
+                    new FieldValidationError("kind", "개인 워크스페이스는 유형을 바꿀 수 없어요.")));
         }
         WorkspaceKind previous = workspace.getKind();
         WorkspaceKind next = requested.toWorkspaceKind();
@@ -217,7 +217,7 @@ public class WorkspaceService {
         long targetUserId = memberUserId(publicUserId);
         if (support) { requireMemberManagementReference(actor, workspace); }
         requireOwnerForMemberManagement(workspace, actor,
-                "워크스페이스 소유자(OWNER)만 역할을 변경할 수 있습니다.", "PERSONAL 워크스페이스의 구성원은 변경할 수 없습니다.", support);
+                "워크스페이스 소유자(OWNER)만 역할을 변경할 수 있어요.", "개인 워크스페이스의 구성원은 바꿀 수 없어요.", support);
         // Locked before the count below. With one owner per workspace the count could
         // not be wrong; with several, two owners demoting each other concurrently
         // would both read two and commit, leaving a workspace nobody can administer.
@@ -233,7 +233,7 @@ public class WorkspaceService {
         if (previousRole == WorkspaceMemberRole.OWNER && request.role() != WorkspaceMemberRole.OWNER
                 && workspaceMemberRepository.countByWorkspaceIdAndRole(workspaceId,
                         WorkspaceMemberRole.OWNER) <= 1) {
-            throw soleOwnerRemoval("유일한 소유자의 역할은 변경할 수 없습니다");
+            throw soleOwnerRemoval("마지막 소유자를 구성원으로 바꿀 수 없어요");
         }
         var impact = memberRoleImpact(actor, workspace, publicUserId, request.role());
         kr.ac.pusan.pickle.access.ActorAccessImpacts.requireConfirmed(impact, request.confirmation());
@@ -267,16 +267,16 @@ public class WorkspaceService {
         long workspaceId = workspace.getId();
         long targetUserId = memberUserId(publicUserId);
         if (workspace.getKind() == WorkspaceKind.PERSONAL) {
-            throw memberManageForbidden("구성원을 관리할 권한이 없습니다", "PERSONAL 워크스페이스의 구성원은 변경할 수 없습니다.");
+            throw memberManageForbidden("구성원을 관리할 권한이 없어요", "개인 워크스페이스의 구성원은 바꿀 수 없어요.");
         }
         WorkspaceMember actorMembership = workspaceMemberRepository.findWithLockByWorkspaceIdAndUserId(workspaceId, actor.id()).orElse(null);
         if (!support && actorMembership == null) {
-            throw memberManageForbidden("구성원을 제거할 권한이 없습니다", "워크스페이스 소유자(OWNER)만 다른 구성원을 제거할 수 있습니다.");
+            throw memberManageForbidden("구성원을 제거할 권한이 없어요", "워크스페이스 소유자(OWNER)만 다른 구성원을 제거할 수 있어요.");
         }
         if (support) { requireMemberManagementReference(actor, workspace); }
         boolean selfLeave = targetUserId == actor.id();
         if (!support && !selfLeave && actorMembership.getRole() != WorkspaceMemberRole.OWNER) {
-            throw memberManageForbidden("구성원을 제거할 권한이 없습니다", "워크스페이스 소유자(OWNER)만 다른 구성원을 제거할 수 있습니다.");
+            throw memberManageForbidden("구성원을 제거할 권한이 없어요", "워크스페이스 소유자(OWNER)만 다른 구성원을 제거할 수 있어요.");
         }
 
         WorkspaceMember target = workspaceMemberRepository.findWithLockByWorkspaceIdAndUserId(workspaceId, targetUserId)
@@ -284,7 +284,7 @@ public class WorkspaceService {
         if (support) { requireMemberWork(actor, workspace, target.getRole() == WorkspaceMemberRole.OWNER); }
         if (target.getRole() == WorkspaceMemberRole.OWNER
                 && workspaceMemberRepository.countByWorkspaceIdAndRole(workspaceId, WorkspaceMemberRole.OWNER) <= 1) {
-            throw soleOwnerRemoval("유일한 소유자는 나갈 수 없습니다");
+            throw soleOwnerRemoval("마지막 소유자를 제거할 수 없어요");
         }
 
         workspaceMemberRepository.delete(target);
@@ -350,12 +350,12 @@ public class WorkspaceService {
         if (!support && membership == null) { throw workspaceNotFound(); }
         if (!support && membership.getRole() != WorkspaceMemberRole.OWNER) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                    "워크스페이스를 삭제할 권한이 없습니다", "워크스페이스의 OWNER만 워크스페이스를 삭제할 수 있습니다.");
+                    "워크스페이스를 삭제할 권한이 없어요", "워크스페이스 소유자(OWNER)만 삭제할 수 있어요.");
         }
         if (workspace.getKind() == WorkspaceKind.PERSONAL) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_PERSONAL_UNDELETABLE,
-                    "워크스페이스를 삭제할 수 없습니다",
-                    "개인 워크스페이스는 삭제할 수 없습니다. 계정 탈퇴 시에만 함께 정리됩니다.");
+                    "워크스페이스를 삭제할 수 없어요",
+                    "개인 워크스페이스는 직접 삭제할 수 없어요. 회원 탈퇴를 마치면 함께 정리돼요.");
         }
         // Keep the existing request -> its recipients -> workspace -> remaining
         // recipients order, without mutating before the confirmed preimage is read.
@@ -392,8 +392,8 @@ public class WorkspaceService {
         if (resourceAdapters.stream()
                 .anyMatch(adapter -> adapter.countLiveInWorkspace(workspaceId) > 0)) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_HAS_ACTIVE_VMS,
-                    "워크스페이스를 삭제할 수 없습니다",
-                    "워크스페이스에 삭제되지 않은 리소스가 있습니다. 리소스 삭제(파기 완료) 후 다시 시도해 주세요.");
+                    "워크스페이스를 삭제할 수 없어요",
+                    "워크스페이스에 남아 있는 리소스를 먼저 정리해 주세요. 삭제 중인 VM은 파기가 끝나야 해요.");
         }
 
         for (Request pending : pendingRequests) {
@@ -427,7 +427,7 @@ public class WorkspaceService {
     void requireSupportWork(AuthenticatedUser actor, Workspace workspace,
             kr.ac.pusan.pickle.security.institution.InstitutionWork work) {
         if (!permissions.workspace(actor, work, workspace.getId(), kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)) {
-            throw memberManageForbidden("접근 권한이 없습니다", "이 워크스페이스 업무를 수행할 권한이 없습니다.");
+            throw memberManageForbidden("접근 권한이 없어요", "이 워크스페이스에서 해당 업무를 할 권한이 없어요.");
         }
     }
 
@@ -436,7 +436,7 @@ public class WorkspaceService {
                 workspace.getId(), kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)
                 && !permissions.workspace(actor, kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_OWNERS_MANAGE,
                         workspace.getId(), kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN)) {
-            throw memberManageForbidden("접근 권한이 없습니다", "이 워크스페이스 업무를 수행할 권한이 없습니다.");
+            throw memberManageForbidden("접근 권한이 없어요", "이 워크스페이스에서 해당 업무를 할 권한이 없어요.");
         }
     }
 
@@ -455,12 +455,12 @@ public class WorkspaceService {
     @Nullable WorkspaceMember requireOwnerForMemberManagement(Workspace workspace, AuthenticatedUser actor,
             String notOwnerDetail, String personalDetail, boolean support) {
         if (workspace.getKind() == WorkspaceKind.PERSONAL) {
-            throw memberManageForbidden("구성원을 관리할 권한이 없습니다", personalDetail);
+            throw memberManageForbidden("구성원을 관리할 권한이 없어요", personalDetail);
         }
         if (support) { return null; }
         return workspaceMemberRepository.findWithLockByWorkspaceIdAndUserId(workspace.getId(), actor.id())
                 .filter(membership -> membership.getRole() == WorkspaceMemberRole.OWNER)
-                .orElseThrow(() -> memberManageForbidden("구성원을 관리할 권한이 없습니다", notOwnerDetail));
+                .orElseThrow(() -> memberManageForbidden("구성원을 관리할 권한이 없어요", notOwnerDetail));
     }
 
     @Transactional(readOnly = true)
@@ -468,7 +468,7 @@ public class WorkspaceService {
             UUID workspaceId, UUID userId, UpdateWorkspaceMemberRequest request) {
 
         Workspace workspace = findWorkspace(workspaceId);
-        if (workspace.getKind() == WorkspaceKind.PERSONAL) { throw memberManageForbidden("구성원을 관리할 권한이 없습니다", "개인 워크스페이스의 구성원은 변경할 수 없습니다."); }
+        if (workspace.getKind() == WorkspaceKind.PERSONAL) { throw memberManageForbidden("구성원을 관리할 권한이 없어요", "개인 워크스페이스의 구성원은 바꿀 수 없어요."); }
         requireMemberManagementReference(actor, workspace);
         WorkspaceMember existing = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(),
                 memberUserId(userId)).orElseThrow(WorkspaceService::memberNotFound);
@@ -495,7 +495,7 @@ public class WorkspaceService {
 
     void requireActiveActor(AuthenticatedUser actor) {
         if (userRepository.findById(actor.id()).map(User::getStatus).orElse(null) != kr.ac.pusan.pickle.user.UserStatus.ACTIVE) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID, "인증이 필요합니다", "현재 활성 계정으로 다시 로그인해 주세요.");
+            throw new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID, "인증이 필요해요", "현재 활성 계정으로 다시 로그인해 주세요.");
         }
     }
 
@@ -527,7 +527,7 @@ public class WorkspaceService {
 
     private static ApiException workspaceNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 워크스페이스가 존재하지 않습니다.");
+                "리소스를 찾을 수 없어요", "해당 워크스페이스를 찾을 수 없어요.");
     }
 
     private static String normalize(String description) {
@@ -536,11 +536,11 @@ public class WorkspaceService {
 
     private static ApiException memberNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 사용자는 이 워크스페이스의 구성원이 아닙니다.");
+                "리소스를 찾을 수 없어요", "이 워크스페이스의 구성원을 찾을 수 없어요.");
     }
 
     private static ApiException accessDenied(String detail) {
-        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", detail);
+        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", detail);
     }
 
     private static ApiException memberManageForbidden(String title, String detail) {
