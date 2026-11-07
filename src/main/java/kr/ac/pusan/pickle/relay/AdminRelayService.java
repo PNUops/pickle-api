@@ -65,8 +65,8 @@ public class AdminRelayService {
     public RelayTokenResponse issueToken(AuthenticatedUser actor, UUID relayId, String ip) {
         Relay relay = relayRepository.findByPublicId(relayId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
-                        ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
-                        "해당 릴레이가 존재하지 않습니다."));
+                        ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요",
+                        "해당 릴레이를 찾을 수 없어요."));
         String token = RelayTokens.newToken();
         relay.setTokenHash(RelayTokens.sha256Hex(token));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),

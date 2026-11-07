@@ -314,9 +314,9 @@ public class NotificationComposer {
                     "/admin/network", event.defaultImportance(),
                     payload(args, "relayId", "relayName", "usagePercent"));
             case PORT_MAPPING_SUSPENDED -> new Composed(event.id(),
-                    "포트 포워딩 정지 — " + str(args, "vmName"),
+                    "포트포워딩 정지: " + str(args, "vmName"),
                     """
-                    VM '%s'의 포트 포워딩(%s %s)이 정지됐어요.
+                    VM '%s'의 포트포워딩(%s %s) 정지 요청을 접수했어요.
 
                     - 사유: %s
 
@@ -325,9 +325,9 @@ public class NotificationComposer {
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "vmName", "proto", "publicPort"));
             case PORT_MAPPING_DELETED -> new Composed(event.id(),
-                    "포트 포워딩 삭제 — " + str(args, "vmName"),
+                    "포트포워딩 삭제: " + str(args, "vmName"),
                     """
-                    관리자가 VM '%s'의 포트 포워딩(%s %s)을 삭제했어요. 외부 접속이 필요하면 포워딩을 다시 신청해 주세요.
+                    관리자가 VM '%s'의 포트포워딩(%s %s) 삭제를 요청했어요. 외부 접속이 필요하면 포트포워딩을 다시 만들어 주세요.
 
                     관리자에게 문의해 주세요.""".formatted(str(args, "vmName"),
                             str(args, "proto"), str(args, "publicPort")),

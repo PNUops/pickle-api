@@ -33,7 +33,7 @@ public class RelayMappingRetirementStore {
     @Transactional
     public ConsumerEpoch allocateEpoch(long relayId) {
         if (!properties.enabled()) {
-            throw unavailable("relay retirement producer가 비활성화되어 있습니다.");
+            throw unavailable("릴레이 retirement 기능이 꺼져 있어요.");
         }
         ConsumerEpoch epoch = jdbc.query("""
                 update relays
@@ -52,7 +52,7 @@ public class RelayMappingRetirementStore {
                 """, rs -> rs.next() ? new ConsumerEpoch(rs.getLong(1), rs.getLong(2)) : null,
                 relayId);
         if (epoch == null) {
-            throw unavailable("릴레이 retirement handshake가 신선하지 않거나 consumer ID/flow mark가 소진되었습니다.");
+            throw unavailable("최근 retirement handshake와 준비 상태, consumer ID와 flow mark 한도를 확인해 주세요.");
         }
         return epoch;
     }
@@ -62,7 +62,7 @@ public class RelayMappingRetirementStore {
         Long relayId = jdbc.query("select relay_id from port_mappings where id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, mappingId);
         if (relayId == null) {
-            throw unavailable("퇴역할 mapping을 찾을 수 없습니다.");
+            throw unavailable("정리 대상 매핑을 찾을 수 없어요.");
         }
         // Relay first, mapping second: create/retire/sync share this lock order.
         jdbc.queryForObject("select mapping_generation from relays where id = ? for update",
@@ -80,7 +80,7 @@ public class RelayMappingRetirementStore {
                         rs.getString(3), rs.getInt(4), rs.getString(5), rs.getInt(6),
                         rs.getLong(7), rs.getLong(8)) : null, mappingId);
         if (tuple == null) {
-            throw unavailable("퇴역할 mapping의 exact tuple을 확인할 수 없습니다.");
+            throw unavailable("정리 대상 매핑의 exact tuple을 확인할 수 없어요.");
         }
         Retirement existing = findByMappingEpoch(mappingId, tuple.consumerMappingId());
         if (existing != null) {
@@ -169,7 +169,7 @@ public class RelayMappingRetirementStore {
 
     private static ApiException unavailable(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.SOURCE_POLICY_UNAVAILABLE,
-                "릴레이 retirement을 적용할 수 없습니다", detail);
+                "릴레이 retirement을 적용할 수 없어요", detail);
     }
 
     private record Mapping(long relayId, long vmId, String proto, int publicPort,
