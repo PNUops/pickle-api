@@ -51,7 +51,7 @@ public class RelaySourceRestrictionFilter extends OncePerRequestFilter {
         if (restrictedSources.contains(request.getRemoteAddr())
                 && !isRelaySurface(request.getRequestURI())) {
             problemJsonWriter.write(request, response, HttpServletResponse.SC_FORBIDDEN,
-                    ErrorCodes.ACCESS_DENIED, "접근이 거부되었습니다", "허용되지 않은 접근입니다.");
+                    ErrorCodes.ACCESS_DENIED, "접근이 거부됐어요", "요청 경로와 접근 설정을 확인해 주세요.");
             return;
         }
         filterChain.doFilter(request, response);

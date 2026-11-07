@@ -138,7 +138,7 @@ public class PublicSourcePolicyService {
                 mapping.getId());
         if (stillPresent.isEmpty()) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없어요", "해당 포트 포워딩을 찾을 수 없어요.");
+                    "리소스를 찾을 수 없어요", "해당 포트포워딩을 찾을 수 없어요.");
         }
         Stored saved = store.replacePortMapping(mapping.getId(), expectedRevision, cidrs, actor.id());
         mapping.setLastChangeGeneration(generation);
@@ -166,7 +166,7 @@ public class PublicSourcePolicyService {
             }
             SourcePolicy policy = new SourcePolicy(blocks);
             if (!ipv6Supported && blocks.stream().anyMatch(CidrBlock::ipv6)) {
-                throw new IllegalArgumentException("포트 포워딩은 IPv4 출발지만 지원해요.");
+                throw new IllegalArgumentException("포트포워딩은 IPv4 출발지만 지원해요.");
             }
             return policy.cidrValues();
         } catch (IllegalArgumentException invalid) {

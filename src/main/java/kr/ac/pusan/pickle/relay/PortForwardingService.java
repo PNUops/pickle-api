@@ -153,26 +153,26 @@ public class PortForwardingService {
         long vmId = vm.getId();
         if (!settingsService.bool(SettingsService.PORT_FORWARDING_ENABLED, false)) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORT_FORWARDING_DISABLED,
-                    "포트 포워딩이 비활성화되어 있습니다",
-                    "현재 포트 포워딩 기능이 꺼져 있어 새로 만들 수 없습니다. 관리자에게 문의해 주세요.");
+                    "새 포트포워딩을 만들 수 없어요",
+                    "포트포워딩 기능이 꺼져 있어요. 관리자에게 문의해 주세요.");
         }
         if (request.targetPort() == GUEST_SSH_PORT) {
             throw guestSshPortRefused();
         }
         if (vm.getStatus() != VmStatus.RUNNING) {
-            throw invalidVmState("RUNNING 상태의 VM만 포트를 공개할 수 있습니다. (현재 상태 "
+            throw invalidVmState("RUNNING 상태의 VM만 포트를 공개할 수 있어요. (현재 상태 "
                     + vm.getStatus() + ")");
         }
         String targetAddr = ipAddressResolver.liveHostIp(vm.getIpAllocationId(), vmId);
         if (targetAddr == null) {
-            throw invalidVmState("VM에 사용 중인 IP가 없어 포트를 공개할 수 없습니다.");
+            throw invalidVmState("VM에 할당된 사용 가능한 IP를 확인할 수 없어요.");
         }
         rateLimitService.hitHourly(ALLOC_RATE_LIMIT_SCOPE, "user:" + actor.id(),
                 settingsService.integer(SettingsService.PORT_FORWARD_ALLOC_LIMIT_PER_HOUR, 20));
         Relay relay = relayRepository.findFirstByEnabledTrueOrderByIdAsc()
                 .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT,
-                        ErrorCodes.PORT_FORWARDING_DISABLED, "포트 포워딩이 비활성화되어 있습니다",
-                        "사용 가능한 릴레이가 없습니다. 관리자에게 문의해 주세요."));
+                        ErrorCodes.PORT_FORWARDING_DISABLED, "새 포트포워딩을 만들 수 없어요",
+                        "사용 가능한 릴레이가 없어요. 관리자에게 문의해 주세요."));
 
         // Bump FIRST: row-locks the relay until commit, so concurrent creates
         // (and deletes) of this relay serialize — the not-exists check inside
@@ -228,7 +228,7 @@ public class PortForwardingService {
                 Map.of("mappingId", mapping.getPublicId(), "relayId", auditIds.relay(mapping.getRelayId()),
                         "proto", mapping.getProto().name(),
                         "publicPort", mapping.getPublicPort()), ip);
-        return new MessageResponse("포트 포워딩 삭제를 접수했습니다. 잠시 후 릴레이에서 제거됩니다.");
+        return new MessageResponse("포트포워딩 삭제 요청을 접수했어요.");
     }
 
     // ── allocation ───────────────────────────────────────────────────────────
@@ -285,8 +285,8 @@ public class PortForwardingService {
             }
         }
         throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PUBLIC_PORT_EXHAUSTED,
-                "할당 가능한 공개 포트가 없습니다",
-                "릴레이의 공개 포트 대역이 모두 사용 중입니다. 관리자에게 문의해 주세요.");
+                "할당할 수 있는 공개 포트가 없어요",
+                "릴레이의 공개 포트 대역에 빈자리가 없어요. 관리자에게 문의해 주세요.");
     }
 
     /** Band-usage threshold alert, deduped per 5%-bucket per relay. */
@@ -369,8 +369,8 @@ public class PortForwardingService {
 
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, UUID vmId) {
         return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
-                "포트 포워딩을 관리할 권한이 없습니다",
-                "이 VM의 소유자 또는 편집자만 포트포워딩을 설정할 수 있습니다.");
+                "포트포워딩을 관리할 권한이 없어요",
+                "이 VM의 소유자나 편집자만 포트포워딩을 설정할 수 있어요.");
     }
 
     /**
@@ -381,20 +381,20 @@ public class PortForwardingService {
      */
     private static ApiException guestSshPortRefused() {
         return new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.VALIDATION_FAILED,
-                "입력값이 올바르지 않습니다",
-                "SSH 포트(22)는 공개 대상으로 지정할 수 없습니다. VM 접속은 SSH 게이트웨이를 이용해 주세요.",
+                "입력값이 올바르지 않아요",
+                "SSH 포트(22)는 공개 대상으로 지정할 수 없어요. VM 접속은 SSH 게이트웨이를 이용해 주세요.",
                 List.of(new FieldValidationError("targetPort",
-                        "22번 포트는 공개할 수 없습니다")), null);
+                        "22번 포트는 공개할 수 없어요")), null);
     }
 
     private static ApiException invalidVmState(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                "현재 상태에서는 포트를 공개할 수 없습니다", detail);
+                "현재 상태에서는 포트를 공개할 수 없어요", detail);
     }
 
     private static ApiException mappingNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 포트 포워딩이 존재하지 않습니다.");
+                "리소스를 찾을 수 없어요", "해당 포트포워딩을 찾을 수 없어요.");
     }
 
     private PortMapping requireMapping(long vmId, UUID mappingId) {
