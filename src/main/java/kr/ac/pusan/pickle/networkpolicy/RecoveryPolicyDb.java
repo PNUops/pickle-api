@@ -399,7 +399,7 @@ public class RecoveryPolicyDb {
         try (PreparedStatement statement = connection.prepareStatement("""
                 update vm_network_policies
                    set apply_state = ?::vm_network_policy_apply_state,
-                       last_error = '복구 정책 적용을 확인할 수 없습니다.', updated_at = now()
+                       last_error = '복구 정책 적용을 확인할 수 없어요.', updated_at = now()
                  where vm_id = ? and revision = ? and desired_generation = ?
                    and desired_hash = ? and apply_state = ?::vm_network_policy_apply_state
                    and applied_generation = ? and applied_hash = ?

@@ -30,7 +30,7 @@ public class OrgAccountStatusChanges {
         for (Long orgId : jdbc.queryForList("select org_id from user_org_roles where user_id=?", Long.class, userId)) {
             if (staffing.staffing(orgId, null).losesLastStaff(staffing.staffing(orgId, account))) {
                 throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ORG_STAFF_VACANCY, "기관 업무를 먼저 이전해 주세요",
-                        "탈퇴하면 마지막 활성 FULL 담당자 또는 신청 결정 담당자가 없어집니다. 기관 업무를 이전한 뒤 탈퇴해 주세요.");
+                        "탈퇴하면 마지막 활성 FULL 담당자 또는 신청 결정 담당자가 없어져요. 기관 업무를 이전한 뒤 탈퇴해 주세요.");
             }
         }
     }

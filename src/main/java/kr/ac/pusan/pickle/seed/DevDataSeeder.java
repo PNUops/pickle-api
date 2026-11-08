@@ -148,61 +148,61 @@ public class DevDataSeeder implements ApplicationRunner {
             return;
         }
         setting("allowed_root_domains", "[\"" + inventory.rootDomain() + "\"]",
-                "VM 신청에서 선택할 수 있는 루트 도메인 목록.");
+                "허용된 루트 도메인 목록");
         setting("reserved_subdomains",
                 "[\"www\",\"api\",\"admin\",\"ssh\",\"mail\",\"console\",\"staging\"]",
                 "신청할 수 없는 예약 서브도메인 목록.");
         setting("profanity_subdomains",
                 "[\"fuck\",\"shit\",\"porn\",\"sex\",\"admin-official\",\"pnu-official\"]",
-                "서브도메인 금칙어(욕설·사칭) 목록. 관리자가 확장할 수 있습니다.");
+                "욕설이나 사칭을 막는 서브도메인 금칙어 목록이에요. 시스템 관리자가 추가할 수 있어요.");
         setting("vcpu_overcommit_warn", "3.0",
-                "승인 화면 경고 임계값 — 할당 vCPU / 물리 스레드 비율.");
+                "승인 화면의 할당 vCPU / 물리 스레드 비율 경고 임계값");
         setting("memory_usage_warn", "0.8",
-                "승인 화면 경고 임계값 — 할당 메모리 / 물리 메모리 비율.");
+                "승인 화면의 할당 메모리 / 물리 메모리 비율 경고 임계값");
         setting("ip_quarantine_hours", "24",
-                "회수된 IP를 재할당하지 않고 격리하는 시간(시간). 릴레이 에이전트가 보관된 스냅샷을"
-                        + " 재적용할 수 있는 기간(24시간)보다 짧게 설정할 수 없습니다.");
-        setting("gpu_unattached_review_hours", "12", "GPU 미연결 검토 기준 시간. 저장한 값은 다음 검토 실행에서 읽습니다.");
+                "회수한 IP를 재할당하지 않는 격리 시간이에요(시간). 릴레이 에이전트가 보관한 스냅샷을"
+                        + " 다시 적용할 수 있는 기간(24시간)보다 짧게 설정할 수 없어요.");
+        setting("gpu_unattached_review_hours", "12", "GPU 미연결 검토 기준 시간이에요. 저장한 값은 다음 검토 실행부터 사용해요.");
         setting("gpu_low_util_window_hours", "12", "GPU 저사용 평균을 계산하는 시간 범위.");
-        setting("gpu_low_util_threshold_percent", "5", "GPU 저사용 검토 기준 이용률(%). 자동 회수하지 않습니다.");
+        setting("gpu_low_util_threshold_percent", "5", "GPU 저사용 검토 기준 이용률이에요(%). 이 기준만으로 자동 회수하지 않아요.");
         setting("gpu_low_util_snooze_hours", "12", "GPU 유지 결정 후 재검토를 유예할 시간.");
-        setting("gpu_lease_notice_hours", "[24,1]", "GPU 임대 종료까지 남은 시간 기준 알림 단계. 승인한 임대보다 짧은 단계만 보냅니다.");
+        setting("gpu_lease_notice_hours", "[24,1]", "GPU 임대 종료까지 남은 시간의 알림 단계예요. 승인한 임대보다 짧은 단계만 보내요.");
         setting("vm_delete_grace_hours", "168",
-                "본인 삭제 접수 후 파기까지의 유예 시간(시간). 유예는 관리자 복구용 안전망.");
+                "본인 삭제 요청의 파기 유예 시간이에요(시간). 관리자만 유예 기간 안에 취소할 수 있어요.");
         setting("ssh_gateway_enabled", "false",
-                "SSH 게이트웨이 전체 활성화 (킬 스위치). false면 모든 SSH 접속이 차단됩니다.");
+                "SSH 게이트웨이의 전역 스위치예요. false면 새 게이트웨이 접속을 차단하며 기존 SSH 연결은 종료하지 않아요.");
         setting("web_terminal_enabled", "false",
-                "웹 터미널(브라우저 xterm.js) 전역 킬 스위치. false면 티켓 발급·재교환이 모두 거부되고,"
-                        + " 진행 중이던 세션은 다음 60초 재검증에서 종료됩니다."
-                        + " 우선순위: 킬 스위치 > per-VM 차단 > 멤버십.");
+                "웹 터미널(브라우저 xterm.js)의 전역 스위치예요. false면 새 티켓 발급과 재교환을 거절해요."
+                        + " 열린 세션도 다음 정상 권한 재확인에서 닫혀요. 기본 확인 주기는 60초이며 통신 실패로 늦어질 수 있어요."
+                        + " VM별 차단과 접근 권한도 별도로 확인하며 VM 설정으로 전역 차단을 우회할 수 없어요.");
         setting("notification_retention_days", "365",
-                "알림 보관 기간(일). 기간이 지난 알림은 정리 작업이 삭제합니다. (30~3650)");
+                "알림 보관 기간이에요(일). 기간이 지난 알림은 정리 작업에서 삭제해요(30~3650).");
         setting("vm_expiry_notice_days", "[14,7,1]",
                 "VM 사용 종료 사전 알림 시점(D-일). 내림차순 단계 최대 5개, 각 1~90."
-                        + " D-1 알림은 HIGH 중요도로 표시됩니다.");
+                        + " D-1 알림은 HIGH 중요도로 표시해요.");
         setting("vm_expiry_autostop_enabled", "true",
-                "사용 기간(end_date, 포함)이 지난 VM을 매시간 자동 정지할지 여부."
-                        + " 끄면 예고 알림만 발송됩니다.");
+                "사용 기간(end_date, 포함)이 지난 VM의 매시간 자동 종료 요청을 정하는 스위치예요."
+                        + " 끄면 자동 종료를 요청하지 않고 예고 알림만 처리해요.");
         setting("maintenance_mode", "false",
-                "점검 모드. true면 관리자 계층이 아닌 모든 인증 요청이 503(MAINTENANCE_MODE)으로"
-                        + " 거부됩니다. 변경은 15초 이내 반영.");
+                "점검 모드예요. true면 관리자 계층을 제외한 요청을 503(MAINTENANCE_MODE)으로"
+                        + " 거절하며 로그인 등 예외 경로는 유지해요. 상태 캐시의 유효시간은 15초이며 이미 처리 중인 요청은 중단하지 않아요.");
         setting("maintenance_message", "\"\"",
-                "점검 모드 안내 문구. 비우면 기본 안내 문구를 사용합니다.");
+                "점검 모드 안내예요. 비우면 기본 안내를 사용해요.");
         setting("banner_message", "\"\"",
-                "전역 공지 배너 문구(점검 모드와 독립 — 콘솔 상단 배너). 비우면 배너를 표시하지 않습니다.");
+                "점검 모드와 별개인 콘솔 상단 공지 배너예요. 비우면 배너를 표시하지 않아요.");
         setting("contact_email", "\"\"",
-                "운영 문의 이메일(콘솔 푸터·점검·오류 화면에 표시). 비우면 표시하지 않습니다.");
+                "운영 문의 이메일이에요. 콘솔 푸터와 점검 화면, 오류 화면에 표시하며 비우면 숨겨요.");
         setting("port_forwarding_enabled", "false",
-                "포트 포워딩(릴레이 공개 포트) 기능 스위치. false면 신규 생성이 차단됩니다"
-                        + " (기존 매핑은 유지).");
+                "포트포워딩(릴레이 공개 포트)의 신규 생성 스위치예요. false면 새 매핑 생성을 차단해요."
+                        + " 기존 매핑은 유지해요.");
         setting("port_forward_alloc_limit_per_hour", "20",
-                "사용자별 포트 포워딩 생성 허용 횟수(시간당).");
+                "사용자별 포트포워딩 생성 허용 횟수(시간당)");
         setting("port_forward_band_alert_percent", "80",
-                "릴레이 공개 포트 대역 사용률 경고 임계값(%). 도달 시 시스템 관리자에게 알림을 보냅니다.");
+                "릴레이 공개 포트 대역 사용률 경고 임계값이에요(%). 도달하면 시스템 관리자에게 알림을 접수해요.");
         setting("port_forward_suspend_conns_per_min", "6000",
-                "매핑별 분당 신규 연결 수 자동 정지 임계값. 초과 시 해당 매핑을 자동 SUSPENDED 처리합니다.");
+                "매핑별 분당 새 연결 수의 자동 정지 임계값이에요. 초과하면 ACTIVE 매핑을 SUSPENDED로 바꿔요.");
         setting("port_forward_suspend_mbytes_per_min", "1000",
-                "매핑별 분당 전송량(MB) 자동 정지 임계값. 초과 시 해당 매핑을 자동 SUSPENDED 처리합니다.");
+                "매핑별 분당 전송량(MiB)의 자동 정지 임계값이에요. 초과하면 ACTIVE 매핑을 SUSPENDED로 바꿔요.");
         log.info("Empty settings: seeded the development settings");
     }
 
@@ -397,9 +397,9 @@ public class DevDataSeeder implements ApplicationRunner {
         jdbcTemplate.update("insert into vm_flavors (name, display_name, vcpu, memory_mb,"
                 + " disk_gb, display_order, notes) values"
                 + " ('highcpu', '컴퓨팅 최적화', 2, 1024, 32, 1,"
-                + " '연산을 많이 쓰는 작업에 맞습니다.'),"
+                + " '연산이 많은 작업에 맞아요.'),"
                 + " ('highmem', '메모리 최적화', 1, 2048, 32, 2,"
-                + " '메모리를 많이 쓰는 작업에 맞습니다.')");
+                + " '메모리를 많이 쓰는 작업에 맞아요.')");
         log.info("Empty inventory: seeded the development specs");
     }
 

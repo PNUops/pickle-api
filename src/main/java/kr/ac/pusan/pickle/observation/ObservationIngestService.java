@@ -61,7 +61,7 @@ public class ObservationIngestService {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
         catch (NoSuchAlgorithmException e) { throw new IllegalStateException("SHA-256 is unavailable", e); }
     }
-    private static ApiException conflict() { return new ApiException(HttpStatus.CONFLICT, "INFERENCE_OBSERVATION_CONFLICT", "관측 표본이 충돌합니다", "동일 표본 identity와 분의 원문을 확인해 주세요."); }
-    private static ApiException forbidden() { return new ApiException(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "접근 권한이 없습니다", "허용된 관측 보고 원천이 아닙니다."); }
+    private static ApiException conflict() { return new ApiException(HttpStatus.CONFLICT, "INFERENCE_OBSERVATION_CONFLICT", "관측 표본이 충돌해요", "표본 식별값과 분 단위 시각, 원문을 확인해 주세요."); }
+    private static ApiException forbidden() { return new ApiException(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "접근 권한이 없어요", "허용된 관측 보고 원천이 아니에요."); }
     private static ApiException unavailable() { return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "INFERENCE_OBSERVATION_UNAVAILABLE", "관측 보고 설정을 확인해 주세요", "서버의 고정 공급원 연결을 확인해 주세요."); }
 }

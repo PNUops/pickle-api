@@ -343,7 +343,7 @@ public class ProxmoxClient {
 
     private static void requireRulePosition(int position) {
         if (position < 0) {
-            throw new IllegalArgumentException("방화벽 규칙 위치가 올바르지 않습니다.");
+            throw new IllegalArgumentException("방화벽 규칙 위치가 올바르지 않아요.");
         }
     }
 

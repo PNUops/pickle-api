@@ -43,7 +43,7 @@ public final class TxtValues {
     public static String encode(String value) {
         int size = octets(value);
         if (size > MAX_OCTETS) {
-            throw new DnsProviderException("TXT 값이 " + MAX_OCTETS + "옥텟을 넘습니다(" + size + ").");
+            throw new DnsProviderException("TXT 값이 " + MAX_OCTETS + "옥텟을 넘어요(" + size + ").");
         }
         StringBuilder out = new StringBuilder(value.length() + 2).append('"');
         for (int i = 0; i < value.length(); i++) {

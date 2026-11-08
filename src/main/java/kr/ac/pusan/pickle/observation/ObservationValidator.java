@@ -195,7 +195,7 @@ public class ObservationValidator {
     }
     private static UUID uuid(JsonNode value) { String text = text(value); UUID id = UUID.fromString(text); require(id.toString().equals(text)); return id; }
     static void require(boolean condition) { if (!condition) throw invalid(); }
-    static ApiException invalid() { return ApiException.validationFailed(List.of(new FieldValidationError("sample", "관측 표본의 형식과 범위가 올바르지 않습니다."))); }
+    static ApiException invalid() { return ApiException.validationFailed(List.of(new FieldValidationError("sample", "관측 표본의 형식과 범위를 확인해 주세요."))); }
     private static Map<String, Definition> definitions() {
         Map<String, Definition> result = new LinkedHashMap<>();
         for (String name : List.of("num_requests_running", "num_requests_waiting")) result.put("vllm:" + name, new Definition("gauges", "requests", Set.of()));

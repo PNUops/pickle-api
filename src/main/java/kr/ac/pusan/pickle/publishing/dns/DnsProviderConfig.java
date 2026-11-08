@@ -33,16 +33,16 @@ public class DnsProviderConfig {
                 // default already avoids it; this stops an explicit setting
                 // from reaching production, which the default cannot.
                 if (environment.matchesProfiles("prod")) {
-                    yield unconfigured("DNS 레코드 제공자로 noop 은 운영 프로파일에서 쓸 수 없습니다 "
-                            + "(레코드를 쓰지 않으면서 성공으로 기록합니다)");
+                    yield unconfigured("DNS 레코드 제공자 noop은 운영 프로파일에서 사용할 수 없어요 "
+                            + "(레코드를 쓰지 않고 성공으로 기록해요)");
                 }
                 log.info("dns provider: noop (records are accepted and never written)");
                 yield new NoopDnsRecordProvider();
             }
             case DnsProperties.PROVIDER_GOOGLE -> google(properties);
             case DnsProperties.PROVIDER_NONE -> unconfigured(
-                    "DNS 레코드 제공자가 설정되어 있지 않습니다 (PICKLE_DNS_PROVIDER=none)");
-            default -> unconfigured("알 수 없는 DNS 레코드 제공자입니다: "
+                    "DNS 레코드 제공자가 설정되지 않았어요 (PICKLE_DNS_PROVIDER=none)");
+            default -> unconfigured("알 수 없는 DNS 레코드 제공자예요: "
                     + properties.provider());
         };
     }
@@ -50,7 +50,7 @@ public class DnsProviderConfig {
     private DnsRecordProvider google(DnsProperties properties) {
         DnsProperties.Google google = properties.google();
         if (!google.complete()) {
-            return unconfigured("Google Cloud DNS 설정이 비어 있습니다 "
+            return unconfigured("Google Cloud DNS 설정이 비어 있어요 "
                     + "(PICKLE_DNS_GOOGLE_PROJECT, PICKLE_DNS_GOOGLE_ZONE)");
         }
         RestClient restClient = restClient(properties);
@@ -58,7 +58,7 @@ public class DnsProviderConfig {
         try {
             tokens = GoogleServiceAccountTokens.load(Path.of(google.credentials()), restClient);
         } catch (DnsProviderException e) {
-            return unconfigured("Google Cloud DNS 서비스 계정 키를 읽을 수 없습니다: " + e.getMessage());
+            return unconfigured("Google Cloud DNS 서비스 계정 키를 읽을 수 없어요: " + e.getMessage());
         }
         log.info("dns provider: google (project {}, zone {}, account {})", google.project(),
                 google.zone(), tokens.clientEmail());
