@@ -42,10 +42,10 @@ public class GpuController {
     public GpuAllocationView getGpuAllocation(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID allocationId) { return query.get(actor, allocationId); }
     @GetMapping("/gpu-allocations/{allocationId}/attachment-options") @Operation(summary = "GPU에 연결할 가상머신")
     public List<GpuAttachmentOption> listGpuAttachmentOptions(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID allocationId) { return mutations.options(actor, allocationId); }
-    @PostMapping("/gpu-allocations/{allocationId}/attach") @Operation(summary = "가상머신에 GPU 연결", description = "가상머신 중단에 동의한 뒤 연결합니다. 임대는 이미 시작되어 있으며 연결 실패로 초기화되지 않습니다.")
+    @PostMapping("/gpu-allocations/{allocationId}/attach") @Operation(summary = "가상머신에 GPU 연결", description = "가상머신 중단에 동의한 뒤 연결해요. 임대는 이미 시작됐으며 연결 실패로 초기화되지 않아요.")
     public GpuAllocationView attachGpu(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID allocationId,
             @Valid @RequestBody AttachGpuRequest request, HttpServletRequest http) { return mutations.attach(actor, allocationId, request.vmId(), clientIp(http)); }
-    @PostMapping("/gpu-allocations/{allocationId}/detach") @Operation(summary = "GPU 연결 해제", description = "연결만 해제하며 GPU 점유와 임대 기간은 유지합니다.")
+    @PostMapping("/gpu-allocations/{allocationId}/detach") @Operation(summary = "GPU 연결 해제", description = "연결만 해제하며 GPU 점유와 임대 기간은 유지해요.")
     public GpuAllocationView detachGpu(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID allocationId,
             @Valid @RequestBody ConfirmGpuActionRequest request, HttpServletRequest http) { return mutations.detach(actor, allocationId, clientIp(http)); }
     @PostMapping("/gpu-allocations/{allocationId}/release") @Operation(summary = "GPU 반납")

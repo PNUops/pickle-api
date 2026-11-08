@@ -14,10 +14,10 @@ public record VmGrantedSpecResponse(
         Integer grantedMemoryMb,
         Integer grantedDiskGb,
         UUID grantedImageId,
-        @Schema(description = "승인된 OS 이미지의 표시 이름. 카탈로그에서 내려간 이미지도 이름이 남습니다.")
+        @Schema(description = "승인된 OS 이미지의 표시 이름이에요. 카탈로그에서 내려간 이미지의 이름도 제공해요.")
         String grantedImageName,
         @Nullable UUID nodeId,
         @Nullable
-        @Schema(description = "배치된 노드의 이름. nodeId가 있을 때 함께 있습니다.")
+        @Schema(description = "배치된 노드의 이름이에요. nodeId가 있을 때 함께 있어요.")
         String nodeName) {
 }

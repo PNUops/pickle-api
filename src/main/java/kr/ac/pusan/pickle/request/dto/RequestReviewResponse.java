@@ -15,10 +15,10 @@ import org.jspecify.annotations.Nullable;
  * request's per-type member, since only the period is common to every type.
  */
 public record RequestReviewResponse(
-        @Schema(description = "결재한 사람. 자동 승인이거나 계정 행이 사라진 경우 null입니다.")
+        @Schema(description = "결재한 사람이에요. 자동 승인이거나 계정 행이 사라졌으면 null이에요.")
         @Nullable UUID reviewerId,
-        @Schema(description = "결재자 이름. 자동 승인이면 「자동 승인」, 계정 행이 사라졌으면 "
-                + "「탈퇴 회원」입니다. 두 경우 모두 reviewerId가 null이므로 이 값으로 가릅니다.")
+        @Schema(description = "결재자 이름이에요. 자동 승인이면 「자동 승인」, 계정 행이 사라졌으면 "
+                + "「탈퇴 회원」이에요. 두 경우 모두 reviewerId가 null이므로 이 이름으로 구분해요.")
         String reviewerName,
         ReviewDecision decision,
         @Nullable String comment,

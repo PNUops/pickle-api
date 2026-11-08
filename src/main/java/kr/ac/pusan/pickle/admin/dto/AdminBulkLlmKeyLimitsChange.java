@@ -83,7 +83,7 @@ public class AdminBulkLlmKeyLimitsChange {
     @Valid
     private @Nullable AdminBulkListChange passthroughEndpoints;
 
-    @Schema(nullable = true, description = "분당 요청 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다.")
+    @Schema(nullable = true, description = "분당 요청 한도예요. 생략하면 유지하고 null이면 서비스 기본값을 따라요.")
     public @Nullable Integer getRpm() {
         return rpm;
     }
@@ -93,7 +93,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.rpmSet = true;
     }
 
-    @Schema(nullable = true, description = "분당 토큰 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다.")
+    @Schema(nullable = true, description = "분당 토큰 한도예요. 생략하면 유지하고 null이면 서비스 기본값을 따라요.")
     public @Nullable Integer getTpm() {
         return tpm;
     }
@@ -103,7 +103,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.tpmSet = true;
     }
 
-    @Schema(nullable = true, description = "동시 요청 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다.")
+    @Schema(nullable = true, description = "동시 요청 한도예요. 생략하면 유지하고 null이면 서비스 기본값을 따라요.")
     public @Nullable Integer getConcurrency() {
         return concurrency;
     }
@@ -113,7 +113,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.concurrencySet = true;
     }
 
-    @Schema(nullable = true, description = "일일 토큰 한도. 생략하면 그대로 두고, null이면 무제한이며 0이면 토큰 축을 닫습니다.")
+    @Schema(nullable = true, description = "일일 토큰 한도예요. 생략하면 유지하고 null이면 무제한이며 0이면 토큰 축을 닫아요.")
     public @Nullable Long getDailyTokens() {
         return dailyTokens;
     }
@@ -123,7 +123,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.dailyTokensSet = true;
     }
 
-    @Schema(description = "금액 한도(USD 크레딧). 생략하면 그대로 둡니다. null은 허용하지 않고, 유료 모델을 닫으려면 0을 보냅니다.")
+    @Schema(description = "금액 한도예요(USD 크레딧). 생략하면 유지해요. null은 허용하지 않으며 유료 모델을 닫으려면 0을 보내요.")
     public @Nullable BigDecimal getCreditLimit() {
         return creditLimit;
     }
@@ -133,7 +133,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.creditLimitSet = true;
     }
 
-    @Schema(nullable = true, description = "금액 한도 리셋 창. 생략하면 그대로 두고, null이면 리셋 없는 총액 상한입니다.")
+    @Schema(nullable = true, description = "금액 한도 리셋 창이에요. 생략하면 유지하고 null이면 리셋 없는 총액 상한이에요.")
     public @Nullable CreditLimitReset getCreditLimitReset() {
         return creditLimitReset;
     }
@@ -143,7 +143,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.creditLimitResetSet = true;
     }
 
-    @Schema(description = "유료 모델 허용 목록에 적용할 변경. 생략하면 그대로 둡니다.")
+    @Schema(description = "유료 모델 허용 목록에 적용할 변경이며 생략하면 유지해요.")
     public @Nullable AdminBulkListChange getCreditAllowedModels() {
         return creditAllowedModels;
     }
@@ -152,7 +152,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.creditAllowedModels = creditAllowedModels;
     }
 
-    @Schema(description = "유료 모델 차단 목록에 적용할 변경. 생략하면 그대로 둡니다.")
+    @Schema(description = "유료 모델 차단 목록에 적용할 변경이며 생략하면 유지해요.")
     public @Nullable AdminBulkListChange getCreditDeniedModels() {
         return creditDeniedModels;
     }
@@ -161,7 +161,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.creditDeniedModels = creditDeniedModels;
     }
 
-    @Schema(description = "기능 권한 목록에 적용할 변경. 생략하면 그대로 둡니다. 현재 변경 요청에는 chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions를 지정할 수 있습니다. 결과 목록의 web_search와 pdf_ocr는 chat과 함께 부여해야 합니다.")
+    @Schema(description = "기능 권한 목록에 적용할 변경이며 생략하면 유지해요. 현재 변경 요청에는 chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions를 지정할 수 있어요. 결과 목록에 web_search나 pdf_ocr가 있으면 chat도 함께 있어야 해요.")
     public @Nullable AdminBulkListChange getPassthroughEndpoints() {
         return passthroughEndpoints;
     }

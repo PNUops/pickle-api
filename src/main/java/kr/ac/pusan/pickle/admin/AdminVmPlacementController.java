@@ -41,9 +41,9 @@ public class AdminVmPlacementController {
 
     @PostMapping("/preview")
     @Operation(summary = "제안 VM 사양의 현재 한 VM 배치 조건 조회",
-            description = "신청 저장 전과 승인 검토에서 같은 이미지 revision과 한 VM 사양을 조회합니다. "
-                    + "호환 ACTIVE replica와 ACTIVE 노드, 실제 배치 용량 계산을 재사용합니다. "
-                    + "용량을 예약하거나 승인 규칙을 바꾸지 않으며 다인 전체 생성이나 외부 적용 완료를 보장하지 않습니다.")
+            description = "신청 저장 전과 승인 검토에서 같은 이미지 revision과 VM 한 대의 사양을 조회해요. "
+                    + "호환 ACTIVE replica와 ACTIVE 노드, 실제 배치 용량 계산을 재사용해요. "
+                    + "용량을 예약하거나 승인 규칙을 바꾸지 않으며 여러 사람의 전체 생성이나 외부 적용 완료를 보장하지 않아요.")
     @Transactional(readOnly = true)
     public AdminVmPlacementPreviewResponse previewAdminVmPlacement(@AuthenticationPrincipal AuthenticatedUser actor,
             @Valid @RequestBody AdminVmPlacementPreviewRequest request) {

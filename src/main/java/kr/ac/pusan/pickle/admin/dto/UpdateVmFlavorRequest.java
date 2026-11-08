@@ -32,6 +32,6 @@ public record UpdateVmFlavorRequest(
         @Schema(description = "ACTIVE = 신청 화면에 노출, DISABLED = 은퇴 (기존 신청과 VM 무영향)")
         @Nullable CatalogStatus status,
 
-        @Schema(description = "신청 화면에서의 표시 순서. 값이 같으면 먼저 만든 것이 앞에 옵니다.")
+        @Schema(description = "신청 화면의 표시 순서예요. 값이 같으면 먼저 만든 항목이 앞에 와요.")
         @Nullable Integer displayOrder) {
 }

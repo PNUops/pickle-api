@@ -14,11 +14,11 @@ public record AdminDomainRootView(
         @Schema(description = "이 루트 아래 이름이 속하는 기관")
         UUID orgId,
         String orgName,
-        @Schema(description = "true면 이 루트 아래 이름 신청이 접수와 동시에 승인됩니다. "
-                + "false면 승인 큐를 탑니다. **지금 이 값이 다스리는 것은 외부 도메인 발급뿐이고 "
-                + "가상머신 서브도메인 공개는 아직 아닙니다.**")
+        @Schema(description = "true면 이 루트 아래 이름 신청이 접수와 동시에 승인돼요. "
+                + "false면 승인이 필요해요. 이 정책은 외부 도메인 발급에만 적용하고 "
+                + "VM 서브도메인 공개에는 적용하지 않아요.")
         boolean autoApprove,
-        @Schema(description = "이 루트 아래 지금 서 있는 외부 도메인 수")
+        @Schema(description = "이 루트 아래 남아 있는 외부 도메인 수")
         @Nullable Long issuedNames,
         boolean metadataVisible,
         java.util.Set<String> allowedWorkIds) {

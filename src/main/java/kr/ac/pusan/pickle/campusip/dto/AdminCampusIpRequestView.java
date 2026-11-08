@@ -18,10 +18,10 @@ public record AdminCampusIpRequestView(
         @Schema(description = "사용할 포트 번호 목록")
         List<Integer> ports,
         @Schema(description = "신청 상태 (REQUESTED = 신청, APPROVED = 관리자 승인, "
-                + "GRANTED = 교내 IP 연결 완료, REJECTED = 반려, REVOKED = 회수)")
+                + "GRANTED = 교내 IP 주소 등록, REJECTED = 반려, REVOKED = 회수)")
         CampusIpRequestStatus status,
         @Nullable
-        @Schema(description = "연결된 교내 IP 주소 (10.0.0.0/8)")
+        @Schema(description = "등록한 교내 IP 주소 (10.0.0.0/8)")
         String grantedAddress,
         @Nullable String adminNote,
         UUID requestedBy,

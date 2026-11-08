@@ -31,34 +31,34 @@ public record LlmKeyDetailResponse(
         @Schema(description = "용도")
         @Nullable String purpose,
         LlmApiKeyStatus status,
-        @Schema(description = "평문 앞부분 — 두 키를 구별하기 위한 값입니다. 아직 발급 전이면 null입니다.")
+        @Schema(description = "두 키를 구별하는 평문 앞부분이에요. 아직 발급 전이면 null이에요.")
         @Nullable String tokenPrefix,
-        @Schema(description = "만료 시각. null이면 만료가 없습니다.")
+        @Schema(description = "만료 시각이며, null이면 만료가 없어요.")
         @Nullable Instant expiresAt,
-        @Schema(description = "마지막 사용 시각. 게이트웨이가 배치로 보고하므로 지연될 수 있습니다.")
+        @Schema(description = "마지막 사용 시각이에요. Gateway가 배치로 보고하므로 지연될 수 있어요.")
         @Nullable Instant lastUsedAt,
-        @Schema(description = "분당 요청 한도. null이면 게이트웨이 기본값을 따릅니다.")
+        @Schema(description = "분당 요청 한도이며, null이면 Gateway 기본값을 따라요.")
         @Nullable Integer rpm,
-        @Schema(description = "분당 토큰 한도. null이면 게이트웨이 기본값을 따릅니다.")
+        @Schema(description = "분당 토큰 한도이며, null이면 Gateway 기본값을 따라요.")
         @Nullable Integer tpm,
-        @Schema(description = "동시 요청 한도. null이면 게이트웨이 기본값을 따릅니다.")
+        @Schema(description = "동시 요청 한도이며, null이면 Gateway 기본값을 따라요.")
         @Nullable Integer concurrency,
-        @Schema(description = "일일 토큰 한도. null이면 일일 한도가 없고, 0이면 자체 서빙 모델을 쓸 수 없습니다.")
+        @Schema(description = "일일 토큰 한도이며, null이면 일일 한도가 없고 0이면 자체 서빙 모델을 쓸 수 없어요.")
         @Nullable Long dailyTokens,
-        @Schema(description = "프롬프트·응답 본문 기록 여부")
+        @Schema(description = "프롬프트와 응답 본문 기록 설정")
         boolean recordBodies,
-        @Schema(description = "유료 모델 한도, USD 크레딧. 0이면 유료 모델을 쓸 수 없습니다.")
+        @Schema(description = "유료 모델의 금액 한도예요(USD 크레딧). 0이면 유료 모델을 쓸 수 없어요.")
         BigDecimal creditLimit,
-        @Schema(description = "금액 한도 리셋 창. null이면 리셋 없는 총액 상한입니다. 창은 UTC 자정 기준입니다.")
+        @Schema(description = "금액 한도 리셋 창이에요. null이면 리셋 없는 총액 상한이며, 리셋 창은 UTC 자정을 기준으로 해요.")
         @Nullable CreditLimitReset creditLimitReset,
-        @Schema(description = "유료 모델 사용 가능 여부. 금액 한도가 부여됐지만 아직 연결 전이면 false입니다.")
+        @Schema(description = "유료 모델 연결 상태예요. 금액 한도를 부여해도 아직 키 연결 전이면 false예요.")
         boolean creditAxisConnected,
-        @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 빈 배열이면 제한이 "
-                + "없습니다. 자체 서빙 모델은 이 목록과 무관하게 쓸 수 있습니다."
+        @Schema(description = "이 키의 유료 모델 허용 목록이에요. 빈 배열이면 이 목록으로 제한하지 않아요. "
+                + "자체 서빙 모델에는 적용하지 않아요."
                 + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
         List<String> creditAllowedModels,
-        @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 빈 배열이면 차단이 "
-                + "없습니다. 허용 목록과 함께 걸리면 차단이 이깁니다."
+        @Schema(description = "이 키의 유료 모델 차단 목록이에요. "
+                + "빈 배열이면 이 목록으로 차단하지 않아요. 허용 목록과 겹치면 차단을 적용해요."
                 + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         List<String> creditDeniedModels,
         @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
@@ -68,15 +68,15 @@ public record LlmKeyDetailResponse(
                 PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
                 PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
                 PassthroughEndpoints.FILES}),
-                arraySchema = @Schema(description = "이 키에 부여된 기능 권한. 빈 배열이면 "
-                        + "기능을 하나도 쓸 수 없습니다(chat 포함). 모델 목록 둘과 반대로 이 목록은 "
-                        + "채워야 열립니다. 모델 조회는 이 목록과 무관합니다."))
+                arraySchema = @Schema(description = "이 키에 부여된 기능 권한이에요. "
+                        + "빈 배열이면 chat을 포함해 어떤 기능도 쓸 수 없어요. "
+                        + "모델 조회에는 이 목록을 적용하지 않아요."))
         List<String> passthroughEndpoints,
-        @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
+        @Schema(description = "소유 워크스페이스이며, 해당 행이 사라진 경우에만 null이에요.")
         @Nullable UUID workspaceId,
         String workspaceName,
         Instant createdAt,
-        @Schema(description = "회수된 시각. 회수되지 않았으면 null입니다.")
+        @Schema(description = "폐기한 시각이며, 폐기하지 않았으면 null이에요.")
         @Nullable Instant revokedAt,
         @Schema(description = "요청자가 이 키의 접근 목록에서 받은 등급")
         @Nullable ResourceRole myResourceRole,

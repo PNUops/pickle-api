@@ -9,8 +9,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record LlmKeyErrorTypeResponse(
         @Schema(description = """
-                오류 종류. 게이트웨이가 종류를 남기지 않은 실패는 null이며, 화면에서는 \
-                '기타'로 묶입니다.""")
+                오류 유형이며, Gateway가 유형을 남기지 않은 실패는 null이에요.""")
         @Nullable String errorType,
         long requests) {
 }

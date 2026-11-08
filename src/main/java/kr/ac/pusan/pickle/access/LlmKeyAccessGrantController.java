@@ -35,7 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
  * until the key's resource adapter carries them.
  */
 @Tag(name = "llm-key-access",
-        description = "LLM API 키 접근 권한 — 이 키에 누가 접근할 수 있는지를 정합니다.")
+        description = "이 LLM API 키에 누가 접근할 수 있는지 정해요.")
 @RestController
 @RequestMapping("/api/v1/llm-keys/{keyId}/access")
 public class LlmKeyAccessGrantController {
@@ -48,8 +48,8 @@ public class LlmKeyAccessGrantController {
 
     @GetMapping
     @Operation(summary = "접근 권한 목록",
-            description = "이 키의 접근 권한 전체와, 그 목록이 어느 키의 것인지 알려 주는 최소 정보입니다. "
-                    + "키 소유자와 워크스페이스 소유자만 볼 수 있습니다.")
+            description = "이 키의 접근 권한 전체와 대상 키를 구분하는 최소 정보예요. "
+                    + "키 소유자와 워크스페이스 소유자만 볼 수 있어요.")
     public ResourceAccessListResponse listLlmKeyAccessGrants(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId) {
@@ -59,9 +59,9 @@ public class LlmKeyAccessGrantController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "접근 권한 부여",
-            description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 키의 접근 권한을 부여합니다. "
+            description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 키의 접근 권한을 부여해요. "
                     + "사용자는 이 키를 소유한 워크스페이스의 구성원이어야 하고, 워크스페이스 전체에는 "
-                    + "참여자·열람자까지만 부여할 수 있습니다.")
+                    + "참여자나 열람자 권한까지만 부여할 수 있어요.")
     public ResourceAccessGrantView addLlmKeyAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId,
@@ -86,7 +86,7 @@ public class LlmKeyAccessGrantController {
     @DeleteMapping("/{grantId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "접근 권한 회수",
-            description = "회수해도 발급 시 이미 확인한 키 평문은 회수되지 않습니다. "
+            description = "접근 권한을 회수해도 발급할 때 이미 확인한 키 평문은 회수되지 않아요. "
                     + "필요하면 키를 재발급해 주세요.")
     public void removeLlmKeyAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,

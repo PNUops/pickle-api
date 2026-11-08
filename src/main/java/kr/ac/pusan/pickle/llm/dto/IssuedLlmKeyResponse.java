@@ -23,11 +23,11 @@ public record IssuedLlmKeyResponse(
         String name,
 
         @Schema(description = """
-                발급된 API Key 평문. **이 응답에서만 볼 수 있습니다** — 서버에는 해시만 \
-                저장되며 다시 조회할 수 없습니다. 분실하면 재발급해야 합니다.""")
+                발급된 API 키 평문이며 **이 응답에서만 볼 수 있어요.** 서버가 평문 대신 해시를 \
+                저장하므로 다시 조회할 수 없어요. 잃어버렸다면 재발급해 주세요.""")
         String token,
 
-        @Schema(description = "만료 시각. 없으면 만료되지 않습니다.")
+        @Schema(description = "만료 시각이며, null이면 만료가 없어요.")
         @Nullable Instant expiresAt) {
 
     public static IssuedLlmKeyResponse of(LlmApiKey key, String plaintext) {

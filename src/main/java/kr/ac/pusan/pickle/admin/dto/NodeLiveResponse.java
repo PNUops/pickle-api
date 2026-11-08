@@ -24,7 +24,7 @@ import org.jspecify.annotations.Nullable;
 public record NodeLiveResponse(
         UUID nodeId,
         String name,
-        @Schema(description = "true = 이 노드가 상태 조회에 응답함. false = 응답하지 않음이며 나머지 필드는 모두 null."
+        @Schema(description = "true = 이 노드가 상태 조회에 응답함. false = 응답하지 않음이며 측정값과 checkedAt은 모두 null."
                 + " true여도 스토리지 조회는 별도 권한이라 storage* 필드는 null일 수 있음")
         boolean reachable,
         @Nullable Long memTotalBytes,

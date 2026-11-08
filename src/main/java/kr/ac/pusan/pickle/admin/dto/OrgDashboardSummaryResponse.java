@@ -27,7 +27,7 @@ public record OrgDashboardSummaryResponse(
             long allocatedDiskGb,
             @Nullable Long capacityVcpu,
             @Nullable Long capacityMemoryMb,
-            @Schema(description = "ACTIVE 노드의 thin pool 용량 합(GB) — 용량 미등록 노드가 있으면 null")
+            @Schema(description = "ACTIVE 노드의 thin pool 용량 합(GB). 용량이 미등록된 노드가 있으면 null")
             @Nullable Long capacityDiskGb,
             String guidance) {
     }

@@ -26,8 +26,8 @@ public record NodeMetricPointResponse(
         @Nullable Long swapTotalBytes,
         @Nullable Long swapUsedBytes,
         @Nullable Long rootTotalBytes,
-        @Schema(description = "노드 루트 파일시스템 사용량 — 게스트 디스크가 사는 thin pool은 "
-                + "스토리지 상태 값으로 따로 제공")
+        @Schema(description = "노드 루트 파일시스템 사용량이에요. 게스트 디스크가 놓이는 thin pool은 "
+                + "스토리지 상태 값으로 따로 제공해요.")
         @Nullable Long rootUsedBytes,
         @Nullable Double netinBps,
         @Nullable Double netoutBps) {

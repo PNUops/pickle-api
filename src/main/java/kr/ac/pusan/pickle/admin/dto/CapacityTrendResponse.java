@@ -15,9 +15,9 @@ public record CapacityTrendResponse(
         LocalDate to,
         long capacityCpuThreads,
         long capacityMemoryMb,
-        @Schema(description = "ACTIVE 노드의 thin pool 용량 합(GB) — 오버프로비저닝 전제의 조언용 분모, "
+        @Schema(description = "ACTIVE 노드의 thin pool 용량 합(GB). 오버프로비저닝을 전제로 한 참고용 분모이며 "
                 + "용량 미등록 노드가 있으면 null")
         @Nullable Long capacityDiskGb,
-        @Schema(description = "일 단위 스냅샷 — 해당 일 종료 시점에 살아 있던 VM의 할당 합")
+        @Schema(description = "일별 스냅샷이며 해당 일 종료 시점에 살아 있던 VM의 할당 합계")
         List<CapacityTrendPointResponse> points) {
 }

@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record AdminBulkChangeSpec(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-                description = "변경 종류. 같은 이름의 멤버 하나만 채웁니다.")
+                description = "변경 종류이며 해당 종류에 맞는 항목 하나만 채워요.")
         @NotNull(message = "변경 종류를 지정해 주세요.")
         AdminBulkChangeKind kind,
 

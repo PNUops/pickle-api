@@ -33,21 +33,19 @@ public record AdminLlmAccountUsageResponse(
         LocalDate from,
         LocalDate to,
         @Schema(description = """
-                이 기간에 이 계정에 귀속된 금액(USD). 공급자가 말하는 지출액이 아닙니다 — \
-                그쪽은 계정 잔액과 함께 따로 오고 기간도 다릅니다. 가격이 붙은 요청이 하나도 \
-                없으면 null입니다.""")
+                현재 이 계정에 연결된 키의 선택 기간 금액이에요(USD). 공급자의 지출액과는 집계 기간과 출처가 달라요. 가격이 확인된 요청이 없으면 null이에요.""")
         @Nullable BigDecimal attributedCostUsd,
         @Schema(description = "이 기간에 이 계정의 키들이 보낸 요청 수")
         long requests,
         @Schema(description = "그중 공급자가 금액을 알려 준 요청 수")
         long pricedRequests,
-        @Schema(description = "선택 KST 일자별 rollup과 현재 계정 결합에 따른 전체 소비 키 수. 현재 페이지나 보존 원문 capacity의 키 수가 아닙니다.")
+        @Schema(description = "선택한 KST 일자별 rollup과 현재 계정 연결을 기준으로 한 전체 소비 키 수예요. 현재 페이지나 보존 원문 capacity의 키 수와는 다른 값이에요.")
         int keysUsed,
-        @Schema(description = "현재 이 계정에 연결된 모든 상태의 키 수. 기간 소비와 현재 열람 가능한 키 부분집합과 다른 모집단입니다.")
+        @Schema(description = "현재 이 계정에 연결된 모든 상태의 키 수예요. 기간별 소비 키 수와 현재 열람 가능한 키 수는 각각 다른 모집단이에요.")
         int keysLinked,
-        @Schema(description = "하루 한 점, 오래된 날부터. 호출이 없던 날도 채워집니다.")
+        @Schema(description = "하루에 한 점씩 오래된 날부터 제공하며 호출이 없던 날도 채워요.")
         List<LlmUsageCostPointResponse> points,
-        @Schema(description = "이 기간에 실제로 호출된 키의 현재 페이지. 요청한 정렬을 따르며 기본은 공급자가 보고한 요청 금액순입니다. keysUsed는 현재 페이지 수가 아닌 전체 해당 키 수입니다.")
+        @Schema(description = "선택 기간에 실제로 호출한 키의 현재 페이지예요. 요청한 정렬을 따르며 기본은 공급자가 보고한 요청 금액순이에요. keysUsed는 현재 페이지의 수가 아니라 전체 해당 키 수예요.")
         List<AdminLlmAccountKeyUsageResponse> keys,
         Instant generatedAt, String timezone, String source,
         int page, int size, long totalKeyElements, int totalKeyPages, LlmConsumerSort sort) {

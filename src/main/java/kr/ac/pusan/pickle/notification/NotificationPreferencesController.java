@@ -20,12 +20,12 @@ public class NotificationPreferencesController {
     public NotificationPreferencesController(NotificationPreferencesService service) { this.service = service; }
 
     @GetMapping
-    @Operation(summary = "본인 알림 수신 설정 조회", description = "새 키 사용량 임계 알림 메일의 개인 수신 설정을 조회합니다. 콘솔 알림과 다른 업무·보안 알림에는 영향을 주지 않습니다.")
+    @Operation(summary = "본인 알림 수신 설정 조회", description = "새 키 사용량 임계 알림 메일의 개인 수신 설정을 조회해요. 콘솔 알림과 다른 업무 및 보안 알림에는 영향을 주지 않아요.")
     public NotificationPreferencesView getMyNotificationPreferences(
             @AuthenticationPrincipal AuthenticatedUser actor) { return service.get(actor.id()); }
 
     @PutMapping
-    @Operation(summary = "본인 알림 수신 설정 변경", description = "새 키 사용량 임계 알림 메일만 변경합니다. 기본값은 수신이며 콘솔 알림과 기존 업무·보안 메일은 유지합니다.")
+    @Operation(summary = "본인 알림 수신 설정 변경", description = "새 키 사용량 임계 알림 메일만 변경해요. 기본값은 수신이며 콘솔 알림과 기존 업무 및 보안 메일은 유지해요.")
     public NotificationPreferencesView updateMyNotificationPreferences(
             @AuthenticationPrincipal AuthenticatedUser actor,
             @Valid @RequestBody UpdateNotificationPreferencesRequest request) {

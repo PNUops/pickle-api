@@ -124,7 +124,7 @@ public class VmController {
     @GetMapping("/{vmId}/metrics")
     public VmMetricsResponse getVmMetrics(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID vmId,
-            @Parameter(description = "조회 구간 — HOUR/DAY/WEEK/MONTH/YEAR "
+            @Parameter(description = "조회 구간: HOUR/DAY/WEEK/MONTH/YEAR "
                     + "(해상도는 구간에 따라 거칠어짐)")
             @RequestParam(defaultValue = "HOUR") RrdTimeframe timeframe) {
         return vmMetricsService.metrics(principal, vmId, timeframe);

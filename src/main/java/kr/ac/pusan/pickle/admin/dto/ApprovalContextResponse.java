@@ -44,11 +44,11 @@ public record ApprovalContextResponse(
         UUID orgId,
         String orgName,
         Instant observedAt,
-        @Schema(description = "이 신청의 실제 request_id로 연결된 자원의 기록과 상태. "
-                + "자원 행 등록은 VM 프로비저닝 완료가 아닙니다. 신청 FK가 없는 과거 도메인 이름에서 현재 자원 ID를 추론하지 않습니다.")
+        @Schema(description = "이 신청의 실제 request_id로 연결된 리소스의 기록과 상태예요. "
+                + "리소스 행 등록은 VM 프로비저닝 완료를 뜻하지 않아요. 신청 FK가 없는 과거 도메인 이름에서 현재 리소스 ID를 추론하지 않아요.")
         List<AdminRequestGeneratedResourceResponse> generatedResources,
-        @Schema(description = "저장된 실제 대상 계정별 관리자 사용자 상세 조회 허용 여부. 현재 디렉터리 권한과 교집합이며, "
-                + "워크스페이스를 떠난 계정도 포함합니다. 가입 전 식별자로 계정을 추정하지 않습니다.")
+        @Schema(description = "저장된 실제 대상 계정별 관리자 사용자 상세 조회 가능 여부예요. 현재 디렉터리 권한과의 교집합이며, "
+                + "워크스페이스를 떠난 계정도 포함해요. 가입 전 식별자로 계정을 추정하지 않아요.")
         Map<UUID, Boolean> recipientUserReadFlags) {
 
     public record GpuContext(@Nullable Long availableCards, @Nullable Long queuedAllocations, int requestedLeaseHours, @Nullable String vmName) {}
@@ -87,11 +87,11 @@ public record ApprovalContextResponse(
             WorkspaceKind kind,
             List<MemberBrief> members,
             @Schema(deprecated = true,
-                    description = "호환용 VM 목록. 새 클라이언트는 vm.workspaceResources.activeVms를 사용합니다.")
+                    description = "호환용 VM 목록이에요. 새 클라이언트는 vm.workspaceResources.activeVms를 사용해요.")
             @Deprecated
             @Nullable List<VmBriefResponse> activeVms,
             @Schema(deprecated = true,
-                    description = "호환용 VM 합계. 새 클라이언트는 vm.workspaceResources.totals를 사용합니다.")
+                    description = "호환용 VM 합계예요. 새 클라이언트는 vm.workspaceResources.totals를 사용해요.")
             @Deprecated
             @Nullable ResourceTotalsResponse totals,
             boolean canReadDetail) {
@@ -119,8 +119,8 @@ public record ApprovalContextResponse(
             Capacity capacity,
             double vcpuOvercommitRatio,
             double memoryUsageRatio,
-            @Schema(description = "할당 디스크 / thin pool 용량 — 용량 미등록 노드가 있으면 null. "
-                    + "오버프로비저닝 전제라 1을 넘을 수 있고 경고 임계값은 없습니다.")
+            @Schema(description = "할당 디스크를 thin pool 용량으로 나눈 비율이에요. 용량이 미등록된 노드가 있으면 null이에요. "
+                    + "오버프로비저닝을 전제로 하므로 1을 넘을 수 있으며 경고 임계값은 없어요.")
             @Nullable Double diskUsageRatio,
             List<String> warnings) {
     }
@@ -128,7 +128,7 @@ public record ApprovalContextResponse(
     public record Capacity(
             long cpuThreads,
             long memoryMb,
-            @Schema(description = "ACTIVE 노드의 thin pool 용량 합(GB) — 용량 미등록 노드가 있으면 null")
+            @Schema(description = "ACTIVE 노드의 thin pool 용량 합이에요(GB). 용량이 미등록된 노드가 있으면 null이에요.")
             @Nullable Long diskGb) {
     }
 

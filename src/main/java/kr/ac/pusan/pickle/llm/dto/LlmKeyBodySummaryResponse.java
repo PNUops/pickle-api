@@ -18,10 +18,10 @@ import org.jspecify.annotations.Nullable;
  */
 public record LlmKeyBodySummaryResponse(
         UUID id,
-        @Schema(description = "이 기록과 같은 요청에서 나온 사용량 이벤트의 식별자입니다. "
-                + "리소스 id가 아니라 두 기록을 잇는 값이고, 클라이언트 로그와 대조할 때 씁니다.")
+        @Schema(description = "이 기록과 같은 요청에서 나온 사용량 이벤트 ID예요. "
+                + "리소스 ID와는 다른 값이며, 클라이언트 로그와 대조할 때 써요.")
         String eventUuid,
-        @Schema(description = "요청 시각. 게이트웨이가 보고한 값입니다.")
+        @Schema(description = "Gateway가 보고한 요청 시각이에요.")
         Instant requestedAt,
         @Schema(description = "이 기록이 서버에 도착한 시각")
         Instant receivedAt,
@@ -33,11 +33,11 @@ public record LlmKeyBodySummaryResponse(
         int requestBytes,
         @Schema(description = "기록된 응답의 바이트 수")
         int responseBytes,
-        @Schema(description = "false면 이 기록을 푸는 암호화 키가 서버에 없어 본문을 읽을 수 "
-                + "없습니다. 미리보기도 null입니다.")
+        @Schema(description = "false면 저장된 본문을 읽을 수 없어요. "
+                + "미리보기도 null이에요.")
         boolean readable,
-        @Schema(description = "프롬프트 앞부분. 읽을 수 없거나 기록되지 않았으면 null입니다.")
+        @Schema(description = "프롬프트 앞부분이며, 읽을 수 없거나 기록하지 않았으면 null이에요.")
         @Nullable String requestPreview,
-        @Schema(description = "응답 앞부분. 읽을 수 없거나 기록되지 않았으면 null입니다.")
+        @Schema(description = "응답 앞부분이며, 읽을 수 없거나 기록하지 않았으면 null이에요.")
         @Nullable String responsePreview) {
 }

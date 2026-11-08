@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
 /** One target as the apply left it. */
 public record AdminBulkChangeApplyItem(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID targetId,
-        @Schema(description = "대상 이름. 범위 밖이면 없습니다.") @Nullable String name,
+        @Schema(description = "대상 이름이며 범위 밖이면 제공하지 않아요.") @Nullable String name,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) AdminBulkChangeResult result,
         @Schema(description = "SKIPPED인 이유") @Nullable AdminBulkChangeReason reason,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "APPLIED면 바뀐 필드, 아니면 빈 배열")

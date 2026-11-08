@@ -37,7 +37,7 @@ public class NoticeUpdateRequest {
     private Instant startsAt;
     private boolean startsAtSet;
 
-    @Schema(description = "게시 종료 시각. null을 명시하면 만료 없음으로 바꿉니다.")
+    @Schema(description = "게시 종료 시각이며, null을 명시하면 만료 없음으로 바꿔요.")
     private @Nullable Instant endsAt;
     private boolean endsAtSet;
 

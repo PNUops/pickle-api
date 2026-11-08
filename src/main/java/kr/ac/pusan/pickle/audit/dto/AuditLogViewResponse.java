@@ -13,7 +13,7 @@ import tools.jackson.databind.JsonNode;
  * internal actors (e.g. the SSH gateway) stamp roles outside the user enum.
  */
 public record AuditLogViewResponse(
-        @Schema(description = "감사 로그 행의 공개 식별자. 목록 렌더링용 키이며 어떤 조회 파라미터도 아닙니다.")
+        @Schema(description = "감사 로그 행의 공개 ID이며, 조회 파라미터로 쓰지 않아요.")
         UUID id,
         @Nullable UUID actorId,
         @Nullable String actorEmail,

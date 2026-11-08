@@ -24,21 +24,21 @@ import org.jspecify.annotations.Nullable;
  */
 public record VmSummaryResponse(
         UUID id,
-        @Schema(description = "SSH 슬러그. 접근 권한이 없으면 대신 표시 이름이 들어갑니다.")
+        @Schema(description = "SSH 슬러그예요. 접근 권한이 없으면 표시 이름을 제공하며, 표시 이름도 없으면 공개 ID를 붙인 VM 이름을 제공해요.")
         String name,
-        @Schema(description = "SSH 슬러그. 접근 권한이 없으면 생략됩니다.")
+        @Schema(description = "SSH 슬러그이며, 접근 권한이 없으면 제공하지 않아요.")
         @Nullable String hostname,
         VmStatus status,
-        @Schema(description = "vCPU. 접근 권한이 없으면 생략됩니다.")
+        @Schema(description = "vCPU 수이며, 접근 권한이 없으면 제공하지 않아요.")
         @Nullable Integer vcpu,
-        @Schema(description = "메모리(MiB). 접근 권한이 없으면 생략됩니다.")
+        @Schema(description = "메모리(MiB)이며, 접근 권한이 없으면 제공하지 않아요.")
         @Nullable Integer memoryMb,
-        @Schema(description = "디스크(GiB). 접근 권한이 없으면 생략됩니다.")
+        @Schema(description = "디스크(GiB)이며, 접근 권한이 없으면 제공하지 않아요.")
         @Nullable Integer diskGb,
-        @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
+        @Schema(description = "소유 워크스페이스이며, 해당 행이 사라진 경우에만 null이에요.")
         @Nullable UUID workspaceId,
         String workspaceName,
-        @Schema(description = "소유 기관. 접근 권한이 없거나 기관 행이 사라진 경우 null입니다.")
+        @Schema(description = "소유 기관이며, 접근 권한이 없거나 기관 행이 사라지면 null이에요.")
         @Nullable UUID orgId,
         @Nullable String orgName,
         @Nullable String displayName,
@@ -47,14 +47,14 @@ public record VmSummaryResponse(
         @Nullable Boolean sshGatewayBlocked,
         @Nullable LocalDate endDate,
         @Nullable Instant expiryStoppedAt,
-        @Schema(description = "예약된 삭제. 예약이 없거나 접근 제한 행이면 null입니다.")
+        @Schema(description = "예약된 삭제이며, 예약이 없거나 접근 제한 행이면 null이에요.")
         @Nullable VmDeletionResponse deletion,
         @Nullable Instant createdAt,
-        @Schema(description = "true면 이 VM의 접근 권한이 없어 이름·상태·소유자만 표시됩니다.")
+        @Schema(description = "true면 이 VM의 접근 권한이 없는 제한된 행이에요. 이름과 상태, 소유자 정보를 제공해요.")
         boolean accessLimited,
-        @Schema(description = "이 VM의 소유자 이름. 접근을 요청할 상대입니다.")
+        @Schema(description = "이 VM의 소유자 이름이며, 접근 권한을 요청할 상대예요.")
         @Nullable List<String> ownerNames,
-        @Schema(description = "접근 권한이 없어도 접근 권한 목록을 관리할 수 있는지. 워크스페이스 소유자가 참입니다.")
+        @Schema(description = "이 VM의 접근 권한이 없어도 접근 권한 목록을 관리할 수 있는지 나타내요. 워크스페이스 소유자는 true예요.")
         boolean accessManageAllowed,
         boolean metadataVisible,
         java.util.Set<String> allowedWorkIds) {

@@ -8,12 +8,12 @@ import org.jspecify.annotations.Nullable;
 /** Contract {@code NoticeImageView}: one image of a notice, without its bytes. */
 public record NoticeImageView(
         UUID id,
-        @Schema(description = "업로드 당시의 파일 이름. 클라이언트가 보내지 않았으면 비어 있습니다.")
+        @Schema(description = "업로드 당시의 파일 이름이며, 클라이언트가 보내지 않았으면 null이에요.")
         @Nullable String fileName,
-        @Schema(description = "저장된 실제 형식. 업로드 시 파일 선두 바이트로 판별한 값입니다.")
+        @Schema(description = "저장한 실제 형식이며, 업로드할 때 파일 선두 바이트로 판별해요.")
         String contentType,
         int byteSize,
-        @Schema(description = "이미지를 내려받는 경로. 인증 없이 열 수 있는지는 공지의 공개 범위를 따릅니다.")
+        @Schema(description = "이미지를 내려받는 경로예요. 인증 없이 열 수 있는지는 공지의 공개 범위를 따라요.")
         String url) {
 
     /**

@@ -22,7 +22,7 @@ import org.jspecify.annotations.Nullable;
  * resource type's own adapter, so a second kind of resource opens its own
  * access list with a controller over the shared service and nothing else.
  */
-@Schema(description = "리소스 접근 권한 목록과, 그 목록이 어느 리소스의 것인지 알려 주는 최소 정보")
+@Schema(description = "리소스 접근 권한 목록과 대상 리소스의 기본 정보")
 public record ResourceAccessListResponse(
         @Schema(description = "이 목록이 속한 리소스") ResourceBrief resource,
         @Schema(description = "접근 권한 항목") List<ResourceAccessGrantView> grants,
@@ -35,14 +35,14 @@ public record ResourceAccessListResponse(
             kr.ac.pusan.pickle.user.UserStatus userStatus) { }
 
     /** Name, state and owning workspace — the same fields a restricted row shows. */
-    @Schema(description = "접근 권한이 없는 사람에게도 보이는 범위의 리소스 정보")
+    @Schema(description = "접근 목록에 포함하는 리소스 기본 정보")
     public record ResourceBrief(
             UUID id,
             ResourceType type,
             String name,
-            @Schema(description = "표시명. 지정되지 않았으면 null입니다.")
+            @Schema(description = "표시명이며, 지정되지 않으면 null이에요.")
             @Nullable String displayName,
-            @Schema(description = "리소스 종류의 상태값. 종류마다 어휘가 다릅니다.")
+            @Schema(description = "리소스 종류별 상태값")
             String status,
             UUID workspaceId,
             String workspaceName) {

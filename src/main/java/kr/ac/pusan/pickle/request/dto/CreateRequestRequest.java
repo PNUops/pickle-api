@@ -44,8 +44,8 @@ public record CreateRequestRequest(
          * 종류에서는 이 값을 묻지 않고 보내도 쓰지 않는다. 신청자에게 물어 둘을
          * 어긋나게 두느니 답이 하나인 쪽을 쓴다.</p>
          */
-        @Schema(description = "신청할 기관. 리소스 종류가 기관을 스스로 정하지 않을 때만 필수입니다. "
-                + "외부 도메인은 고른 루트 도메인이 기관을 정하므로 보내지 않습니다.")
+        @Schema(description = "신청할 기관이에요. 리소스 종류가 기관을 스스로 정하지 않을 때만 필수예요. "
+                + "외부 도메인은 선택한 루트 도메인으로 기관을 정하므로 보내지 않아요.")
         @Nullable UUID orgId,
 
         @NotBlank(message = "사용 목적을 입력해 주세요.")
@@ -74,7 +74,7 @@ public record CreateRequestRequest(
          * 종료일과 일부러 비운 종료일은 본문에서 똑같이 생겼으므로, 둘을 나눌 값이
          * 따로 없으면 실수로 낸 신청이 만료되지 않는 VM이 된다.</p>
          */
-        @Schema(description = "true면 종료일 없이 신청합니다. reqEndDate·periodPresetId와 함께 보낼 수 없습니다.")
+        @Schema(description = "true면 종료일 없이 신청해요. reqEndDate나 periodPresetId와 함께 지정할 수 없어요.")
         @Nullable Boolean reqIndefinite,
 
         // 신청하는 리소스의 이름. 종류를 가리지 않고 필수이며, 이 신청을 가리키는
@@ -107,9 +107,9 @@ public record CreateRequestRequest(
          * Absent or empty is the ordinary request. Only for kinds that can be
          * made many times from one decision (VM, LLM API key).
          */
-        @Schema(description = "리소스를 받을 대상자. 비우면 신청자 본인이 받는 일반 신청입니다. "
-                + "VM과 LLM API 키에만 쓸 수 있고, 워크스페이스 소유자나 해당 명단 발급 업무가 있는 담당자가 지정할 수 있습니다. "
-                + "대상자마다 리소스를 하나씩 만들며, 가입 전인 초대 대상자는 가입할 때 만듭니다.")
+        @Schema(description = "리소스를 받을 대상자예요. 비우면 신청자 본인이 받는 일반 신청이에요. "
+                + "VM과 LLM API 키에만 사용할 수 있고, 워크스페이스 소유자나 해당 명단 발급 업무가 있는 담당자가 지정할 수 있어요. "
+                + "대상자마다 리소스 하나를 만들며, 실제 생성은 신청 승인 뒤 이용 기간과 활성 구성원 여부 등 현재 조건에 따라 별도 작업으로 진행해요.")
         @Size(max = 200, message = "대상자는 한 번에 200명 이내로 지정해 주세요.")
         @Valid @Nullable List<CreateRequestRecipient> recipients,
 
@@ -117,8 +117,8 @@ public record CreateRequestRequest(
          * Present when the submitter is an approver who decides in the same
          * step: the same form the approve endpoint takes.
          */
-        @Schema(description = "제출과 동시에 승인할 때의 내용. 일반 신청 승인 업무가 필요하며, 새 명단은 명단 발급 업무로 그 명령 안에서 승인할 수 있습니다. "
-                + "승인 화면에서 보내는 내용과 같습니다.")
+        @Schema(description = "제출과 동시에 승인할 때의 내용이에요. 일반 신청 승인 업무가 필요하며, 새 명단은 명단 발급 업무로 같은 명령 안에서 승인할 수 있어요. "
+                + "승인 화면에서 보내는 내용과 같아요.")
         @Valid @Nullable ApproveRequestRequest approval) {
 
     /** The form as it was before recipients and same-step approval existed. */

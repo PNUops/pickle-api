@@ -8,7 +8,7 @@ import tools.jackson.databind.JsonNode;
 
 /** Contract {@code ActivityEntry}: one self-view audit row (login history included). */
 public record ActivityEntryResponse(
-        @Schema(description = "활동 행의 공개 식별자. 목록 렌더링용 키이며 어떤 조회 파라미터도 아닙니다.")
+        @Schema(description = "활동 행의 공개 ID이며, 조회 파라미터로 쓰지 않아요.")
         UUID id,
         String action,
         @Nullable String targetType,

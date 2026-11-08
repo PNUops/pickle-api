@@ -23,12 +23,11 @@ public record AdminLlmKeyUsageResponse(
         @Schema(description = "키 소유자가 보는 것과 같은 응답, 같은 계산")
         InstitutionAdminLlmTrendResponse trend,
         @Schema(description = """
-                일별 금액. 소유자 화면에는 없는 계열입니다 — 소유자는 모델별 금액만 봅니다.""")
+                일별 금액 계열이에요.""")
         @org.jspecify.annotations.Nullable List<LlmUsageCostPointResponse> costPoints,
         @Schema(description = "이 기간에 실제로 호출된 경로만, 요청이 많은 순")
         @org.jspecify.annotations.Nullable List<InstitutionAdminLlmEndpointUsageResponse> endpointKinds,
         @Schema(description = """
-                공급자가 요청과 다른 모델로 응답한 사례. 없으면 빈 목록이고, 빈 것이 \
-                「대체가 없었다」를 증명하지는 않습니다.""")
+                공급자가 전달받은 모델과 다른 모델로 응답한 기록이에요. 빈 목록만으로 대체가 없었다고 판단할 수는 없어요.""")
         @org.jspecify.annotations.Nullable List<LlmServedModelUsageResponse> servedModels, boolean financeVisible) {
 }

@@ -22,8 +22,7 @@ public record AdminLlmAccountKeyUsageResponse(
         long inputTokens,
         long outputTokens,
         @Schema(description = """
-                이 키가 이 기간에 쓴 금액(USD). 가격이 붙은 요청이 없으면 null이며 0으로 \
-                표시하지 않습니다.""")
+                이 키의 선택 기간 금액이에요(USD). 가격이 확인된 요청이 없으면 null이며 0으로 보지 않아요.""")
         @Nullable BigDecimal attributedCostUsd,
         @Schema(description = "이 키의 요청 중 공급자가 금액을 알려 준 요청 수")
         long pricedRequests) {

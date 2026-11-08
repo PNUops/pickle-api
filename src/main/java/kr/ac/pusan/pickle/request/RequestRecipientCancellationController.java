@@ -24,14 +24,14 @@ public class RequestRecipientCancellationController {
     public RequestRecipientCancellationController(RequestRecipientCancellationService cancellations) { this.cancellations = cancellations; }
 
     @GetMapping("/{requestId}/recipients/{recipientId}/cancellation-impact")
-    @Operation(summary = "대상자 생성 대기 취소 영향 조회", description = "현재 실제 OWNER으로 승인된 VM 또는 LLM 명단의 한 대상자를 확인합니다. 조회는 상태를 변경하지 않습니다.")
+    @Operation(summary = "대상자 생성 대기 취소 영향 조회", description = "현재 워크스페이스 OWNER가 승인된 VM 또는 LLM 명단의 대상자 한 명을 확인해요. 조회는 상태를 바꾸지 않아요.")
     public RequestRecipientCancellationImpactResponse getRequestRecipientCancellationImpact(
             @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID requestId, @PathVariable UUID recipientId) {
         return cancellations.preview(actor, requestId, recipientId, false);
     }
 
     @PostMapping("/{requestId}/recipients/{recipientId}/cancel")
-    @Operation(summary = "대상자 생성 대기 취소", description = "정확한 현재 영향 확인과 사유로 한 대상자만 취소합니다. 승인, 다른 대상자, 구성원과 초대는 유지하며 등록된 자원은 회수하지 않습니다. 같은 수행자와 확인 지문 및 사유의 재요청은 현재 재인가 후 기존 결과를 반환합니다.")
+    @Operation(summary = "대상자 생성 대기 취소", description = "정확한 현재 영향 확인과 사유로 대상자 한 명만 취소해요. 승인과 다른 대상자, 구성원, 초대는 유지하며 등록된 자원은 회수하지 않아요. 같은 수행자가 같은 확인 지문과 사유로 다시 요청하면 현재 권한을 재확인한 뒤 기존 결과를 반환해요.")
     public RequestRecipientCancellationReceipt cancelRequestRecipient(
             @AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID requestId, @PathVariable UUID recipientId,
             @Valid @RequestBody CancelRequestRecipientRequest request, HttpServletRequest http) {

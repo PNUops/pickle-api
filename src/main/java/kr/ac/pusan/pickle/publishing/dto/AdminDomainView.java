@@ -26,7 +26,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record AdminDomainView(
         UUID id,
-        @Schema(description = "이 이름을 쓰는 가상머신. 외부 도메인은 가상머신에 매이지 않으므로 null입니다.")
+        @Schema(description = "이 이름을 사용하는 VM이며, 외부 도메인은 VM에 연결되지 않아 null이에요.")
         @Nullable UUID vmId,
         DomainKind kind,
         String fqdn,
@@ -35,11 +35,11 @@ public record AdminDomainView(
         @Nullable Instant verifiedAt,
         @Nullable Instant releasedAt,
         @Nullable Instant reservedUntil,
-        @Schema(description = "사용 기한. 외부 도메인만 갖습니다 — 다른 종류는 가상머신이나 "
-                + "소유자의 DNS가 수명을 정하므로 null입니다.")
+        @Schema(description = "외부 도메인의 사용 기한이에요. "
+                + "다른 종류는 null이에요.")
         @Nullable Instant renewDueAt,
         @Nullable Instant createdAt,
-        @Schema(description = "이 이름을 쓰는 가상머신의 이름. 외부 도메인은 null입니다.")
+        @Schema(description = "이 이름을 사용하는 VM의 이름이며, 외부 도메인은 null이에요.")
         @Nullable String vmName,
         @Nullable UUID workspaceId,
         @Nullable String workspaceName,

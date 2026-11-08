@@ -7,6 +7,6 @@ import kr.ac.pusan.pickle.inventory.NodeStatus;
 /** Contract op {@code updateAdminNode} body — the status transition only. */
 public record UpdateNodeStatusRequest(
         @NotNull
-        @Schema(description = "ACTIVE만 신규 VM 배치 대상 — MAINTENANCE/OFFLINE은 배치 제외 (기존 게스트 무영향)")
+        @Schema(description = "신규 VM은 ACTIVE 노드에만 배치해요. MAINTENANCE/OFFLINE은 배치에서 제외하며 기존 게스트에는 영향을 주지 않아요.")
         NodeStatus status) {
 }

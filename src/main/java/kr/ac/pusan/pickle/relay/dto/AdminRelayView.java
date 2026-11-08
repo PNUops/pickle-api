@@ -21,14 +21,14 @@ public record AdminRelayView(
         @Schema(description = "공개 포트 대역 끝")
         int bandEnd,
         boolean enabled,
-        @Schema(description = "동기화 토큰 발급 여부 (미발급이면 에이전트 인증이 항상 실패)")
+        @Schema(description = "동기화 토큰 발급 여부이며, 미발급이면 에이전트의 새 동기화 인증에 실패해요.")
         boolean tokenIssued,
         @Schema(description = "현재 매핑 세대 (매핑 변경마다 증가)")
         long mappingGeneration,
-        @Schema(description = "에이전트가 적용을 확인한 마지막 세대")
+        @Schema(description = "에이전트가 적용했다고 보고한 마지막 세대")
         long appliedGeneration,
         @Nullable Instant lastContactAt,
-        @Schema(description = "접촉 두절 여부 (마지막 동기화가 폴링 주기 3배를 초과)")
+        @Schema(description = "마지막 동기화가 폴링 주기의 3배를 넘었는지 나타내요. 동기화 기록이 없으면 false예요.")
         boolean contactLost,
         @Nullable String agentVersion,
         @Nullable

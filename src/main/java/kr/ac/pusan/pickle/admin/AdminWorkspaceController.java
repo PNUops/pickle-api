@@ -40,8 +40,8 @@ public class AdminWorkspaceController {
     public List<AdminWorkspaceOptionResponse> listAdminWorkspaces(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
-            @Parameter(description = "true면 기관 필터와 무관하게 삭제되지 않은 모든 워크스페이스를 돌려줍니다. "
-                    + "관리자가 대상자를 골라 신청할 워크스페이스를 고를 때 씁니다.")
+            @Parameter(description = "삭제되지 않은 워크스페이스를 조회해요. true이면 기본 목록의 기관 필터를 해제하지만 업무별 조회 권한과 명령 대상 범위는 유지돼요. "
+                    + "관리자가 대상자를 골라 신청할 워크스페이스를 선택할 때 써요.")
             @RequestParam(required = false, defaultValue = "false") boolean all) {
         return adminWorkspaceQueryService.list(principal, orgId, all);
     }
@@ -57,8 +57,8 @@ public class AdminWorkspaceController {
     @GetMapping("/{workspaceId}/invitations")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "워크스페이스의 대기 중인 초대 목록",
-            description = "학생 지원 권한으로 아직 가입하지 않은 대상의 초대 정보를 조회합니다. "
-                    + "대기 중인 초대만 오래된 순서로 돌려줍니다.")
+            description = "현재 워크스페이스의 지원 조회 또는 초대 관리 권한으로 대기 중인 초대를 "
+                    + "오래된 순서로 조회해요.")
     public List<WorkspaceInvitationResponse> listAdminWorkspaceInvitations(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId) {

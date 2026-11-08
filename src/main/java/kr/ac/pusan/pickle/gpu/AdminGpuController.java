@@ -70,7 +70,7 @@ public class AdminGpuController {
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     public GpuAllocationView extendAdminGpuLease(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID allocationId,
             @Valid @RequestBody ExtendGpuLeaseRequest request, HttpServletRequest http) { return mutations.extend(actor, allocationId, request.hours(), request.reason(), clientIp(http), true); }
-    @PostMapping("/gpu-allocations/{allocationId}/reconcile") @Operation(summary = "GPU 연결 상태 재확인", description = "전원과 장치 설정을 변경하지 않고 실제 상태가 확인된 작업의 잠금만 정리합니다. GPU 점유와 회수 의도는 유지합니다.")
+    @PostMapping("/gpu-allocations/{allocationId}/reconcile") @Operation(summary = "GPU 연결 상태 재확인", description = "전원과 장치 설정을 바꾸지 않고 실제 상태가 확인된 작업의 잠금만 정리해요. GPU 점유와 회수 의도는 유지해요.")
     public GpuAllocationView reconcileGpu(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID allocationId,
             @Valid @RequestBody GpuReasonRequest request, HttpServletRequest http) { return reconciliation.reconcile(actor, allocationId, request.reason(), clientIp(http)); }
     @GetMapping("/gpu-reclaim-reviews") @Operation(summary = "GPU 회수 검토 목록")

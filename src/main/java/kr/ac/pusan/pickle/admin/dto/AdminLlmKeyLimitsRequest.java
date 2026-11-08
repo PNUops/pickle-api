@@ -79,7 +79,7 @@ public class AdminLlmKeyLimitsRequest {
     private boolean chatEnabledSet;
 
     @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
-            description = "분당 요청 한도. null이면 서비스 기본값을 따릅니다.")
+            description = "분당 요청 한도예요. 생략하면 유지하고 null이면 서비스 기본값을 따라요.")
     public @Nullable Integer getRpm() {
         return rpm;
     }
@@ -90,7 +90,7 @@ public class AdminLlmKeyLimitsRequest {
     }
 
     @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
-            description = "분당 토큰 한도. null이면 서비스 기본값을 따릅니다.")
+            description = "분당 토큰 한도예요. 생략하면 유지하고 null이면 서비스 기본값을 따라요.")
     public @Nullable Integer getTpm() {
         return tpm;
     }
@@ -101,7 +101,7 @@ public class AdminLlmKeyLimitsRequest {
     }
 
     @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
-            description = "동시 요청 한도. null이면 서비스 기본값을 따릅니다.")
+            description = "동시 요청 한도예요. 생략하면 유지하고 null이면 서비스 기본값을 따라요.")
     public @Nullable Integer getConcurrency() {
         return concurrency;
     }
@@ -112,7 +112,7 @@ public class AdminLlmKeyLimitsRequest {
     }
 
     @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
-            description = "일일 토큰 한도. null이면 무제한이고 0이면 토큰 축을 닫습니다.")
+            description = "일일 토큰 한도예요. 생략하면 유지하고 null이면 무제한이며 0이면 토큰 축을 닫아요.")
     public @Nullable Long getDailyTokens() {
         return dailyTokens;
     }
@@ -124,7 +124,7 @@ public class AdminLlmKeyLimitsRequest {
 
     @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
             nullable = false, implementation = BigDecimal.class,
-            description = "금액 한도(USD 크레딧). 생략하면 유지하고 null은 허용하지 않습니다. 0이면 유료 모델을 닫습니다.")
+            description = "금액 한도예요(USD 크레딧). 생략하면 유지하고 null은 허용하지 않아요. 0이면 유료 모델을 닫아요.")
     public @Nullable BigDecimal getCreditLimit() {
         return creditLimit;
     }
@@ -135,7 +135,7 @@ public class AdminLlmKeyLimitsRequest {
     }
 
     @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
-            description = "금액 한도 리셋 창. null이면 리셋 없는 총액 상한입니다.")
+            description = "금액 한도 리셋 창이에요. 생략하면 유지하고 null이면 리셋 없는 총액 상한이에요.")
     public @Nullable CreditLimitReset getCreditLimitReset() {
         return creditLimitReset;
     }
@@ -146,9 +146,9 @@ public class AdminLlmKeyLimitsRequest {
     }
 
     @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
-            description = "유료 모델 허용 목록. 빈 배열이나 null이면 제한이 없습니다. 금액 "
-                    + "한도와 달리 null이 0을 뜻하지 않습니다. 자체 서빙 모델은 이 값에 "
-                    + "영향을 받지 않습니다."
+            description = "유료 모델 허용 패턴이에요. 생략하면 유지하고 빈 배열이나 null이면 이 목록의 제한을 비워요. 금액 "
+                    + "한도와 달리 null은 0을 뜻하지 않아요. 자체 서빙 모델은 이 값의 "
+                    + "영향을 받지 않아요."
                     + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
     public @Nullable List<String> getCreditAllowedModels() {
         return creditAllowedModels;
@@ -160,9 +160,9 @@ public class AdminLlmKeyLimitsRequest {
     }
 
     @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
-            description = "유료 모델 차단 목록. 빈 배열이나 null이면 차단하는 모델이 없습니다. "
-                    + "허용 목록과 함께 걸리면 차단이 이깁니다. 허용 목록과 달리 금액 한도가 "
-                    + "0이어도 남습니다. 자체 서빙 모델은 이 값에 영향을 받지 않습니다."
+            description = "유료 모델 차단 패턴이에요. 생략하면 유지하고 빈 배열이나 null이면 차단 패턴을 비워요. "
+                    + "허용 패턴과 겹치면 차단을 우선해요. 허용 목록과 달리 금액 한도가 "
+                    + "0이어도 유지해요. 자체 서빙 모델은 이 값의 영향을 받지 않아요."
                     + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
     public @Nullable List<String> getCreditDeniedModels() {
         return creditDeniedModels;
@@ -181,11 +181,11 @@ public class AdminLlmKeyLimitsRequest {
             PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
             PassthroughEndpoints.FILES}),
             arraySchema = @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
-                    description = "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 "
-                            + "하나도 쓸 수 없습니다(chat 포함). 모델 목록 둘과 반대로 이 목록은 "
-                            + "채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, "
-                            + "pdf_ocr, images, embeddings, rerank, speech, transcriptions이고, web_search와 pdf_ocr은 chat과 "
-                            + "함께 부여해야 합니다. 모델 조회는 이 값에 영향을 받지 않습니다."))
+                    description = "이 키에 부여할 기능 권한이에요. 생략하면 유지하고 빈 배열이나 null이면 "
+                            + "chat을 포함한 모든 기능을 닫아요. 기능은 이 목록에 "
+                            + "추가해야 열려요. 현재 부여할 수 있는 값은 chat, web_search, "
+                            + "pdf_ocr, images, embeddings, rerank, speech, transcriptions예요. web_search나 pdf_ocr를 부여하려면 chat도 "
+                            + "함께 있어야 해요. 모델 조회는 이 값의 영향을 받지 않아요."))
     public @Nullable List<String> getPassthroughEndpoints() {
         return passthroughEndpoints;
     }
@@ -195,7 +195,7 @@ public class AdminLlmKeyLimitsRequest {
         this.passthroughEndpointsSet = true;
     }
 
-    @Schema(description = "유료 모델을 결제할 사업 계정. 생략하거나 null이면 기존 연결을 유지합니다.")
+    @Schema(description = "유료 모델을 결제할 사업 계정이며 생략하거나 null이면 기존 연결을 유지해요.")
     public @Nullable UUID getOpenrouterAccountId() {
         return openrouterAccountId;
     }
@@ -211,7 +211,7 @@ public class AdminLlmKeyLimitsRequest {
     }
 
     @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = false, implementation = Boolean.class,
-            description = "chat 기능만 변경합니다. 생략하면 유지하고 null은 허용하지 않습니다.")
+            description = "chat 기능만 변경해요. 생략하면 유지하고 null은 허용하지 않아요.")
     public @Nullable Boolean getChatEnabled() { return chatEnabled; }
     public void setChatEnabled(@Nullable Boolean value) { chatEnabled = value; chatEnabledSet = true; }
     @Schema(hidden = true) public boolean hasChatEnabled() { return chatEnabledSet; }
