@@ -8,7 +8,7 @@ import java.util.Map;
 public record GpuDeviceState(String status, Map<String, Object> config, List<Map<String, Object>> pending) {
     public GpuDeviceState {
         if (status == null || !List.of("running", "stopped").contains(status) || config == null || pending == null) {
-            throw new IllegalStateException("가상머신의 실제 상태를 확인할 수 없습니다.");
+            throw new IllegalStateException("VM의 실제 상태를 확인할 수 없어요.");
         }
     }
     public boolean stopped() { return "stopped".equals(status); }
@@ -26,9 +26,9 @@ public record GpuDeviceState(String status, Map<String, Object> config, List<Map
         boolean movedMapping = config.entrySet().stream().anyMatch(entry -> entry.getKey().startsWith("hostpci")
                 && !entry.getKey().equals(gpu.hostpciSlot()) && entry.getValue() != null
                 && Arrays.stream(entry.getValue().toString().split(",")).anyMatch(part -> part.equals("mapping=" + gpu.mappingName())));
-        if (movedMapping) { throw new IllegalStateException("GPU가 예상하지 않은 PCI 슬롯에 연결되어 있습니다."); }
+        if (movedMapping) { throw new IllegalStateException("GPU가 예상하지 않은 PCI 슬롯에 연결돼 있어요."); }
         if (config.get("lock") != null || hasPendingDeviceChange() || (!absent(gpu) && !attached(gpu))) {
-            throw new IllegalStateException("GPU 실제 연결과 대기 설정이 일치하지 않습니다.");
+            throw new IllegalStateException("VM 잠금과 대기 설정, GPU 연결 상태를 먼저 확인해 주세요.");
         }
     }
 }

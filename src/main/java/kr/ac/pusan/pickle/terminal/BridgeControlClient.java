@@ -55,7 +55,7 @@ public class BridgeControlClient {
      */
     public void terminate(String sessionId) {
         if (properties.controlTokenUnset()) {
-            throw serviceUnavailable("웹 터미널 제어 채널이 설정되지 않았습니다.");
+            throw serviceUnavailable("웹 터미널 제어 채널이 설정되지 않았어요.");
         }
         String body = JSON.writeValueAsString(new TerminateBody(sessionId));
         try {
@@ -71,17 +71,17 @@ public class BridgeControlClient {
                         }
                         log.warn("bridge control /terminate HTTP {} for session {}", status,
                                 sessionId);
-                        throw serviceUnavailable("웹 터미널 세션 종료 지시에 실패했습니다.");
+                        throw serviceUnavailable("웹 터미널 세션 종료 결과를 확인하지 못했어요.");
                     });
         } catch (ResourceAccessException e) {
             log.warn("bridge control transport failure on /terminate: {}", e.getMessage());
-            throw serviceUnavailable("웹 터미널 브리지에 연결할 수 없습니다.");
+            throw serviceUnavailable("웹 터미널 브리지의 응답을 확인하지 못했어요.");
         }
     }
 
     private static ApiException serviceUnavailable(String detail) {
         return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.INTERNAL_ERROR,
-                "웹 터미널 세션을 종료할 수 없습니다", detail);
+                "웹 터미널 종료를 확인할 수 없어요", detail);
     }
 
     private record TerminateBody(String sessionId) {

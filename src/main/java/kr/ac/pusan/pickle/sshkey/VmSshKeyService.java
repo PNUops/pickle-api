@@ -85,8 +85,8 @@ public class VmSshKeyService {
         requireAlive(vm);
         if (repository.findByVmIdAndUserId(vm.getId(), actor.id()).isPresent()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.SSH_KEY_ALREADY_ISSUED,
-                    "이미 발급된 키가 있습니다",
-                    "이 VM의 SSH 키는 이미 발급되어 있습니다. 개인키를 다시 내려받거나, 키를 재발급해 주세요.");
+                    "이미 발급된 키가 있어요",
+                    "이 VM의 SSH 키가 이미 발급돼 있어요. 개인키를 다시 내려받거나 키를 재발급해 주세요.");
         }
         try {
             return created(actor, vm, ip, AuditService.VM_SSH_KEY_ISSUE, null);
@@ -95,8 +95,8 @@ public class VmSshKeyService {
             // index. That is the same "you already have one" the check reports,
             // so it answers the same way rather than a 500.
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.SSH_KEY_ALREADY_ISSUED,
-                    "이미 발급된 키가 있습니다",
-                    "이 VM의 SSH 키는 이미 발급되어 있습니다. 개인키를 다시 내려받거나, 키를 재발급해 주세요.");
+                    "이미 발급된 키가 있어요",
+                    "이 VM의 SSH 키가 이미 발급돼 있어요. 개인키를 다시 내려받거나 키를 재발급해 주세요.");
         }
     }
 
@@ -124,8 +124,8 @@ public class VmSshKeyService {
             // Two re-issues racing: one of them replaced the row first, so this
             // one is asking to replace a row that is no longer there.
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.SSH_KEY_ALREADY_ISSUED,
-                    "이미 발급된 키가 있습니다",
-                    "다른 요청이 먼저 키를 재발급했습니다. 화면을 새로 고친 뒤 다시 시도해 주세요.");
+                    "이미 발급된 키가 있어요",
+                    "다른 요청이 먼저 키를 재발급했어요. 화면을 새로 고친 뒤 다시 시도해 주세요.");
         }
     }
 
@@ -187,8 +187,8 @@ public class VmSshKeyService {
      */
     private Vm requireMember(AuthenticatedUser actor, UUID vmId) {
         VmAccess access = vmAccessService.of(actor, vmId);
-        return access.requireAtLeast(ResourceRole.MEMBER, "SSH 키를 사용할 권한이 없습니다",
-                "이 VM의 참여자(MEMBER) 이상만 SSH 키를 발급받을 수 있습니다.");
+        return access.requireAtLeast(ResourceRole.MEMBER, "SSH 키를 사용할 권한이 없어요",
+                "이 VM의 참여자(MEMBER) 이상만 SSH 키를 사용할 수 있어요.");
     }
 
     /**
@@ -201,14 +201,14 @@ public class VmSshKeyService {
     private static void requireAlive(Vm vm) {
         if (vm.getStatus() == VmStatus.DELETED || vm.getStatus() == VmStatus.DELETING) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 수행할 수 없는 작업입니다",
-                    "파기된 VM에는 SSH 키를 발급할 수 없습니다.");
+                    "현재 상태에서는 이 작업을 할 수 없어요",
+                    "삭제 중이거나 삭제된 VM에는 SSH 키를 발급할 수 없어요.");
         }
     }
 
     private static ApiException keyNotIssued() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다",
-                "이 VM에 발급된 SSH 키가 없습니다. 먼저 키를 발급해 주세요.");
+                "리소스를 찾을 수 없어요",
+                "이 VM에 발급된 SSH 키가 없어요. 먼저 키를 발급해 주세요.");
     }
 }

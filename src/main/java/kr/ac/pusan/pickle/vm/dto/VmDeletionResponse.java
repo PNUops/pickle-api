@@ -4,14 +4,15 @@ import java.time.Instant;
 import java.util.UUID;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmDeleteKind;
-import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.vm.VmDeletionService;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code VmDeletion} — the pending (or just-accepted)
- * deletion. {@code cancelable} answers "can an <b>admin</b> cancel this right
- * now": false only for force deletes, already-destroyed VMs and elapsed
- * grace/notice times; users can never cancel (contract deletion policy).
+ * deletion. {@code cancelable} reports the snapshot's state eligibility for
+ * admin cancellation: SELF inside its grace window, ADMIN before destruction
+ * starts, and FORCE never. The command rechecks state and authorization;
+ * users cannot cancel.
  */
 public record VmDeletionResponse(
         VmDeleteKind kind,
@@ -26,10 +27,7 @@ public record VmDeletionResponse(
         if (vm.getDeleteKind() == null) {
             return null;
         }
-        boolean cancelable = vm.getDeleteKind() != VmDeleteKind.FORCE
-                && vm.getStatus() != VmStatus.DELETED
-                && vm.getDeleteScheduledFor() != null
-                && vm.getDeleteScheduledFor().isAfter(Instant.now());
+        boolean cancelable = VmDeletionService.isCancelable(vm, Instant.now());
         return new VmDeletionResponse(vm.getDeleteKind(), vm.getDeleteScheduledFor(),
                 vm.getDeleteRequestedAt(), requestedById, vm.getDeleteReason(),
                 cancelable);

@@ -14,13 +14,13 @@ public record CloneImagePin(long imageId, long nodeId, int templateVmid, String 
     public CloneImagePin {
         if (imageId <= 0 || nodeId <= 0 || templateVmid <= 0 || revisionSha256 == null
                 || !revisionSha256.matches("[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("복제할 OS 이미지의 위치가 올바르지 않습니다.");
+            throw new IllegalArgumentException("복제할 OS 이미지의 위치 정보를 확인해 주세요.");
         }
     }
 
     public static CloneImagePin from(OsImage replica) {
         if (replica.getId() == null || replica.getNodeId() == null) {
-            throw new IllegalArgumentException("등록된 OS 이미지만 복제 대상으로 고정할 수 있습니다.");
+            throw new IllegalArgumentException("등록된 OS 이미지만 복제 대상으로 고정할 수 있어요.");
         }
         return new CloneImagePin(replica.getId(), replica.getNodeId(), replica.getProxmoxVmid(),
                 revisionSha256(replica));
@@ -35,14 +35,14 @@ public record CloneImagePin(long imageId, long nodeId, int templateVmid, String 
                 || !revisionSha256.equals(revisionSha256(granted))
                 || !revisionSha256.equals(revisionSha256(replica))
                 || !OsImageReplicaResolver.compatible(granted, replica)) {
-            throw new IllegalStateException("고정된 OS 이미지의 상태나 위치가 변경되었습니다. 관리자 확인이 필요합니다.");
+            throw new IllegalStateException("고정된 OS 이미지의 상태나 위치가 승인 정보와 맞지 않아요. 관리자 확인이 필요해요.");
         }
     }
 
     /** Creation provenance survives recovery; it must never authorize a clone on another current node. */
     public void requireCurrentNode(long currentNodeId) {
         if (currentNodeId != nodeId) {
-            throw new IllegalStateException("현재 VM 위치가 최초 복제 위치와 다릅니다. 다시 복제할 수 없습니다.");
+            throw new IllegalStateException("현재 VM 위치가 최초 복제 위치와 달라요. 다시 복제할 수 없어요.");
         }
     }
 
@@ -60,7 +60,7 @@ public record CloneImagePin(long imageId, long nodeId, int templateVmid, String 
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("이미지 식별 정보를 계산할 수 없습니다.", impossible);
+            throw new IllegalStateException("이미지 식별 정보를 계산하지 못했어요.", impossible);
         }
     }
 }

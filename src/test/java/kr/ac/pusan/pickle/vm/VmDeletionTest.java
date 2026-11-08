@@ -567,19 +567,35 @@ class VmDeletionTest {
         // alone must not strand an intact VM in an uncancelable state.
         long dueVm = createVm(VmStatus.RUNNING);
         markPendingDeletion(dueVm, "ADMIN", Instant.now().minus(Duration.ofMinutes(3)));
+        String dueDetail = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/admin/vms/" + pub("vms", dueVm))
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletion.kind").value("ADMIN"))
+                .andExpect(jsonPath("$.deletion.cancelable").isBoolean())
+                .andReturn().getResponse().getContentAsString();
+        boolean dueCancelable = objectMapper.readTree(dueDetail).get("deletion").get("cancelable").asBoolean();
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", dueVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
         assertThat(statusOf(dueVm)).isEqualTo("RUNNING");
         assertThat(column(dueVm, "delete_kind")).isNull();
 
-        // Once the destroy pipeline claimed the VM (DELETING), cancel refuses.
+        // Once destruction claims the VM, cancel refuses even before the deadline.
         long claimedVm = createVm(VmStatus.DELETING);
-        markPendingDeletion(claimedVm, "ADMIN", Instant.now().minus(Duration.ofMinutes(3)));
+        markPendingDeletion(claimedVm, "ADMIN", Instant.now().plus(Duration.ofMinutes(3)));
+        String claimedDetail = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/admin/vms/" + pub("vms", claimedVm))
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletion.kind").value("ADMIN"))
+                .andExpect(jsonPath("$.deletion.cancelable").isBoolean())
+                .andReturn().getResponse().getContentAsString();
+        boolean claimedCancelable = objectMapper.readTree(claimedDetail).get("deletion").get("cancelable").asBoolean();
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", claimedVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
+
+        assertThat(List.of(dueCancelable, claimedCancelable)).containsExactly(true, false);
     }
 
     @Test

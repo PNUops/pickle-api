@@ -271,7 +271,7 @@ public class Vm {
             return Optional.empty();
         }
         if (present != 4) {
-            throw new IllegalStateException("VM의 복제 이미지 고정 정보가 불완전합니다.");
+            throw new IllegalStateException("VM의 복제 이미지 고정 정보가 불완전해요.");
         }
         return Optional.of(new CloneImagePin(cloneImageId, cloneNodeId, cloneTemplateVmid,
                 cloneRevisionSha256));
@@ -282,7 +282,7 @@ public class Vm {
         Optional<CloneImagePin> existing = cloneImagePin();
         if (existing.isPresent()) {
             if (!existing.get().equals(pin)) {
-                throw new IllegalStateException("VM의 복제 이미지 고정 정보를 변경할 수 없습니다.");
+                throw new IllegalStateException("VM의 복제 이미지 고정 정보는 바꿀 수 없어요.");
             }
             return;
         }

@@ -40,23 +40,23 @@ public class SshPublicKeyParser {
         String[] fields = raw.strip().split("\\s+", 3);
         if (fields.length < 2) {
             throw new SshPublicKeyParseException(
-                    "공개키 형식이 올바르지 않습니다. `<type> <base64>` 한 줄이어야 합니다.");
+                    "공개키는 `<type> <base64>` 형식의 한 줄로 입력해 주세요.");
         }
         String declaredType = fields[0];
         SshKeyAlgorithm algorithm = SshKeyAlgorithm.fromWireType(declaredType);
         if (algorithm == null) {
             throw new SshPublicKeyParseException(
-                    "지원하지 않는 키 형식입니다. ed25519 키를 권장합니다 (ssh-keygen -t ed25519).");
+                    "지원하지 않는 키 형식이에요. ed25519 키를 권장해요 (ssh-keygen -t ed25519).");
         }
 
         byte[] blob;
         try {
             blob = Base64.getDecoder().decode(fields[1]);
         } catch (IllegalArgumentException e) {
-            throw new SshPublicKeyParseException("공개키 본문(base64)을 해독할 수 없습니다.");
+            throw new SshPublicKeyParseException("공개키 본문(base64)을 해독할 수 없어요.");
         }
         if (blob.length == 0 || blob.length > MAX_BLOB_BYTES) {
-            throw new SshPublicKeyParseException("공개키 본문의 크기가 올바르지 않습니다.");
+            throw new SshPublicKeyParseException("공개키 본문 크기를 확인해 주세요.");
         }
 
         BlobReader reader = new BlobReader(blob);
@@ -64,14 +64,14 @@ public class SshPublicKeyParser {
         if (!declaredType.equals(embeddedType)) {
             // A key whose declared type disagrees with its blob is malformed or
             // spoofed — refuse rather than trust the label.
-            throw new SshPublicKeyParseException("공개키의 선언 타입과 실제 내용이 일치하지 않습니다.");
+            throw new SshPublicKeyParseException("공개키의 선언 타입과 실제 내용이 일치하지 않아요.");
         }
         if (algorithm == SshKeyAlgorithm.RSA) {
             reader.readMpint();                       // public exponent e (unused)
             BigInteger modulus = reader.readMpint();  // modulus n
             if (modulus.bitLength() < MIN_RSA_MODULUS_BITS) {
                 throw new SshPublicKeyParseException(
-                        "RSA 키는 2048비트 이상이어야 합니다. ed25519 키를 권장합니다.");
+                        "RSA 키는 2048비트 이상이어야 해요. ed25519 키를 권장해요.");
             }
         }
 
@@ -112,7 +112,7 @@ public class SshPublicKeyParser {
 
         private byte[] readLengthPrefixed() {
             if (offset + 4 > data.length) {
-                throw new SshPublicKeyParseException("공개키 본문이 손상되었습니다.");
+                throw new SshPublicKeyParseException("공개키 본문이 손상됐어요.");
             }
             long length = ((data[offset] & 0xFFL) << 24)
                     | ((data[offset + 1] & 0xFFL) << 16)
@@ -120,7 +120,7 @@ public class SshPublicKeyParser {
                     | (data[offset + 3] & 0xFFL);
             offset += 4;
             if (length < 0 || offset + length > data.length) {
-                throw new SshPublicKeyParseException("공개키 본문이 손상되었습니다.");
+                throw new SshPublicKeyParseException("공개키 본문이 손상됐어요.");
             }
             byte[] out = new byte[(int) length];
             System.arraycopy(data, offset, out, 0, (int) length);

@@ -35,7 +35,7 @@ public final class VmNicConfiguration {
     private static void requirePrepared(Map<String, String> fields, NodeVmNicRequirements requirements) {
         if (!Integer.toString(requirements.mtu()).equals(fields.get("mtu"))
                 || !"1".equals(fields.get("firewall"))) {
-            throw new IllegalStateException("VM 네트워크의 MTU 또는 방화벽 준비 값이 노드 기준과 다릅니다.");
+            throw new IllegalStateException("VM 네트워크의 MTU나 방화벽 준비 값이 노드 기준과 달라요.");
         }
     }
 
@@ -71,6 +71,6 @@ public final class VmNicConfiguration {
     }
 
     private static IllegalStateException invalid() {
-        return new IllegalStateException("VM 네트워크 설정을 안전하게 보존할 수 없습니다.");
+        return new IllegalStateException("VM 네트워크 설정을 안전하게 보존할 수 없어요.");
     }
 }

@@ -238,7 +238,7 @@ public class ProvisionVmJob implements ProvisioningService {
         for (int step = task.getCurrentStep(); step <= ProvisioningStep.FINALIZE.index(); step++) {
             Vm vm = vmRepository.findById(vmId).orElse(null);
             if (vm == null) {
-                taskRepository.fail(task.getId(), "VM 행이 존재하지 않습니다", Instant.now());
+                taskRepository.fail(task.getId(), "VM 정보를 찾을 수 없어요", Instant.now());
                 throw new PipelineHalted("vm row missing");
             }
             if (step > ProvisioningStep.GUARD.index() && step != ProvisioningStep.FINALIZE.index()) {
@@ -287,7 +287,7 @@ public class ProvisionVmJob implements ProvisioningService {
             return vmRepository.findById(vm.getId()).orElse(vm);
         }
         taskRepository.fail(task.getId(),
-                "파이프라인 진행 중 VM 상태가 " + vm.getStatus() + "(으)로 바뀌어 중단했습니다 (삭제 등)",
+                "VM이 " + vm.getStatus() + " 상태라서 프로비저닝을 중단했어요.",
                 Instant.now());
         throw new PipelineHalted("vm left CREATING mid-pipeline: " + vm.getStatus());
     }
@@ -303,7 +303,7 @@ public class ProvisionVmJob implements ProvisioningService {
             return;
         }
         taskRepository.fail(task.getId(),
-                "VM 상태 " + vm.getStatus() + "에서는 프로비저닝을 진행할 수 없습니다", Instant.now());
+                "VM 상태 " + vm.getStatus() + "에서는 프로비저닝을 진행할 수 없어요", Instant.now());
         throw new PipelineHalted("vm status " + vm.getStatus() + " fails the guard");
     }
 
@@ -314,12 +314,12 @@ public class ProvisionVmJob implements ProvisioningService {
             pin.requireCurrentNode(vm.getNodeId());
             Node node = node(vm);
             if (node.getStatus() != NodeStatus.ACTIVE) {
-                throw new IllegalStateException("승인 시 선택한 노드가 더 이상 ACTIVE 상태가 아닙니다.");
+                throw new IllegalStateException("승인 시 선택한 노드가 현재 ACTIVE 상태가 아니에요.");
             }
             OsImage granted = imageRepository.findById(vm.getImageId()).orElseThrow(
-                    () -> new IllegalStateException("OS 이미지 " + vm.getImageId() + "이 존재하지 않습니다"));
+                    () -> new IllegalStateException("OS 이미지 " + vm.getImageId() + " 항목을 찾을 수 없어요"));
             OsImage replica = imageRepository.findById(pin.imageId()).orElseThrow(
-                    () -> new IllegalStateException("고정된 복제 이미지가 존재하지 않습니다."));
+                    () -> new IllegalStateException("고정된 복제 이미지를 찾을 수 없어요."));
             pin.requireUnchanged(granted, replica);
         } catch (IllegalStateException unsafe) {
             throw new ProvisioningSafetyException(unsafe.getMessage(), unsafe);
@@ -333,7 +333,7 @@ public class ProvisionVmJob implements ProvisioningService {
         }
         Node node = node(vm);
         if (node.getIpPoolId() == null) {
-            throw new IllegalStateException("노드 " + node.getName() + "에 IP 풀이 지정되지 않았습니다");
+            throw new IllegalStateException("노드 " + node.getName() + "에 IP 풀이 지정되지 않았어요");
         }
         IpAllocation allocation = allocationRepository
                 .findFirstByVmIdAndStatusOrderByIdDesc(vm.getId(), AllocationStatus.ALLOCATED)
@@ -362,9 +362,9 @@ public class ProvisionVmJob implements ProvisioningService {
             pin = requiredClonePin(vm);
             pin.requireCurrentNode(node.getId());
             OsImage granted = imageRepository.findById(vm.getImageId())
-                    .orElseThrow(() -> new IllegalStateException("승인된 OS 이미지가 존재하지 않습니다."));
+                    .orElseThrow(() -> new IllegalStateException("승인된 OS 이미지를 찾을 수 없어요."));
             OsImage replica = imageRepository.findById(pin.imageId())
-                    .orElseThrow(() -> new IllegalStateException("고정된 복제 이미지가 존재하지 않습니다."));
+                    .orElseThrow(() -> new IllegalStateException("고정된 복제 이미지를 찾을 수 없어요."));
             pin.requireUnchanged(granted, replica);
         } catch (IllegalStateException unsafe) {
             throw new ProvisioningSafetyException(unsafe.getMessage(), unsafe);
@@ -383,8 +383,8 @@ public class ProvisionVmJob implements ProvisioningService {
             // wrong: park for an operator (VmidConflict routes there).
             if (!vm.getHostname().equals(resident.name())) {
                 throw new VmidConflict("vmid " + vmid + " 충돌: 클러스터의 기존 게스트 '"
-                        + resident.name() + "'이(가) 호스트명 '" + vm.getHostname()
-                        + "'과 다릅니다 — vmid_seq 재동기화가 필요합니다.");
+                        + resident.name() + "' 값이 호스트명 '" + vm.getHostname()
+                        + "' 값과 달라요. vmid_seq 재동기화가 필요해요.");
             }
             log.info("provision vm {}: vmid {} already exists — clone skipped", vm.getId(), vmid);
             if (networkPolicyRequired) {
@@ -394,7 +394,7 @@ public class ProvisionVmJob implements ProvisioningService {
         }
         if (node.getStatus() != NodeStatus.ACTIVE) {
             IllegalStateException inactive = new IllegalStateException(
-                    "승인 시 선택한 노드가 더 이상 ACTIVE 상태가 아닙니다.");
+                    "승인 시 선택한 노드가 현재 ACTIVE 상태가 아니에요.");
             throw new ProvisioningSafetyException(inactive.getMessage(), inactive);
         }
         try {
@@ -404,7 +404,7 @@ public class ProvisionVmJob implements ProvisioningService {
                         node.getName(), pin.templateVmid());
                 VmNicConfiguration.requirePrepared(nicConfig(templateConfig), requirements.get());
                 if (networkPolicyRequired && truthy(templateConfig.get("onboot"))) {
-                    throw new IllegalStateException("VM 방화벽 준비 template의 onboot는 0이어야 합니다.");
+                    throw new IllegalStateException("VM 방화벽 준비 template의 onboot는 0이어야 해요.");
                 }
             }
         } catch (IllegalStateException unsafe) {
@@ -425,7 +425,7 @@ public class ProvisionVmJob implements ProvisioningService {
                 node.getApiHost(), node.getName(), vmid).get("status"));
         if (truthy(config.get("onboot")) || !"stopped".equals(runtime)) {
             IllegalStateException unsafe = new IllegalStateException(
-                    "VM 방화벽 준비 clone의 stopped/onboot=0 상태를 확인할 수 없습니다.");
+                    "VM 방화벽 준비 clone의 stopped/onboot=0 상태를 확인할 수 없어요.");
             throw new ProvisioningSafetyException(unsafe.getMessage(), unsafe);
         }
     }
@@ -566,7 +566,7 @@ public class ProvisionVmJob implements ProvisioningService {
                         apiHost, nodeName, targetVmid).get("onboot");
                 if (!(Integer.valueOf(1).equals(onboot) || "1".equals(String.valueOf(onboot))
                         || Boolean.TRUE.equals(onboot))) {
-                    throw new IllegalStateException("VM 자동 시작 설정을 확인할 수 없습니다.");
+                    throw new IllegalStateException("VM 자동 시작 설정을 확인할 수 없어요.");
                 }
                 return new ProviderDispatch(proxmox.start(apiHost, nodeName, targetVmid),
                         apiHost, nodeName, targetVmid);
@@ -584,7 +584,7 @@ public class ProvisionVmJob implements ProvisioningService {
         while (!proxmox.agentPing(dispatch.apiHost(), dispatch.node(), dispatch.vmid())) {
             if (System.nanoTime() >= deadline) {
                 throw new ProxmoxTimeoutException("qemu-guest-agent가 " + AGENT_PING_TIMEOUT
-                        + " 안에 응답하지 않았습니다 (vmid " + dispatch.vmid() + ")");
+                        + " 안에 응답하지 않았어요 (vmid " + dispatch.vmid() + ")");
             }
             sleep(AGENT_PING_INTERVAL);
         }
@@ -603,7 +603,7 @@ public class ProvisionVmJob implements ProvisioningService {
         if (!found) {
             // cloud-init may still be applying the network config — retryable
             throw new RetryableStepException(
-                    "게스트 네트워크에서 기대 IP " + expected + "를 찾지 못했습니다");
+                    "게스트 네트워크에서 기대 IP " + expected + "를 찾지 못했어요");
         }
     }
 
@@ -632,7 +632,7 @@ public class ProvisionVmJob implements ProvisioningService {
         }
         if (collected.isEmpty()) {
             throw new RetryableStepException(
-                    "게스트 SSH 호스트 키를 아직 읽지 못했습니다 (sshd 키 생성 대기 또는 에이전트 무응답)");
+                    "게스트 SSH 호스트 키를 아직 읽지 못했어요 (sshd 키 생성 대기 또는 에이전트 무응답)");
         }
         vmRepository.storeSshHostKey(vm.getId(), String.join("\n", collected), Instant.now());
     }
@@ -679,7 +679,7 @@ public class ProvisionVmJob implements ProvisioningService {
             if (current == null || (current.getStatus() != VmStatus.CREATING
                     && current.getStatus() != VmStatus.NEEDS_ADMIN
                     && current.getStatus() != VmStatus.RUNNING)) {
-                taskRepository.fail(task.getId(), "VM 상태가 바뀌어 완료 기록을 중단했습니다", now);
+                taskRepository.fail(task.getId(), "현재 VM 상태에서는 완료 기록을 저장할 수 없어요", now);
                 return null;
             }
             // RUNNING at this step can be a partial completion written by an
@@ -762,7 +762,7 @@ public class ProvisionVmJob implements ProvisioningService {
         if (e instanceof ProvisioningSafetyException) {
             taskRepository.park(taskId, error, now);
             vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
-                    "프로비저닝 안전 조건을 확인할 수 없어 관리자 확인 대기 중입니다", now);
+                    "프로비저닝 안전 조건을 확인할 수 없어 관리자 확인이 필요해요", now);
             publishCreateFailed(vmId, error);
             return;
         }
@@ -784,7 +784,7 @@ public class ProvisionVmJob implements ProvisioningService {
             // A completion-recording failure must not report a creation failure.
             if (taskRepository.park(taskId, error, now) == 1) {
                 vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
-                        "VM 완료 기록을 저장하지 못해 관리자 확인이 필요합니다", now);
+                        "VM 완료 기록을 저장하지 못해 관리자 확인이 필요해요", now);
             }
         } else if (e instanceof VmidConflict) {
             // Neither compensation nor retry is safe: the resident may carry
@@ -798,7 +798,7 @@ public class ProvisionVmJob implements ProvisioningService {
             vmRepository.clearProxmoxVmid(vmId, now);
             taskRepository.parkAtStep(taskId, ProvisioningStep.VMID.index(), error, now);
             vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
-                    "vmid 충돌로 관리자 확인 대기 중입니다 (vmid_seq 재동기화 필요)", now);
+                    "vmid 충돌로 관리자 확인이 필요해요 (vmid_seq 재동기화 필요)", now);
             publishCreateFailed(vmId, error);
         } else if (step <= ProvisioningStep.ALLOC_IP.index()) {
             // steps 0–2: nothing exists on Proxmox — release the IP and error out
@@ -813,7 +813,7 @@ public class ProvisionVmJob implements ProvisioningService {
             // steps 6–10: the VM exists and may hold user-visible state — park it
             taskRepository.park(taskId, error, now);
             vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
-                    "프로비저닝 중 오류가 발생해 관리자 확인 대기 중입니다", now);
+                    "프로비저닝 중 오류가 발생해 관리자 확인이 필요해요", now);
             publishCreateFailed(vmId, error);
         }
     }
@@ -842,8 +842,8 @@ public class ProvisionVmJob implements ProvisioningService {
                     // look like ours (clone names it after the hostname)
                     if (!ManagedGuestIdentity.matches(vm, resource)) {
                         throw new IllegalStateException("보상 파기 대상 불일치: vmid " + vmid
-                                + "의 게스트 이름 '" + resource.name() + "'이(가) 호스트명 '"
-                                + vm.getHostname() + "'과 다르고 플랫폼 관리 태그도 없습니다");
+                                + "의 게스트 이름 '" + resource.name() + "' 값이 호스트명 '"
+                                + vm.getHostname() + "' 값과 다르고 플랫폼 관리 태그도 없어요");
                     }
                     proxmox.setProtection(node.getApiHost(), node.getName(), vmid, false);
                     String upid = proxmox.delete(node.getApiHost(), node.getName(), vmid);
@@ -857,7 +857,7 @@ public class ProvisionVmJob implements ProvisioningService {
                     cleanupFailure);
             taskRepository.park(taskId, error + " (보상 실패: " + summarize(cleanupFailure) + ")", now);
             vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
-                    "생성 실패 후 자원 정리에 실패해 관리자 확인이 필요합니다", now);
+                    "생성 실패 후 자원 정리 결과를 확인하지 못해 관리자 확인이 필요해요", now);
             publishCreateFailed(vmId, error + " (보상 실패: " + summarize(cleanupFailure) + ")");
             return;
         }
@@ -954,19 +954,19 @@ public class ProvisionVmJob implements ProvisioningService {
 
     private Node node(Vm vm) {
         return nodeRepository.findById(vm.getNodeId()).orElseThrow(
-                () -> new IllegalStateException("노드 " + vm.getNodeId() + "가 존재하지 않습니다"));
+                () -> new IllegalStateException("노드 " + vm.getNodeId() + " 항목을 찾을 수 없어요"));
     }
 
     private static int requireVmid(Vm vm) {
         if (vm.getProxmoxVmid() == null) {
-            throw new IllegalStateException("proxmox_vmid가 아직 지정되지 않았습니다 (vm " + vm.getId() + ")");
+            throw new IllegalStateException("proxmox_vmid가 아직 지정되지 않았어요 (vm " + vm.getId() + ")");
         }
         return vm.getProxmoxVmid();
     }
 
     private static CloneImagePin requiredClonePin(Vm vm) {
         return vm.cloneImagePin().orElseThrow(() -> new IllegalStateException(
-                "기존 VM 생성 요청에는 복제 이미지 고정 정보가 없습니다. 관리자 확인이 필요합니다."));
+                "기존 VM 생성 요청에 복제 이미지 고정 정보가 없어요. 관리자 확인이 필요해요."));
     }
 
     private static String nicConfig(Map<String, Object> config) {
@@ -976,7 +976,7 @@ public class ProvisionVmJob implements ProvisioningService {
 
     private IpAllocation requireAllocation(Vm vm) {
         if (vm.getIpAllocationId() == null) {
-            throw new IllegalStateException("IP가 아직 할당되지 않았습니다 (vm " + vm.getId() + ")");
+            throw new IllegalStateException("IP가 아직 할당되지 않았어요 (vm " + vm.getId() + ")");
         }
         return allocationRepository.findById(vm.getIpAllocationId()).orElseThrow();
     }
@@ -997,7 +997,7 @@ public class ProvisionVmJob implements ProvisioningService {
     private static int cidrPrefix(String cidr) {
         int slash = cidr.indexOf('/');
         if (slash < 0) {
-            throw new IllegalStateException("IP 풀 CIDR 형식이 잘못되었습니다: " + cidr);
+            throw new IllegalStateException("IP 풀 CIDR 형식을 확인해 주세요: " + cidr);
         }
         return Integer.parseInt(cidr.substring(slash + 1));
     }

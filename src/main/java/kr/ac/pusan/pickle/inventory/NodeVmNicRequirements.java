@@ -39,6 +39,6 @@ public record NodeVmNicRequirements(int mtu, boolean firewall) {
     }
 
     private static IllegalStateException invalid() {
-        return new IllegalStateException("노드의 VM 네트워크 준비 정보를 확인할 수 없습니다.");
+        return new IllegalStateException("노드의 VM 네트워크 준비 정보를 확인할 수 없어요.");
     }
 }

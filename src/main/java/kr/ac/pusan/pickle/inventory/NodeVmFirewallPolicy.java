@@ -30,6 +30,6 @@ public record NodeVmFirewallPolicy(int schemaVersion) {
     }
 
     private static IllegalStateException invalid() {
-        return new IllegalStateException("노드의 VM 방화벽 정책 준비 정보를 확인할 수 없습니다.");
+        return new IllegalStateException("노드의 VM 방화벽 정책 준비 정보를 확인할 수 없어요.");
     }
 }
