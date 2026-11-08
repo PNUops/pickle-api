@@ -73,21 +73,21 @@ public class BootstrapAdminService {
         Map<String, Long> before = nonEmptyApplicationTables();
         if (!before.isEmpty()) {
             throw new IllegalStateException(
-                    "격리 부트스트랩 대상 DB에 기존 애플리케이션 데이터가 있습니다: " + before.keySet());
+                    "격리 부트스트랩 대상 DB에 기존 애플리케이션 데이터가 있어요: " + before.keySet());
         }
         create(email, password, false);
         entityManager.flush();
         Map<String, Long> after = nonEmptyApplicationTables();
         if (!after.equals(ISOLATED_RESULT)) {
             throw new IllegalStateException(
-                    "격리 부트스트랩이 관리자 소유 행 외 데이터를 만들었습니다: " + after);
+                    "격리 부트스트랩에 관리자 소유 행 외 데이터가 생성됐어요: " + after);
         }
     }
 
     private void create(String email, String password, boolean logEmail) {
         if (userRepository.existsByEmail(email)) {
             throw new IllegalStateException(
-                    ProdBootstrapSeeder.EMAIL_ENV + " 이메일이 이미 다른 계정에 사용 중입니다. 다른 이메일을 지정하세요.");
+                    ProdBootstrapSeeder.EMAIL_ENV + " 이메일은 이미 다른 계정이 사용하고 있어요. 다른 이메일을 지정해 주세요.");
         }
         if (logEmail) {
             log.info("초기 SYS_ADMIN 계정을 부트스트랩합니다: {}", email);
@@ -107,25 +107,25 @@ public class BootstrapAdminService {
         String email = emailValue == null ? null : emailValue.trim();
         if (email == null || email.isBlank()) {
             throw new IllegalStateException(ProdBootstrapSeeder.EMAIL_ENV
-                    + " 환경 변수가 비어 있습니다. 초기 관리자 이메일을 설정한 뒤 다시 시작하세요.");
+                    + " 환경 변수가 비어 있어요. 초기 관리자 이메일을 설정한 뒤 다시 시작해 주세요.");
         }
         if (password == null || password.isBlank()) {
             throw new IllegalStateException(ProdBootstrapSeeder.PASSWORD_ENV
-                    + " 환경 변수가 비어 있습니다. 초기 관리자 비밀번호를 설정한 뒤 다시 시작하세요.");
+                    + " 환경 변수가 비어 있어요. 초기 관리자 비밀번호를 설정한 뒤 다시 시작해 주세요.");
         }
         if (password.length() < MIN_PASSWORD_LENGTH) {
-            throw new IllegalStateException(ProdBootstrapSeeder.PASSWORD_ENV + " 비밀번호가 너무 짧습니다("
-                    + MIN_PASSWORD_LENGTH + "자 이상 필요). 더 강력한 비밀번호로 다시 시작하세요.");
+            throw new IllegalStateException(ProdBootstrapSeeder.PASSWORD_ENV + " 비밀번호가 너무 짧아요("
+                    + MIN_PASSWORD_LENGTH + "자 이상 필요). 더 강력한 비밀번호로 다시 시작해 주세요.");
         }
         if (FORBIDDEN_PASSWORDS.contains(password.toLowerCase(Locale.ROOT))) {
             throw new IllegalStateException(ProdBootstrapSeeder.PASSWORD_ENV
-                    + " 비밀번호가 추측 가능한 기본값입니다. 실제 비밀번호로 교체한 뒤 다시 시작하세요.");
+                    + " 비밀번호가 추측 가능한 기본값이에요. 실제 비밀번호로 바꾼 뒤 다시 시작해 주세요.");
         }
         try {
             passwordPolicy.validate(password);
         } catch (RuntimeException weak) {
             throw new IllegalStateException(ProdBootstrapSeeder.PASSWORD_ENV
-                    + " 비밀번호가 보안 정책을 통과하지 못했습니다. 더 강력한 비밀번호로 다시 시작하세요.", weak);
+                    + " 비밀번호가 보안 정책을 통과하지 못했어요. 더 강력한 비밀번호로 다시 시작해 주세요.", weak);
         }
         return email;
     }
@@ -146,7 +146,7 @@ public class BootstrapAdminService {
                 """, Boolean.class);
         if (!Boolean.TRUE.equals(upstreamsExact)) {
             throw new IllegalStateException(
-                    "격리 부트스트랩의 schema-defined LLM upstream 행이 예상과 다릅니다.");
+                    "격리 부트스트랩의 LLM upstream 초기 행이 예상과 달라요.");
         }
         List<String> tables = jdbcTemplate.queryForList(
                 "select tablename from pg_tables where schemaname = current_schema()"

@@ -171,12 +171,12 @@ public class RouteApplyJob {
             Optional<AgentStatus> status = proxyAgentClient.status();
             if (status.isEmpty()) {
                 ApplyOutcome outcome = ApplyOutcome.transport(
-                        "proxy-agent의 출발지 정책 지원 여부를 확인할 수 없습니다.");
+                        "proxy-agent의 출발지 정책 지원 여부를 확인할 수 없어요.");
                 return transactionTemplate.execute(tx -> record(push, outcome, null, null));
             }
             if (!networkPolicyCapability.sourceAclAvailable(status.get().capabilities())) {
                 ApplyOutcome outcome = ApplyOutcome.transport(
-                        "proxy-agent가 source-acl-v1 기능을 보고하지 않았습니다.");
+                        "proxy-agent가 source-acl-v1 기능을 보고하지 않았어요.");
                 return transactionTemplate.execute(tx -> record(push, outcome, null, null));
             }
         }
@@ -284,7 +284,7 @@ public class RouteApplyJob {
         // invariant from depending on all of them staying correct.
         if (!absent && domain.getStatus() != DomainStatus.ACTIVE) {
             // Surface the hold to operators (admin route view shows lastError).
-            route.setLastError("도메인이 검증 완료(ACTIVE) 상태가 아니어서 적용을 보류했습니다. (현재 "
+            route.setLastError("도메인이 검증 완료(ACTIVE) 상태가 아니어서 적용을 보류했어요 (현재 "
                     + domain.getStatus() + ")");
             log.warn("route-apply skipped: route {} is live but domain {} is {} — "
                     + "refusing to push an unverified/released domain", routeId,
@@ -423,7 +423,7 @@ public class RouteApplyJob {
         String targetIp = vm == null ? null
                 : ipAddressResolver.liveHostIp(vm.getIpAllocationId(), vm.getId());
         if (targetIp == null) {
-            recordFailed(route, domain, false, "VM에 할당된 내부 IP를 찾을 수 없습니다.");
+            recordFailed(route, domain, false, "VM에 할당된 내부 IP를 찾을 수 없어요.");
             return null;
         }
         return ApplyRequest.present(domain.getFqdn(), route.getGeneration(), targetIp,
@@ -590,7 +590,7 @@ public class RouteApplyJob {
             notificationService.publishToAdmins(notificationService.sysAdminIds(),
                     NotificationEvent.CERT_FAILURE,
                     Map.of("fqdn", domain.getFqdn(),
-                            "reason", error != null ? error : "원인 미상 (에이전트 응답 없음)"),
+                            "reason", error != null ? error : "실패 원인을 확인할 수 없어요."),
                     "cert_failure:" + domain.getId());
         }
     }

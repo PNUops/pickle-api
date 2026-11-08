@@ -198,7 +198,7 @@ public class MeController {
     private User loadUser(AuthenticatedUser principal) {
         return userRepository.findById(principal.id())
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
-                        "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요."));
+                        "인증 정보를 확인해 주세요", "계정 정보를 확인할 수 없어요. 다시 로그인해 주세요."));
     }
 
     private UserProfileResponse profileOf(User user) {

@@ -58,10 +58,10 @@ public final class ObservationAuthFilter extends OncePerRequestFilter {
     private void deny(HttpServletRequest request, HttpServletResponse response, int status) throws IOException {
         if (status == 413) {
             writer.write(request, response, 413, ErrorCodes.VALIDATION_FAILED,
-                    "요청 본문이 너무 큽니다", "요청 본문이 허용 크기를 초과했습니다.");
+                    "요청 본문이 너무 커요", "요청 본문의 허용 크기를 넘었어요.");
             return;
         }
         writer.write(request, response, status, status == 401 ? ErrorCodes.AUTH_TOKEN_INVALID : ErrorCodes.ACCESS_DENIED,
-                "관측 보고를 처리할 수 없습니다", "허용된 보고 설정과 요청을 확인해 주세요.");
+                "관측 보고를 처리할 수 없어요", "허용된 보고 설정과 요청을 확인해 주세요.");
     }
 }

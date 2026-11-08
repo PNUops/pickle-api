@@ -43,7 +43,7 @@ public record InstitutionPermissionInput(
                     selected, selectedScopes, expectedRevision);
         } catch (IllegalArgumentException | NullPointerException exception) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("permission",
-                    "부여 방식과 업무, 그룹별 워크스페이스 범위를 확인해 주세요. FULL은 업무·범위를 비우고, SELECTED는 업무를 하나 이상 지정해야 합니다.")));
+                    "부여 방식과 업무, 그룹별 워크스페이스 범위를 확인해 주세요. FULL은 업무와 범위를 비우고 SELECTED는 업무를 하나 이상 지정해야 해요.")));
         }
     }
 }

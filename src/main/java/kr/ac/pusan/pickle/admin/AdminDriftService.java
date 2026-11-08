@@ -94,10 +94,10 @@ public class AdminDriftService {
         if (driftFindingRepository.resolve(findingId, actor.id(), note, Instant.now()) == 0) {
             driftFindingRepository.findById(findingId)
                     .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
-                            ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
-                            "드리프트 발견을 찾을 수 없습니다."));
+                            ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요",
+                            "드리프트 발견을 찾을 수 없어요."));
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DRIFT_FINDING_ALREADY_RESOLVED,
-                    "이미 해결된 발견입니다", "이 드리프트 발견은 이미 해결 처리되었습니다.");
+                    "이미 해결된 항목이에요", "이 발견은 이미 해결됨으로 표시돼 있어요.");
         }
         DriftFinding finding = driftFindingRepository.findById(findingId).orElseThrow();
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DRIFT_RESOLVE,

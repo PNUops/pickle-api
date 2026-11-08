@@ -234,7 +234,7 @@ public class Domain {
     /** Binding happens within the same approval transaction as issuance. */
     public void bindRequest(long issuingRequestId) {
         if (requestId != null && requestId != issuingRequestId) {
-            throw new IllegalStateException("발급 신청 연결을 변경할 수 없습니다.");
+            throw new IllegalStateException("발급 신청 연결은 바꿀 수 없어요.");
         }
         requestId = issuingRequestId;
     }
