@@ -28,19 +28,19 @@ public record VmDetailResponse(
         @Nullable Integer vcpu,
         @Nullable Integer memoryMb,
         @Nullable Integer diskGb,
-        @Schema(description = "소유 워크스페이스. 행이 사라졌거나 해당 조회 업무 없이 명령 결과만 확인하는 경우 null입니다.")
+        @Schema(description = "소유 워크스페이스이며, 해당 행이 사라졌거나 조회 업무 없이 명령 결과만 확인하면 null이에요.")
         @Nullable UUID workspaceId,
         @Nullable String workspaceName,
         @Nullable String orgName,
         @Nullable String displayName,
-        @Schema(description = "이 VM을 만든 신청. 행이 사라졌거나 해당 조회 업무 없이 명령 결과만 확인하는 경우 null입니다.")
+        @Schema(description = "이 VM을 만든 신청이며, 해당 행이 사라졌거나 조회 업무 없이 명령 결과만 확인하면 null이에요.")
         @Nullable UUID requestId,
         @Nullable String statusDetail,
         @Nullable Boolean sshGatewayBlocked,
         @Nullable Instant createdAt,
-        @Schema(description = "소속 기관. 행이 사라졌거나 해당 조회 업무 없이 명령 결과만 확인하는 경우 null입니다.")
+        @Schema(description = "소속 기관이며, 해당 행이 사라졌거나 조회 업무 없이 명령 결과만 확인하면 null이에요.")
         @Nullable UUID orgId,
-        @Schema(description = "생성에 쓰인 OS 이미지. 행이 사라졌거나 해당 조회 업무 없이 명령 결과만 확인하는 경우 null입니다.")
+        @Schema(description = "생성에 쓴 OS 이미지이며, 해당 행이 사라졌거나 조회 업무 없이 명령 결과만 확인하면 null이에요.")
         @Nullable UUID imageId,
         @Nullable String ipAddress,
         @Nullable String sshUsername,
@@ -54,11 +54,11 @@ public record VmDetailResponse(
         @Nullable List<PublicationView> publications,
         @Nullable Boolean passwordAvailable,
         boolean passwordRevealAllowed,
-        @Schema(description = "SSH·웹 터미널로 이 VM에 접속할 수 있는지")
+        @Schema(description = "SSH와 웹 터미널로 이 VM에 접속할 수 있는지")
         boolean accessAllowed,
         @Schema(description = "전원을 제어할 수 있는지")
         boolean powerControlAllowed,
-        @Schema(description = "VM 설정을 볼·바꿀 수 있는지")
+        @Schema(description = "VM 설정을 조회하고 바꿀 수 있는지")
         boolean settingsEditAllowed,
         @Schema(description = "접근 권한 목록을 관리할 수 있는지")
         boolean accessManageAllowed,

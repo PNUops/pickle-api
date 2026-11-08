@@ -12,10 +12,10 @@ import org.jspecify.annotations.Nullable;
  */
 public record AdminBulkDomainRenewalChange(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-                description = "새 사용 기한. 미래 시각이어야 하며, 이 시각까지 연장하지 않으면 레코드가 내려가고 이름이 해제됩니다.")
+                description = "새 사용 기한이며 미래 시각으로 지정해요. 기한이 지나도 연장하지 않은 이름은 해제 대상이 되고, 해제할 때 레코드를 삭제해요.")
         @NotNull(message = "새 사용 기한을 지정해 주세요.")
         Instant renewDueAt,
 
-        @Schema(description = "기한을 바꾼 이유. 대상마다 감사 기록에 남습니다.")
+        @Schema(description = "기한을 바꾼 이유이며 대상마다 감사 기록에 남겨요.")
         @Nullable String reason) {
 }

@@ -33,28 +33,28 @@ public class UpdateOpenRouterAccountRequest {
     private @Nullable List<String> defaultCreditDeniedModels;
     private boolean defaultCreditDeniedModelsSet;
 
-    @Schema(description = "새 account 이름. 생략하면 유지하며 null은 허용하지 않습니다.")
+    @Schema(description = "새 사업 계정 이름이에요. 생략하면 유지하고 null은 허용하지 않아요.")
     public String getName() { return name; }
     public void setName(@Nullable String name) { this.name = name; this.nameSet = true; }
-    @Schema(description = "새 사업. 생략하면 유지하고 null이면 지웁니다.")
+    @Schema(description = "새 사업이에요. 생략하면 유지하고 null이면 비워요.")
     public @Nullable String getProgram() { return program; }
     public void setProgram(@Nullable String value) {
         program = value; programSet = true;
     }
-    @Schema(description = "새 담당자. 생략하면 유지하고 null이면 지웁니다.")
+    @Schema(description = "새 담당자예요. 생략하면 유지하고 null이면 비워요.")
     public @Nullable String getContact() { return contact; }
     public void setContact(@Nullable String value) {
         contact = value; contactSet = true;
     }
-    @Schema(description = "새 lifecycle 상태. 생략하면 유지하며 null은 허용하지 않습니다.")
+    @Schema(description = "새 계정 상태예요. 생략하면 유지하고 null은 허용하지 않아요.")
     public OpenRouterAccountStatus getStatus() { return status; }
     public void setStatus(@Nullable OpenRouterAccountStatus status) {
         this.status = status; statusSet = true;
     }
 
-    @Schema(description = "새 유료 모델 허용 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 "
-            + "기본값을 지웁니다. 이 쓰기는 게이트웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 "
-            + "영향이 없습니다."
+    @Schema(description = "새 유료 모델 허용 목록의 기본값이에요. 생략하면 유지하고 null이나 빈 배열이면 "
+            + "기본값을 비워요. 이미 발급된 키에는 이 변경을 "
+            + "자동 적용하지 않아요."
             + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
     public @Nullable List<String> getDefaultCreditAllowedModels() {
         return defaultCreditAllowedModels;
@@ -64,9 +64,9 @@ public class UpdateOpenRouterAccountRequest {
         defaultCreditAllowedModels = value; defaultCreditAllowedModelsSet = true;
     }
 
-    @Schema(description = "새 유료 모델 차단 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 "
-            + "기본값을 지웁니다. 이 쓰기는 게이트웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 "
-            + "영향이 없습니다."
+    @Schema(description = "새 유료 모델 차단 목록의 기본값이에요. 생략하면 유지하고 null이나 빈 배열이면 "
+            + "기본값을 비워요. 이미 발급된 키에는 이 변경을 "
+            + "자동 적용하지 않아요."
             + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
     public @Nullable List<String> getDefaultCreditDeniedModels() {
         return defaultCreditDeniedModels;

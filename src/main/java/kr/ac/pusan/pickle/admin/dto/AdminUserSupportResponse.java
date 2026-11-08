@@ -18,15 +18,15 @@ public record AdminUserSupportResponse(
         UUID userId, Instant observedAt, @Nullable List<AdminUserSupportMembership> memberships,
         boolean invitationsVisible, @Nullable List<AdminUserSupportInvitation> invitations,
         @Nullable List<AdminUserSupportRelatedRequest> requests,
-        @Schema(description = "학생 지원과 종류별 업무·대상 범위를 적용한 리소스 관계. 제공할 수 없는 진단 필드는 null입니다. 기관 선택은 필터입니다. 도메인은 EXTERNAL만 포함하며 VM 연결 도메인은 "
-                + "워크스페이스 도메인 목록과 연결 VM에서 확인합니다. 종료된 리소스 이력도 포함합니다.")
+        @Schema(description = "학생 지원과 종류별 업무 및 대상 범위를 적용한 리소스 관계예요. 제공할 수 없는 진단 필드는 null이며 기관 선택은 필터예요. 도메인은 EXTERNAL만 포함하며 VM 연결 도메인은 "
+                + "워크스페이스 도메인 목록과 연결 VM에서 확인해요. 종료된 리소스 이력도 포함해요.")
         @Nullable List<AdminUserResourceAccessResponse> resources,
         @Schema(description = "관계 데이터가 업무나 대상 범위에 따라 일부만 제공되거나 제공되지 않았는지")
         boolean relationshipsLimited) {
 
     @Schema(name = "AdminUserSupportResourceCount")
     public record AdminUserSupportResourceCount(ResourceType type,
-            @Schema(description = "공간과 기관 필터 안의 종류 전체 행 수를 읽을 수 있을 때만 제공하며 그 외에는 null입니다. 종료된 이력을 포함하며 도메인은 모든 종류를 셉니다.")
+            @Schema(description = "워크스페이스와 기관 필터 안의 종류별 전체 행 수를 읽을 수 있을 때만 제공하며 그 외에는 null이에요. 종료된 이력을 포함하며 도메인은 모든 종류를 세요.")
             @Nullable Long count) { }
 
     @Schema(name = "AdminUserSupportMembership")

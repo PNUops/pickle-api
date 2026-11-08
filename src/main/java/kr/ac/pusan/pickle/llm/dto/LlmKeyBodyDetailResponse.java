@@ -19,7 +19,7 @@ import tools.jackson.databind.JsonNode;
  */
 public record LlmKeyBodyDetailResponse(
         UUID id,
-        @Schema(description = "이 기록과 같은 요청에서 나온 사용량 이벤트의 식별자입니다.")
+        @Schema(description = "이 기록과 같은 요청에서 나온 사용량 이벤트 ID예요.")
         String eventUuid,
         Instant requestedAt,
         Instant receivedAt,
@@ -29,11 +29,11 @@ public record LlmKeyBodyDetailResponse(
         boolean responseTruncated,
         int requestBytes,
         int responseBytes,
-        @Schema(description = "false면 이 기록을 푸는 암호화 키가 서버에 없어 본문을 읽을 수 없습니다.")
+        @Schema(description = "false면 저장된 본문을 읽을 수 없어요.")
         boolean readable,
-        @Schema(description = "보낸 프롬프트. 보통은 messages 배열 그대로이고, 길이 제한에 "
-                + "걸린 경우에는 앞부분을 담은 문자열입니다. 기록되지 않았으면 null입니다.")
+        @Schema(description = "보낸 프롬프트이며 보통 messages 배열이에요. 길이 제한에 "
+                + "걸리면 앞부분을 담은 문자열이에요. 읽을 수 없거나 기록하지 않았으면 null이에요.")
         @Nullable JsonNode request,
-        @Schema(description = "받은 응답 텍스트. 기록되지 않았으면 null입니다.")
+        @Schema(description = "받은 응답 텍스트이며, 읽을 수 없거나 기록하지 않았으면 null이에요.")
         @Nullable String response) {
 }

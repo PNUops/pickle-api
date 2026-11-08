@@ -13,8 +13,8 @@ import jakarta.validation.constraints.Size;
  * that has to be renamed later. Keep the constraints on both in step.
  */
 public record RegisterOpenRouterCredentialRequest(
-        @Schema(writeOnly = true, description = "OpenRouter management key. 응답에는 반환되지 않습니다.")
+        @Schema(writeOnly = true, description = "OpenRouter 관리용 키이며 응답에 반환하지 않아요.")
         @NotBlank @Size(max = 4096) String managementKey,
-        @Schema(description = "Account 이름과 정확히 같아야 하는 확인값")
+        @Schema(description = "사업 계정 이름과 정확히 같아야 하는 확인값")
         @NotBlank @Size(max = 120) String confirmName) {
 }

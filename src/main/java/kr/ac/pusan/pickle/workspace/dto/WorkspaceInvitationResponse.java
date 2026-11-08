@@ -14,10 +14,10 @@ public record WorkspaceInvitationResponse(
         @Schema(description = "초대 식별자")
         UUID id,
 
-        @Schema(description = "초대한 이메일. 학번으로 초대했으면 null입니다.")
+        @Schema(description = "초대한 이메일이며, 학번으로 초대했으면 null이에요.")
         @Nullable String email,
 
-        @Schema(description = "초대한 학번. 이메일로 초대했으면 null입니다.")
+        @Schema(description = "초대한 학번이며, 이메일로 초대했으면 null이에요.")
         @Nullable String studentNo,
 
         @Schema(description = "구성원이 되었을 때 받을 역할")

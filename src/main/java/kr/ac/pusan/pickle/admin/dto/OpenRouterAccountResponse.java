@@ -9,7 +9,7 @@ import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountStatus;
 import org.jspecify.annotations.Nullable;
 
 public record OpenRouterAccountResponse(
-        @Schema(description = "Account 공개 ID")
+        @Schema(description = "사업 계정 공개 ID")
         UUID id,
         @Schema(description = "소유 기관 공개 ID")
         UUID orgId,
@@ -17,37 +17,37 @@ public record OpenRouterAccountResponse(
         String orgName,
         @Schema(description = "사업 계정 이름")
         String name,
-        @Schema(description = "Account lifecycle 상태")
+        @Schema(description = "사업 계정 상태")
         OpenRouterAccountStatus status,
-        @Schema(description = "이 account가 청구되는 사업. 없으면 null")
+        @Schema(description = "이 사업 계정의 비용을 청구하는 사업. 없으면 null")
         @Nullable String program,
-        @Schema(description = "이 account를 물어볼 담당자. 없으면 null")
+        @Schema(description = "이 사업 계정의 담당자. 없으면 null")
         @Nullable String contact,
-        @Schema(description = "현재 positive-credit key binding에 선택할 수 있는지")
+        @Schema(description = "금액 한도가 양수인 키의 연결 대상으로 선택할 수 있는지")
         boolean eligibleForBinding,
-        @Schema(description = "이 사업 계정에 현재 연결된 모든 상태의 LLM API 키 수. live 약속량과 현재 읽을 수 있는 keyNavigation 부분집합, 기간별 소비 키 수와 다릅니다.")
+        @Schema(description = "이 사업 계정에 현재 연결된 모든 상태의 LLM API 키 수예요. 살아 있는 키의 약속량과 열람 가능한 keyNavigation 부분집합, 기간별 소비 키 수는 각각 다른 값이에요.")
         @Nullable Long boundKeyCount,
-        @Schema(description = "프로비저닝과 대사에 사용할 management credential이 있는지")
+        @Schema(description = "프로비저닝과 대사에 사용할 관리용 키가 있는지")
         @Nullable Boolean credentialAvailable,
-        @Schema(description = "현재 ACTIVE credential의 secret-free 상태. 없으면 null")
+        @Schema(description = "현재 ACTIVE 관리용 키의 상태 정보(키 값 제외). 없으면 null")
         @Nullable OpenRouterCredentialStateResponse activeCredential,
-        @Schema(description = "STAGED 또는 RETIRING credential의 secret-free 상태. 없으면 null")
+        @Schema(description = "STAGED 또는 RETIRING 관리용 키의 상태 정보(키 값 제외). 없으면 null")
         @Nullable OpenRouterCredentialStateResponse rotationCredential,
-        @Schema(description = "DB cache에서 읽은 account credits·예상·미관리 지출 관측 상태")
+        @Schema(description = "저장된 사업 계정 credits와 예상값, 미관리 지출의 관측 상태")
         @Nullable OpenRouterAccountCreditsResponse credits,
-        @Schema(description = "이 account에 걸린 살아 있는 key의 금액 한도 합계")
+        @Schema(description = "이 사업 계정에 연결된 살아 있는 키의 금액 한도 합계")
         @Nullable OpenRouterAccountAllocationResponse allocation,
-        @Schema(description = "승인 화면이 프리필에 쓰는 유료 모델 허용 목록 기본값. 복사 원본이지 "
-                + "상속원이 아니라서 여기를 바꿔도 이미 발급된 키는 그대로입니다."
+        @Schema(description = "승인 화면에 처음 채울 유료 모델 허용 목록의 기본값이에요. 복사할 때만 쓰므로 "
+                + "이 값을 바꿔도 이미 발급된 키에 자동 적용하지 않아요."
                 + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
         @Nullable List<String> defaultCreditAllowedModels,
-        @Schema(description = "승인 화면이 프리필에 쓰는 유료 모델 차단 목록 기본값. 복사 원본이지 "
-                + "상속원이 아니라서 여기를 바꿔도 이미 발급된 키는 그대로입니다."
+        @Schema(description = "승인 화면에 처음 채울 유료 모델 차단 목록의 기본값이에요. 복사할 때만 쓰므로 "
+                + "이 값을 바꿔도 이미 발급된 키에 자동 적용하지 않아요."
                 + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         @Nullable List<String> defaultCreditDeniedModels,
         @Schema(description = "등록 시각")
         Instant createdAt,
-        @Schema(description = "Metadata 최종 변경 시각")
+        @Schema(description = "메타데이터의 최종 변경 시각")
         Instant updatedAt, boolean financeVisible, boolean credentialVisible, boolean policyReferenceVisible,
         @Nullable LlmAccountKeyNavigation keyNavigation) {
     public OpenRouterAccountResponse project(boolean finance, boolean credential, boolean metadata, boolean managementReference) {

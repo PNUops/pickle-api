@@ -23,7 +23,7 @@ import org.jspecify.annotations.Nullable;
  * response is about. Two platform-wide conditions are left out on purpose, and
  * the service that builds this says which and why.
  */
-@Schema(description = "이 LLM API 키로 호출할 수 있는 모델")
+@Schema(description = "이 LLM API 키의 모델 후보")
 public record LlmKeyModelsResponse(
         @Schema(description = "자체 서빙 모델") List<SelfServedModel> selfServed,
         @Schema(description = "유료 모델") PaidModels paid) {
@@ -33,9 +33,9 @@ public record LlmKeyModelsResponse(
     public record SelfServedModel(
             @Schema(description = "요청의 model 필드에 넣는 이름", example = "pickle-general")
             String name,
-            @Schema(description = "최대 입력 토큰. 상한이 없으면 비어 있습니다")
+            @Schema(description = "최대 입력 토큰 수이며, 상한이 없으면 null이에요.")
             @Nullable Integer maxInputTokens,
-            @Schema(description = "최대 출력 토큰. 상한이 없으면 비어 있습니다")
+            @Schema(description = "최대 출력 토큰 수이며, 상한이 없으면 null이에요.")
             @Nullable Integer maxOutputTokens) {
     }
 
@@ -46,9 +46,9 @@ public record LlmKeyModelsResponse(
      * the one most likely to be looking, because what it needs next is to know
      * what to ask for.
      */
-    @Schema(description = "유료 모델 사용 가능 여부. LISTED는 허용 목록과 차단 목록 중 "
-            + "어느 쪽으로든 좁혀진 상태이고, UNRESTRICTED는 두 목록이 모두 비어 금액만이 "
-            + "경계인 상태입니다.")
+    @Schema(description = "유료 모델의 연결과 목록 제한 상태예요. LISTED는 허용 목록이나 차단 목록으로 "
+            + "범위를 좁힌 상태이며, UNRESTRICTED는 두 목록이 모두 비어 "
+            + "목록으로 제한하지 않는 상태예요.")
     public enum PaidAccess {
         /** No money budget yet. The list is what the holder would be asking for. */
         NONE,
@@ -66,17 +66,17 @@ public record LlmKeyModelsResponse(
 
     @Schema(description = "유료 모델과 그 목록의 상태")
     public record PaidModels(
-            @Schema(description = "사용 가능 여부") PaidAccess access,
-            @Schema(description = "이 키의 모델 허용 목록. 비어 있으면 허용 쪽 제한이 없습니다."
+            @Schema(description = "유료 모델 연결과 목록 제한 상태") PaidAccess access,
+            @Schema(description = "이 키의 모델 허용 목록이며, 비어 있으면 이 목록으로 제한하지 않아요."
                     + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
             List<String> allowedPatterns,
-            @Schema(description = "이 키의 모델 차단 목록. 비어 있으면 차단하는 모델이 없습니다. "
-                    + "허용 목록과 함께 걸리면 차단이 이깁니다."
+            @Schema(description = "이 키의 모델 차단 목록이며, 비어 있으면 이 목록으로 차단하지 않아요. "
+                    + "허용 목록과 겹치면 차단을 적용해요."
                     + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
             List<String> deniedPatterns,
-            @Schema(description = "호출할 수 있는 모델") List<PaidModel> models,
-            @Schema(description = "허용 목록에 적혀 있지만 지금 목록에서 찾지 못한 이름. "
-                    + "목록에서 사라진 모델이나 아직 없는 이름, 제한된 키에서 호출할 수 없는 라우터도 포함됩니다.")
+            @Schema(description = "정책에 맞는 모델 후보") List<PaidModel> models,
+            @Schema(description = "허용 목록에 있지만 현재 모델 목록에서 찾지 못한 이름이에요. "
+                    + "목록에서 사라진 모델과 아직 없는 이름, 제한된 키에서 호출할 수 없는 라우터도 포함해요.")
             List<String> unmatchedAllowedPatterns,
             // Deliberately not worded as a warning. A deny rule that matches
             // nothing today is as likely to be pre-emptive as mistyped — the
@@ -84,12 +84,12 @@ public record LlmKeyModelsResponse(
             // it ships is half the reason this round added wildcards. Wording it
             // as a problem gets a reviewer to delete a rule they meant, and the
             // consequence of that arrives later, on the day the model appears.
-            @Schema(description = "차단 목록에 적혀 있지만 지금 목록에서 찾지 못한 이름. "
-                    + "현재 캐시의 모델명과 별칭 중 이 패턴으로 차단되는 것이 없다는 뜻이며, 아직 나오지 않은 모델을 "
-                    + "미리 막아 둔 경우에도 여기에 나옵니다.")
+            @Schema(description = "차단 목록에 있지만 현재 모델 목록에서 찾지 못한 이름이에요. "
+                    + "현재 캐시의 모델명과 별칭 중 이 패턴으로 차단하는 것이 없다는 뜻이며, 아직 나오지 않은 모델을 "
+                    + "미리 차단한 경우에도 여기에 나와요.")
             List<String> unmatchedDeniedPatterns,
             @Schema(description = "목록의 신선도") CatalogFreshness catalogFreshness,
-            @Schema(description = "목록을 마지막으로 가져온 시각. 한 번도 성공하지 못했으면 비어 있습니다")
+            @Schema(description = "모델 목록을 마지막으로 가져온 시각이며, 성공 기록이 없으면 null이에요.")
             @Nullable Instant catalogObservedAt) {
     }
 
@@ -109,13 +109,13 @@ public record LlmKeyModelsResponse(
             @Schema(description = "요청의 model 필드에 넣는 이름", example = "openai/gpt-5.6-luna")
             String id,
             @Schema(description = "표시 이름") String name,
-            @Schema(description = "입력 100만 토큰당 USD. 모르면 비어 있습니다")
+            @Schema(description = "입력 100만 토큰당 USD이며, 가격을 모르면 null이에요.")
             @Nullable BigDecimal promptPricePerMillion,
-            @Schema(description = "출력 100만 토큰당 USD. 모르면 비어 있습니다")
+            @Schema(description = "출력 100만 토큰당 USD이며, 가격을 모르면 null이에요.")
             @Nullable BigDecimal completionPricePerMillion,
-            @Schema(description = "컨텍스트 길이. 모르면 비어 있습니다")
+            @Schema(description = "컨텍스트 길이이며, 알 수 없으면 null이에요.")
             @Nullable Integer contextLength,
-            @Schema(description = "입력과 출력을 포함한 가격 축 전체. 목록이 아직 이 정보를 받지 않았으면 비어 있습니다")
+            @Schema(description = "입력과 출력을 포함한 전체 가격 항목이며, 목록에 가격 정보가 없으면 null이에요.")
             @Nullable ModelPricing pricing) {
     }
 }

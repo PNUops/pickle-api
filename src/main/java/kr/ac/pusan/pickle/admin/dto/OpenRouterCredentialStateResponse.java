@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
 
 /** Secret-free lifecycle metadata. No credential identity or fragment is exposed. */
 public record OpenRouterCredentialStateResponse(
-        @Schema(description = "Credential lifecycle 상태")
+        @Schema(description = "관리용 키의 수명주기 상태")
         OpenRouterCredentialStatus status,
         @Schema(description = "등록 시각")
         Instant createdAt,
@@ -22,7 +22,7 @@ public record OpenRouterCredentialStateResponse(
         @Nullable Instant retiringAt,
         @Schema(description = "Management API 호출에 마지막으로 사용한 시각. 사용 전이면 null")
         @Nullable Instant lastUsedAt,
-        @Schema(description = "이 credential로 key reconciliation이 마지막으로 성공한 시각. 성공 전이면 null")
+        @Schema(description = "이 관리용 키로 전체 키 대사가 마지막으로 성공한 시각. 성공 전이면 null")
         @Nullable Instant lastReconciledAt,
         @Schema(description = "마지막 검증 오류 분류. 최근 검증이 성공했으면 null")
         @Nullable OpenRouterCredentialError verificationError,

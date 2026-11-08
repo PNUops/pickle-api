@@ -15,6 +15,6 @@ public record LlmKeyLatencyResponse(
         long p50Ms,
         long p90Ms,
         long p99Ms,
-        @Schema(description = "백분위를 낸 요청 수. 표본이 적을수록 p99는 흔들립니다.")
+        @Schema(description = "백분위를 계산한 요청 수예요. 표본이 적으면 p99의 변동이 커요.")
         long samples) {
 }

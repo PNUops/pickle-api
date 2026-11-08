@@ -18,32 +18,17 @@ public record LlmUsageConsumerResponse(
         long inputTokens,
         long outputTokens,
         @Schema(description = """
-                이 소비처가 이 기간에 쓴 금액(USD)으로, 공급자가 키마다 보고한 사용액에서 \
-                이 기간의 몫만 뽑은 값입니다. 요청마다 더한 `attributedCostUsd`와 달리 요청별 \
-                금액이 없던 시기의 지출도 들어 있으므로, 소비처 단위 금액은 이 값을 씁니다. \
-                대사가 30분 주기라 방금 쓴 만큼은 아직 안 보이고, 그 시각은 \
-                `meteredObservedAt`이 말합니다. 유료 모델을 쓰지 않는 소비처나 아직 한 번도 \
-                대사되지 않은 소비처는 null입니다.""")
+                공급자가 키마다 보고한 사용액에서 선택 기간의 차이를 계산한 금액이에요(USD). 요청별 attributedCostUsd가 기록되기 전의 사용도 포함해요. 대사는 기본 30분 주기를 따르며 최근 사용량이 늦게 반영될 수 있어요. meteredObservedAt을 함께 확인해요. 계산에 필요한 대사 관측이 없거나 금융 정보가 미제공이면 null이에요.""")
         @Nullable BigDecimal meteredCostUsd,
         @Schema(description = """
-                이 소비처의 금액을 요청마다 더한 값(USD). 모델별 표가 쓰는 것과 같은 출처이고, \
-                요청별 금액이 기록되기 전의 지출은 빠져 있습니다. 소비처 표는 \
-                `meteredCostUsd`를 쓰므로 이 값은 두 출처를 견줄 때만 씁니다. 가격이 붙은 \
-                요청이 하나도 없으면 null이며 0으로 표시하지 않습니다.""")
+                선택 기간의 요청별 보고 금액을 합한 값이에요(USD). 금액이 기록되기 전의 사용은 포함하지 않아요. meteredCostUsd와는 다른 출처이며 가격이 확인된 요청이 없으면 null이에요. 0으로 판단하지 않아요.""")
         @Nullable BigDecimal attributedCostUsd,
-        @Schema(description = "이 소비처의 요청 중 공급자가 금액을 알려 준 요청 수")
+        @Schema(description = "예산 축에 관계없이 금액이 보고된 이 소비처의 요청 수. 금융 정보 미제공이면 null")
         @Nullable Long pricedRequests,
         @Schema(description = """
-                이 소비처의 요청 중 유료 모델로 나간 요청 수. **한 행이 여러 모델을 \
-                묶는 표에서** 금액이 빠진 건수를 세려면 전체 요청이 아니라 이 값에서 \
-                빼야 합니다. 자체 서빙 요청에는 금액이라는 것이 아예 없으므로, 전체 \
-                요청에서 빼면 자체 서빙까지 「금액을 모르는 요청」으로 세게 됩니다. \
-                모델별 표는 다릅니다 — 거기서는 한 모델을 두 행으로 나누고 그 둘이 \
-                모델의 요청을 남김없이 갈라야 하므로 가격 기준으로 자릅니다.""")
+                요청 당시 CREDIT 축으로 기록된 이 소비처의 요청 수예요. 금융 정보가 미제공이면 null이에요. 실제 공급자나 부담 주체를 뜻하지 않아요.""")
         @Nullable Long creditAxisRequests,
         @Schema(description = """
-                이 소비처의 키 가운데 가장 오래된 공급자 대사 시각. 「여기 있는 금액은 적어도 \
-                이 시점까지의 것」이라는 뜻이라 가장 최근 시각을 쓰지 않습니다. 금액이 없으면 \
-                null입니다.""")
+                이 소비처의 키 중 가장 오래된 공급자 대사 시각이에요. 현재 금액에 반영된 관측의 오래된 경계를 나타내며 금액이 없으면 null이에요.""")
         @Nullable Instant meteredObservedAt) {
 }

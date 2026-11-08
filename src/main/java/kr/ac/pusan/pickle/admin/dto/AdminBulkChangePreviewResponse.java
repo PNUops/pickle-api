@@ -10,6 +10,6 @@ public record AdminBulkChangePreviewResponse(
         java.util.UUID previewId, java.time.Instant createdAt, java.time.Instant expiresAt,
         AdminBulkChangeTargetType targetType, @org.jspecify.annotations.Nullable AdminBulkChangeSpec change,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<AdminBulkChangePreviewItem> items,
-        @Schema(description = "이 미리보기로 이미 커밋된 본인 적용의 ID. 새 적용을 만들지 않고 기존 결과를 여는 데 씁니다.")
+        @Schema(description = "이 미리보기로 이미 커밋된 본인 적용의 ID예요. 새 적용을 만들지 않고 기존 결과를 여는 데 사용해요.")
         @Nullable UUID consumedOperationId, @Nullable LlmAccountImpactProjection accountImpact) {
 }

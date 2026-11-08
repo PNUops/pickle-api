@@ -6,7 +6,7 @@ import org.jspecify.annotations.Nullable;
 
 /** Latest out-of-band models probe. It does not alter routing or cooldown. */
 @Schema(description = "gateway의 out-of-band /models probe 최신 결과. routing과 cooldown을 "
-        + "바꾸지 않으며 마지막 시도가 intervalSeconds의 3배보다 오래되면 availability에는 UNKNOWN으로 반영됩니다.")
+        + "바꾸지 않아요. 마지막 시도가 intervalSeconds의 3배보다 오래되면 availability에 UNKNOWN으로 반영해요.")
 public record LlmActiveObservationResponse(
         @Schema(description = "마지막 probe 시도 시각. 아직 시도하지 않았으면 null")
         @Nullable Instant lastAttemptAt,
@@ -15,7 +15,7 @@ public record LlmActiveObservationResponse(
         @Schema(description = "마지막 probe 실패 시각. 실패 이력이 없으면 null")
         @Nullable Instant lastFailureAt,
         @Schema(description = "마지막으로 보고된 raw probe 결과. freshness가 만료돼도 값 자체는 OK로 남을 수 "
-                + "있으며, 현재 상태는 lastAttemptAt·intervalSeconds를 직접 재해석하지 말고 top-level availability를 사용. "
+                + "있어요. 현재 상태는 lastAttemptAt과 intervalSeconds를 직접 재해석하지 않고 availability로 확인해요. "
                 + "AUTH_UNVERIFIED는 도달했지만 인증 여부를 확인하지 못한 상태")
         LlmActiveProbeStatus status,
         @Schema(description = "최신 probe 실패 분류. 실패가 아니면 null")

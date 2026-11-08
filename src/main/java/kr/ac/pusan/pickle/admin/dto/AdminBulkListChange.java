@@ -12,13 +12,13 @@ import java.util.List;
  */
 public record AdminBulkListChange(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-                description = "REPLACE는 목록을 통째로 바꾸고, ADD는 없는 값을 더하며, REMOVE는 있는 값을 뺍니다. "
-                        + "비우려면 REPLACE에 빈 배열을 보냅니다.")
+                description = "REPLACE는 목록을 통째로 바꾸고 ADD는 없는 값을 더하며 REMOVE는 있는 값을 빼요. "
+                        + "목록을 비우려면 REPLACE에 빈 배열을 보내요.")
         @NotNull(message = "목록을 어떻게 바꿀지 지정해 주세요.")
         AdminBulkListOp op,
 
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-                description = "적용할 값. 각 키의 현재 목록과 합친 결과가 단일 변경과 같은 규칙으로 검사됩니다.")
+                description = "적용할 값이며 각 키의 현재 목록과 합친 결과를 단일 변경과 같은 규칙으로 검사해요.")
         @NotNull(message = "값 목록을 보내 주세요.")
         @Size(max = 50, message = "값은 50개 이내로 보내 주세요.")
         List<String> values) {

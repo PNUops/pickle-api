@@ -63,17 +63,17 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Pickle API")
-                        .description("부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, "
-                                + "오류 응답은 RFC 9457 problem+json(Problem 스키마)을 따릅니다.")
+                        .description("부산대학교 클라우드 플랫폼 Pickle의 REST API예요. JWT Bearer로 인증해요. "
+                                + "오류 응답은 RFC 9457 problem+json(Problem 스키마)을 따라요.")
                         .version(CONTRACT_VERSION))
                 .components(new Components().addSecuritySchemes(BEARER_SCHEME, new SecurityScheme()
                         .type(SecurityScheme.Type.HTTP)
                         .scheme("bearer")
                         .bearerFormat("JWT")
                         .description("액세스 토큰 (JWT HS256, 15분 만료). 클레임: sub(계정 공개 식별자 UUID), "
-                                + "role, token_version. 비밀번호 변경·계정 비활성화 시 token_version이 올라가 "
-                                + "기존 토큰이 즉시 무효화됩니다. 리프레시 토큰은 보안 스킴이 아니라 "
-                                + "__Host-pickle_refresh httpOnly 쿠키로만 오갑니다.")))
+                                + "role, token_version. 비밀번호를 바꾸거나 계정을 비활성화하면 token_version을 올려요. "
+                                + "새 인증에서는 기존 토큰을 쓸 수 없어요. 리프레시 토큰은 보안 스킴이 아니라 "
+                                + "__Host-pickle_refresh httpOnly 쿠키로만 주고받아요.")))
                 // Applies to every operation unless the operation overrides it
                 // with an empty requirement (see publicOperationSecurityCustomizer).
                 .security(List.of(new SecurityRequirement().addList(BEARER_SCHEME)));
@@ -119,7 +119,7 @@ public class OpenApiConfig {
                     .required(List.of("field", "message"));
             Schema<?> problem = new ObjectSchema()
                     .description("RFC 9457 오류 응답 + Pickle 확장(code, errors). "
-                            + "모든 비정상 응답은 이 형태로 반환됩니다.")
+                            + "모든 비정상 응답은 이 형태로 반환해요.")
                     .addProperty("type", new StringSchema().description("문제 유형 URI (기본 about:blank)"))
                     .addProperty("title", new StringSchema().description("사람이 읽는 짧은 제목"))
                     .addProperty("status", new IntegerSchema().description("HTTP 상태 코드"))
@@ -135,7 +135,7 @@ public class OpenApiConfig {
             openApi.getComponents().addSchemas("Problem", problem);
 
             ApiResponse problemResponse = new ApiResponse()
-                    .description("오류 — 상태 코드와 무관하게 Problem 형태")
+                    .description("오류: 상태 코드와 무관하게 Problem 형태")
                     .content(new Content().addMediaType("application/problem+json",
                             new MediaType().schema(new Schema<>().$ref("#/components/schemas/Problem"))));
             openApi.getPaths().values().forEach(pathItem ->

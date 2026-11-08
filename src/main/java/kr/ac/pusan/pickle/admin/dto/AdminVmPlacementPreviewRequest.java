@@ -13,7 +13,7 @@ public record AdminVmPlacementPreviewRequest(
         @NotNull(message = "vCPU를 입력해 주세요.") @Min(value = 1, message = "vCPU는 1 이상으로 입력해 주세요.") Integer vcpu,
         @NotNull(message = "메모리를 입력해 주세요.") @Min(value = 256, message = "메모리는 256MiB 이상으로 입력해 주세요.") Integer memoryMb,
         @NotNull(message = "디스크를 입력해 주세요.") @Min(value = 1, message = "디스크는 1GiB 이상으로 입력해 주세요.") Integer diskGb,
-        @Schema(description = "명령 대상 워크스페이스. 지정 범위 권한으로 조회할 때 필요합니다.")
+        @Schema(description = "명령 대상 워크스페이스이며 지정 범위 권한으로 조회할 때 필요해요.")
         @Nullable UUID workspaceId) {
     public AdminVmPlacementPreviewRequest(UUID orgId, UUID imageId, Integer vcpu, Integer memoryMb, Integer diskGb) {
         this(orgId, imageId, vcpu, memoryMb, diskGb, null);

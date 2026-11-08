@@ -19,12 +19,12 @@ public record AdminBulkAccessChange(
         UUID userId,
 
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-                description = "GRANT는 없는 권한을 만들고, CHANGE는 있는 권한의 등급을 바꿉니다. 둘은 활성 구성원에게만 "
-                        + "허용됩니다. REVOKE는 기존 개인 권한을 지우며 비활성 계정과 구성원 해제 후에도 가능합니다. "
-                        + "회수할 개인 권한이 없으면 NO_GRANT로 거부합니다. 워크스페이스 전체 부여는 그대로 둡니다.")
+                description = "GRANT는 없는 권한을 만들고 CHANGE는 기존 권한의 등급을 바꿔요. 둘은 활성 구성원에게만 "
+                        + "허용해요. REVOKE는 기존 개인 권한을 삭제하며 계정이 비활성화됐거나 구성원에서 제외된 뒤에도 할 수 있어요. "
+                        + "회수할 개인 권한이 없으면 NO_GRANT로 거절해요. 워크스페이스 전체 부여는 유지해요.")
         @NotNull(message = "접근 권한 작업 종류를 지정해 주세요.")
         AdminBulkAccessAction action,
 
-        @Schema(description = "부여하거나 바꿀 등급. GRANT와 CHANGE에서 필수입니다.")
+        @Schema(description = "부여하거나 바꿀 등급이며 GRANT와 CHANGE에서 필수예요.")
         @Nullable ResourceRole role) {
 }

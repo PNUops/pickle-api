@@ -23,41 +23,41 @@ import org.jspecify.annotations.Nullable;
  * daily token allowance is unlimited; zero closes the token budget axis.
  */
 public record ApproveLlmKeyRequestSpec(
-        @Schema(description = "부여 분당 요청 수. 비우면 서비스 기본값이 적용됩니다.")
+        @Schema(description = "부여할 분당 요청 수이며, 생략하거나 null이면 서비스 기본값을 적용해요.")
         @Min(value = 1, message = "분당 요청 수는 1 이상으로 입력해 주세요.")
         @Max(value = 10000, message = "분당 요청 수는 10000 이하로 입력해 주세요.")
         @Nullable Integer grantedRpm,
 
-        @Schema(description = "부여 분당 토큰 수. 비우면 서비스 기본값이 적용됩니다.")
+        @Schema(description = "부여할 분당 토큰 수이며, 생략하거나 null이면 서비스 기본값을 적용해요.")
         @Min(value = 1, message = "분당 토큰 수는 1 이상으로 입력해 주세요.")
         @Nullable Integer grantedTpm,
 
-        @Schema(description = "부여 동시 요청 수. 비우면 서비스 기본값이 적용됩니다.")
+        @Schema(description = "부여할 동시 요청 수이며, 생략하거나 null이면 서비스 기본값을 적용해요.")
         @Min(value = 1, message = "동시 요청 수는 1 이상으로 입력해 주세요.")
         @Max(value = 100, message = "동시 요청 수는 100 이하로 입력해 주세요.")
         @Nullable Integer grantedConcurrency,
 
-        @Schema(description = "부여 일일 토큰 수. 비우면 일일 한도가 없습니다. 0이면 자체 서빙(토큰) 축을 쓸 수 없습니다.")
+        @Schema(description = "부여할 일일 토큰 수예요. 생략하거나 null이면 일일 한도가 없고, 0이면 자체 서빙(토큰) 축을 쓸 수 없어요.")
         @Min(value = 0, message = "일일 토큰 수는 0 이상으로 입력해 주세요.")
         @Nullable Long grantedDailyTokens,
 
-        @Schema(description = "부여 금액 한도(USD 크레딧). 비우거나 0이면 유료 모델을 쓸 수 없습니다.")
+        @Schema(description = "키 하나에 부여할 금액 한도예요(USD 크레딧). 생략하거나 null이나 0을 보내면 유료 모델을 쓸 수 없어요.")
         @DecimalMin(value = "0", message = "금액 한도는 0 이상으로 입력해 주세요.")
         @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.")
         @Nullable BigDecimal grantedCreditLimit,
 
-        @Schema(description = "금액 한도 리셋 창. 비우면 리셋 없는 총액 상한입니다. 창은 UTC 자정에 초기화됩니다.")
+        @Schema(description = "금액 한도 리셋 창이에요. 생략하거나 null이면 리셋 없는 총액 상한이며, 리셋 창은 UTC 자정을 기준으로 해요.")
         @Nullable CreditLimitReset grantedCreditLimitReset,
 
-        @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 비우면 제한이 없고, 자체 서빙 "
-                + "모델은 이 목록과 무관합니다."
+        @Schema(description = "이 키의 유료 모델 허용 목록이에요. 생략하거나 비어 있으면 이 목록으로 제한하지 않아요. "
+                + "자체 서빙 모델에는 적용하지 않아요."
                 + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
         @Size(max = 50, message = "허용할 모델은 50개 이내로 지정해 주세요.")
         @Nullable List<String> grantedCreditAllowedModels,
 
-        @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 비우면 차단하는 모델이 없고, "
-                + "허용 목록과 함께 걸리면 차단이 이깁니다. 허용 목록과 달리 금액 한도가 "
-                + "0이어도 남습니다. 자체 서빙 모델은 이 목록과 무관합니다."
+        @Schema(description = "이 키의 유료 모델 차단 목록이에요. 생략하거나 비어 있으면 이 목록으로 차단하지 않아요. "
+                + "허용 목록과 겹치면 차단을 적용하며, 허용 목록과 달리 금액 한도가 "
+                + "0이어도 유지돼요. 자체 서빙 모델에는 적용하지 않아요."
                 + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         @Size(max = 50, message = "차단할 모델은 50개 이내로 지정해 주세요.")
         @Nullable List<String> grantedCreditDeniedModels,
@@ -69,15 +69,15 @@ public record ApproveLlmKeyRequestSpec(
                 PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
                 PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
                 PassthroughEndpoints.FILES}),
-                arraySchema = @Schema(description = "이 키에 부여할 기능 권한. 생략하거나 null이면 "
-                        + "신청자가 고른 목록(reqPassthroughEndpoints)으로 승인하고, 빈 배열이면 기능을 "
-                        + "하나도 쓸 수 없습니다(chat도 포함). 모델 목록과 반대로 이 목록은 "
-                        + "채워야 열립니다. 지금 부여할 수 있는 값은 chat, web_search, pdf_ocr, "
-                        + "images, embeddings, rerank, speech, transcriptions이고, web_search와 pdf_ocr은 chat과 함께 "
-                        + "부여해야 합니다. 모델 조회는 이 목록과 무관합니다."))
+                arraySchema = @Schema(description = "이 키에 부여할 기능 권한이에요. 생략하거나 null이면 "
+                        + "신청 목록(reqPassthroughEndpoints)으로 승인하며, 빈 배열이면 "
+                        + "chat을 포함해 어떤 기능도 쓸 수 없어요. "
+                        + "현재 부여할 수 있는 값은 chat, web_search, pdf_ocr, "
+                        + "images, embeddings, rerank, speech, transcriptions이며, web_search나 pdf_ocr를 포함하면 chat도 함께 "
+                        + "부여해야 해요. 모델 조회에는 이 목록을 적용하지 않아요."))
         @Size(max = 20, message = "허용할 기능은 20개 이내로 지정해 주세요.")
         @Nullable List<String> grantedPassthroughEndpoints,
 
-        @Schema(description = "유료 모델을 결제할 기관 사업 계정. 하나뿐이면 생략할 수 있습니다.")
+        @Schema(description = "유료 모델을 결제할 기관 사업 계정이에요. 연결 가능한 계정이 하나뿐이면 생략할 수 있어요.")
         @Nullable UUID openrouterAccountId) {
 }

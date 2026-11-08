@@ -19,14 +19,14 @@ public class WorkspaceTerminationImpactController {
     public WorkspaceTerminationImpactController(WorkspaceTerminationImpactService impacts) { this.impacts = impacts; }
 
     @GetMapping("/{workspaceId}/termination-impact")
-    @Operation(summary = "워크스페이스 삭제 영향 조회", description = "현재 OWNER가 전체 워크스페이스의 신청 취소, 대상자 자동 종료와 남은 자원 차단 조건을 조회합니다. 조회는 상태를 바꾸지 않으며, 결과는 페이지와 무관한 전체 집합을 기준으로 계산합니다.")
+    @Operation(summary = "워크스페이스 삭제 영향 조회", description = "현재 OWNER가 전체 워크스페이스의 신청 취소와 대상자 자동 종료, 남은 자원의 차단 조건을 조회해요. 조회는 상태를 바꾸지 않으며 결과는 페이지와 무관한 전체 집합을 기준으로 계산해요.")
     public WorkspaceTerminationImpactResponse getWorkspaceTerminationImpact(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID workspaceId, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "0") int resourcePage) {
         return impacts.workspace(actor, workspaceId, false, page, size, resourcePage);
     }
 
     @GetMapping("/{workspaceId}/invitations/{invitationId}/termination-impact")
-    @Operation(summary = "초대 취소 영향 조회", description = "현재 OWNER가 정확한 초대에 연결된 신청 대상자의 자동 종료 영향을 조회합니다. 신청 자체와 다른 초대는 취소하지 않으며, FAILED는 자동 종료되지 않는 이력으로 구분합니다.")
+    @Operation(summary = "초대 취소 영향 조회", description = "현재 OWNER가 정확한 초대에 연결된 신청 대상자의 자동 종료 영향을 조회해요. 신청 자체와 다른 초대는 취소하지 않으며 FAILED는 자동 종료되지 않는 이력으로 구분해요.")
     public WorkspaceTerminationImpactResponse getWorkspaceInvitationTerminationImpact(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID workspaceId, @PathVariable UUID invitationId,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "0") int resourcePage) {

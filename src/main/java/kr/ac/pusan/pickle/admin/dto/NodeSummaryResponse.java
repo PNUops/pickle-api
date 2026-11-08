@@ -18,7 +18,7 @@ public record NodeSummaryResponse(
         int memoryMb,
         String vmBridge,
         String storage,
-        @Schema(description = "게스트 디스크가 놓이는 thin pool 용량(GB) — 아직 측정되지 않았으면 null")
+        @Schema(description = "게스트 디스크가 놓이는 thin pool 용량(GB). 아직 측정되지 않았으면 null")
         @Nullable Long diskCapacityGb,
         long runningVms,
         long allocatedVcpu,

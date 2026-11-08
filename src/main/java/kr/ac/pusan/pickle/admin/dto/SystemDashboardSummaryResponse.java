@@ -31,9 +31,9 @@ public record SystemDashboardSummaryResponse(
     public record LiveCoverage(
             @Schema(description = "nodesLive 행 수 (플랫폼 전체 노드 수)")
             int nodeCount,
-            @Schema(description = "메모리 측정값이 있는 노드 수 — nodeCount보다 작으면 메모리 합계는 부분 측정")
+            @Schema(description = "메모리 측정값이 있는 노드 수. nodeCount보다 작으면 합계는 부분 측정")
             int memoryMeasuredNodeCount,
-            @Schema(description = "스토리지 측정값이 있는 노드 수 — nodeCount보다 작으면 스토리지 합계는 부분 측정")
+            @Schema(description = "스토리지 측정값이 있는 노드 수. nodeCount보다 작으면 합계는 부분 측정")
             int storageMeasuredNodeCount) {
     }
 

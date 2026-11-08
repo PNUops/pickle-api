@@ -14,10 +14,10 @@ import org.jspecify.annotations.Nullable;
  * ever move in one direction.</p>
  */
 public record VmPeriodUpdateRequest(
-        @Schema(description = "새 종료일. 무기한으로 바꾸려면 clearEndDate를 씁니다.")
+        @Schema(description = "새 종료일이며 무기한으로 바꾸려면 clearEndDate를 사용해요.")
         @Nullable LocalDate endDate,
 
-        @Schema(description = "true면 종료일을 지워 무기한으로 만듭니다. endDate와 함께 보낼 수 없습니다.")
+        @Schema(description = "true이면 종료일을 지워 무기한으로 바꿔요. endDate와 함께 보낼 수 없어요.")
         @Nullable Boolean clearEndDate,
 
         @Nullable LocalDate startDate) {

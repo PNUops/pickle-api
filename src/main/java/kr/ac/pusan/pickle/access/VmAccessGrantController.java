@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
  * VMs; this class is the VM's path into them, and is the whole of what a second
  * resource type needs to open its own access list.
  */
-@Tag(name = "vm-access", description = "VM 접근 권한 — 이 VM에 누가 접근할 수 있는지를 정합니다.")
+@Tag(name = "vm-access", description = "이 VM에 누가 접근할 수 있는지 정해요.")
 @RestController
 @RequestMapping("/api/v1/vms/{vmId}/access")
 public class VmAccessGrantController {
@@ -44,7 +44,7 @@ public class VmAccessGrantController {
 
     @GetMapping
     @Operation(summary = "접근 권한 목록",
-            description = "이 VM의 접근 권한 전체와, 그 목록이 어느 VM의 것인지 알려 주는 최소 정보입니다. VM 소유자와 워크스페이스 소유자만 볼 수 있습니다.")
+            description = "이 VM의 접근 권한 전체와 대상 VM을 구분하는 최소 정보예요. VM 소유자와 워크스페이스 소유자만 볼 수 있어요.")
     public ResourceAccessListResponse listVmAccessGrants(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID vmId) {
@@ -54,9 +54,9 @@ public class VmAccessGrantController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "접근 권한 부여",
-            description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 VM의 접근 권한을 부여합니다. "
+            description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 VM의 접근 권한을 부여해요. "
                     + "사용자는 이 VM을 소유한 워크스페이스의 구성원이어야 하고, 워크스페이스 전체에는 "
-                    + "참여자·열람자까지만 부여할 수 있습니다.")
+                    + "참여자나 열람자 권한까지만 부여할 수 있어요.")
     public ResourceAccessGrantView addVmAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID vmId,
@@ -81,7 +81,7 @@ public class VmAccessGrantController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "접근 권한 회수",
             description = "회수해도 이미 열람한 초기 비밀번호와 이미 열려 있는 SSH 세션은 회수되지 "
-                    + "않습니다. 필요하면 비밀번호를 재생성해 주세요.")
+                    + "않아요. 필요하면 비밀번호를 재생성해 주세요.")
     public void removeVmAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID vmId,

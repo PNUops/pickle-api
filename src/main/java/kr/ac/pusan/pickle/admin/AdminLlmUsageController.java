@@ -33,11 +33,11 @@ public class AdminLlmUsageController {
     @GetMapping
     @Operation(operationId = "getAdminLlmUsage", summary = "관리자 LLM 사용량 통계",
             description = "DB에 저장된 rollup과 usage event, vendor meter cache, gateway "
-                    + "자기보고를 읽어 수요·소비처·한도 검토·데이터 신뢰도를 제공합니다. "
-                    + "조회 과정에서 gateway나 vendor를 직접 호출하지 않습니다.")
+                    + "자기보고를 읽어 수요와 소비처, 한도 검토, 데이터 신뢰도를 제공해요. "
+                    + "조회 과정에서 gateway나 vendor를 직접 호출하지 않아요.")
     public AdminLlmUsageResponse usage(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @Parameter(description = "조회할 기관. 기관 계층은 맡은 기관만 지정할 수 있습니다.")
+            @Parameter(description = "조회할 기관이에요. 기관 계층에서는 맡은 기관만 지정할 수 있어요.")
             @RequestParam(required = false) UUID orgId,
             @Parameter(description = "소비처를 key 단계로 좁힐 workspace 공개 ID")
             @RequestParam(required = false) UUID workspaceId,

@@ -22,10 +22,10 @@ public record CreateRequestPeriodRequest(
         @Size(max = 100, message = "표시명은 100자 이내로 입력해 주세요.")
         String displayName,
 
-        @Schema(description = "종료일. 모든 기간 항목은 끝나는 날이 있습니다.")
+        @Schema(description = "종료일이에요. 모든 기간 항목에는 종료일이 있어요.")
         @NotNull(message = "종료일을 정해 주세요.")
         LocalDate endDate,
 
-        @Schema(description = "표시 순서. 비우면 0입니다.")
+        @Schema(description = "표시 순서예요. 비우면 0이에요.")
         @Nullable Integer displayOrder) {
 }

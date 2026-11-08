@@ -20,12 +20,12 @@ import jakarta.validation.constraints.NotBlank;
  */
 public record CreateDomainRequestSpec(
         @NotBlank(message = "이름을 입력해 주세요.")
-        @Schema(description = "루트 도메인 바로 아래 한 라벨. 영문 소문자와 숫자, 하이픈만 쓸 수 있습니다.",
+        @Schema(description = "루트 도메인 바로 아래 한 라벨이며, 영문 소문자와 숫자, 하이픈만 쓸 수 있어요.",
                 example = "myblog")
         String label,
 
         @NotBlank(message = "루트 도메인을 골라 주세요.")
-        @Schema(description = "이름을 발급받을 루트 도메인. 이 이름이 속할 기관이 여기서 정해집니다.",
+        @Schema(description = "이름을 발급받을 루트 도메인이며, 이 이름이 속할 기관도 여기서 정해져요.",
                 example = "pusan.dev")
         String rootDomain) {
 }

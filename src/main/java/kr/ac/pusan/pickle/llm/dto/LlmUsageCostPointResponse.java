@@ -22,12 +22,11 @@ import org.jspecify.annotations.Nullable;
 public record LlmUsageCostPointResponse(
         LocalDate day,
         @Schema(description = """
-                이 날 요청들에 공급자가 매긴 금액의 합(USD). 가격이 붙은 요청이 하나도 \
-                없는 날은 null이며 0으로 그리지 않습니다 — 자체 서빙만 쓴 날은 금액이 \
-                0인 것이 아니라 금액이라는 것이 없습니다.""")
+                이 날 요청에 보고된 금액의 합계예요(USD). 금액이 보고된 요청이 하나도 \
+                없으면 null이며 0으로 표시하지 않아요.""")
         @Nullable BigDecimal attributedCostUsd,
         @Schema(description = "이 날 요청 중 공급자가 금액을 알려 준 요청 수")
         long pricedRequests,
-        @Schema(description = "이 날 요청 수. pricedRequests와 견주면 합계가 얼마나 덮는지 보입니다.")
+        @Schema(description = "이 날 기록된 전체 요청 수")
         long requests) {
 }

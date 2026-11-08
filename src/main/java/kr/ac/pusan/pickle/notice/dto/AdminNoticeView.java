@@ -19,14 +19,14 @@ public record AdminNoticeView(
         String body,
         @Schema(description = "목록 상단 고정 여부")
         boolean pinned,
-        @Schema(description = "콘솔이 화면을 막지 않는 카드로 띄울 공지인지. 이 공지가 로그인 없이도 보이는지도 같은 값이 정합니다.")
+        @Schema(description = "화면을 막지 않는 카드로 띄울 공지인지 나타내요. 켜면 게시 기간 동안 로그인 없이도 읽을 수 있어요.")
         boolean popup,
         Instant startsAt,
-        @Schema(description = "게시 종료 시각. 비어 있으면 만료되지 않습니다.")
+        @Schema(description = "게시 종료 시각이며, null이면 만료되지 않아요.")
         @Nullable Instant endsAt,
-        @Schema(description = "지금 게시 기간 안에 있는지. 관리 화면에는 예정·종료된 공지도 나옵니다.")
+        @Schema(description = "현재 게시 기간 안에 있는지 나타내요. 관리 화면에는 게시 예정이거나 종료된 공지도 나와요.")
         boolean active,
-        @Schema(description = "공지를 등록한 사람의 이름. 계정이 지워졌으면 비어 있습니다.")
+        @Schema(description = "공지를 등록한 사람의 이름이며, 계정이 삭제됐으면 null이에요.")
         @Nullable String createdByName,
         List<NoticeImageView> images,
         Instant createdAt,

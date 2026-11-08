@@ -56,7 +56,7 @@ public class AdminLlmKeyController {
 
     @GetMapping
     @Operation(summary = "관리자 LLM API 키 목록",
-            description = "각 업무가 허가한 키의 metadata·관측·금융·명령 참조를 조회하며 기관과 워크스페이스, 발급 신청, 상태, 검색어는 필터입니다. 키 평문과 해시, 평문 앞부분은 반환하지 않습니다.")
+            description = "각 업무가 허가한 키의 metadata와 관측, 금융, 명령 참조를 조회해요. 기관과 워크스페이스, 발급 신청, 상태, 검색어는 필터예요. 키 평문과 해시, 평문 앞부분은 반환하지 않아요.")
     public PageResponse<AdminLlmKeySummaryResponse> listAdminLlmKeys(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
@@ -69,11 +69,11 @@ public class AdminLlmKeyController {
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
-            @Parameter(description = "현재 키 행의 모집단. 승인 후 키 생성 전 계획은 포함하지 않습니다.")
+            @Parameter(description = "현재 키 행의 모집단이에요. 승인 후 키 생성 전 계획은 포함하지 않아요.")
             @RequestParam(defaultValue = "ALL") LlmKeyCohort cohort,
-            @Parameter(description = "안정된 서버 정렬. 요청 집합 전체의 해당 관측·금융 source를 읽을 수 있어야 해당 값으로 정렬합니다.")
+            @Parameter(description = "안정된 서버 정렬이에요. 관측값이나 금액을 기준으로 정렬하려면 조회 대상 전체에 대해 그 정렬 기준의 관측 또는 금융 정보를 읽을 수 있어야 해요.")
             @RequestParam(defaultValue = "NEWEST") LlmKeySort sort,
-            @Parameter(description = "저장 정책과 기능 권한이 허용하는 공개 모델명. 예산·발급·라우팅·실제 처리 성공을 보장하지 않습니다.")
+            @Parameter(description = "저장 정책과 기능 권한이 허용하는 공개 모델명이에요. 예산과 발급, 라우팅, 실제 처리 성공을 보장하지 않아요.")
             @RequestParam(required = false) String policyModel,
             @RequestParam(defaultValue = "chat") String policyFeature) {
         return service.list(principal, orgId, workspaceId, requestId, openrouterAccountId,
@@ -82,20 +82,20 @@ public class AdminLlmKeyController {
 
     @GetMapping("/{keyId}")
     @Operation(summary = "관리자 LLM API 키 상세",
-            description = "실제 키에 대한 업무별로 운영 상태와 현재 허용값을 투영하며, 금융 필드는 별도로 판정합니다. 인증 비밀이나 기록된 본문은 반환하지 않습니다.")
+            description = "실제 키에 대한 업무별로 운영 상태와 현재 허용값을 보여 주고 금융 필드는 별도로 판정해요. 인증 비밀이나 기록된 본문은 반환하지 않아요.")
     public AdminLlmKeyDetailResponse getAdminLlmKey(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId,
-            @Parameter(description = "true이면 현재 허용된 금액 제안의 읽기 projection을 포함합니다. false이면 제안 파라미터를 보내지 않습니다. 저장·계정 결합·외부 호출을 하지 않습니다.")
+            @Parameter(description = "true이면 현재 허용된 금액 제안의 읽기 projection을 포함해요. false이면 제안 파라미터를 함께 보낼 수 없어요. 저장과 계정 결합, 외부 호출은 하지 않아요.")
             @RequestParam(defaultValue = "false") boolean projectLimits,
-            @Parameter(description = "제안 금액(USD). 생략은 현재 값 유지, 빈 값·null은 허용하지 않습니다. 0 이상, 정수 10자리·소수 2자리까지이며 0은 유료 모델을 닫습니다.")
+            @Parameter(description = "제안 금액(USD)이에요. 생략하면 현재 값을 유지하고 빈 값과 null은 허용하지 않아요. 0 이상, 정수 10자리와 소수 2자리까지이며 0은 유료 모델을 닫는 제안이에요.")
             @RequestParam(required = false) @DecimalMin(value = "0", message = "금액 한도는 0 이상으로 입력해 주세요.")
             @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.") BigDecimal proposedCreditLimit,
-            @Parameter(description = "false는 리셋 제안 없음, true이면서 proposedCreditLimitReset 생략은 명시한 총액 한도입니다.")
+            @Parameter(description = "false는 리셋 제안 없음이고, true이면서 proposedCreditLimitReset을 생략하면 명시한 총액 한도예요.")
             @RequestParam(defaultValue = "false") boolean proposedCreditLimitResetSet,
-            @Parameter(description = "resetSet=true일 때 제안하는 DAILY/WEEKLY/MONTHLY 창. resetSet=true이면서 이 값을 생략하면 명시한 총액 한도(null), resetSet=false는 리셋 변경 없음입니다.")
+            @Parameter(description = "resetSet=true일 때 제안하는 DAILY/WEEKLY/MONTHLY 창이에요. resetSet=true이면서 이 값을 생략하면 명시한 총액 한도(null), resetSet=false는 리셋 변경 없음이에요.")
             @RequestParam(required = false) CreditLimitReset proposedCreditLimitReset,
-            @Parameter(description = "기존 최초 계정 연결 규칙으로 평가할 공개 ID. 계정 전환이나 재결합이 아닙니다.")
+            @Parameter(description = "기존 최초 계정 연결 규칙으로 평가할 공개 ID예요. 계정 전환이나 재결합은 아니에요.")
             @RequestParam(required = false) UUID proposedOpenrouterAccountId,
             HttpServletRequest httpRequest) {
         boolean amountSet = httpRequest.getParameterMap().containsKey("proposedCreditLimit");
@@ -110,11 +110,11 @@ public class AdminLlmKeyController {
 
     @GetMapping("/{keyId}/usage")
     @Operation(summary = "관리자 LLM API 키 사용량",
-            description = "실제 키의 관측 읽기와 금융 읽기를 각각 판정하는 사용량 응답입니다. 미허용 투영은 null이며 0이나 빈 목록과 구분합니다. "
-                    + "일별 사용량은 소유자가 보는 것과 같은 값이고 같은 계산을 씁니다. "
-                    + "분해 셋은 일별 금액, 경로별 사용, 공급자가 요청과 다른 모델로 응답한 사례입니다. "
-                    + "하루는 한국 시간 기준이고 호출이 없던 날도 0으로 채워집니다. "
-                    + "게이트웨이가 배치로 보고하므로 오늘 자 값은 아직 채워지는 중입니다.")
+            description = "실제 키의 관측 읽기와 금융 읽기 권한을 각각 판정하는 사용량 응답이에요. 허용하지 않은 조회 항목은 null로 반환하며 0이나 빈 목록과 구분해요. "
+                    + "권한으로 볼 수 있는 일별 사용량은 소유자 조회와 같은 값과 계산을 써요. "
+                    + "일별 금액과 경로별 사용량, 공급자가 요청과 다른 모델로 응답한 사례를 나눠 보여 줘요. "
+                    + "하루는 한국 시간 기준이며 호출이 없던 날도 0으로 채워요. "
+                    + "오늘 값은 게이트웨이의 배치 보고에 따라 달라질 수 있어요.")
     public AdminLlmKeyUsageResponse getAdminLlmKeyUsage(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId,
@@ -125,9 +125,9 @@ public class AdminLlmKeyController {
 
     @GetMapping("/{keyId}/models")
     @Operation(summary = "관리자 LLM API 키로 호출할 수 있는 모델",
-            description = "실제 키를 위한 모델 후보입니다. 유료 정책 참조는 금융 읽기나 해당 키의 예산 명령 권한이 있을 때만 반환합니다. "
-                    + "허용 목록을 정할 때 그 목록이 실제로 무엇을 남기는지 확인하는 자리입니다. "
-                    + "최종 판정은 호출 시점에 이뤄지므로 여기 있는 모델이 항상 응답한다는 보장은 아닙니다.")
+            description = "실제 키를 위한 모델 후보예요. 유료 정책 참조는 금융 읽기나 해당 키의 예산 명령 권한이 있을 때만 반환해요. "
+                    + "허용 목록을 정할 때 실제로 어떤 모델이 남는지 확인해요. "
+                    + "최종 판정은 호출 시점에 이뤄지므로 여기 있는 모델이 항상 응답한다고 보장하지 않아요.")
     public InstitutionAdminLlmModelsResponse listAdminLlmKeyModels(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId) {
@@ -137,7 +137,7 @@ public class AdminLlmKeyController {
     @PutMapping("/{keyId}/limits")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 한도 교체",
-            description = "보낸 한도만 현재 업무 권한으로 변경하며 생략한 값은 유지합니다. 시스템 운영자는 금액과 리셋 창, 유료 모델 및 유료 기능 정책을 바꿀 수 없습니다.")
+            description = "보낸 한도만 현재 업무 권한으로 바꾸고 생략한 값은 유지해요. 시스템 운영자는 금액과 리셋 창, 유료 모델 및 유료 기능 정책을 바꿀 수 없어요.")
     @ApiResponse(responseCode = "200", description = "변경된 LLM API 키 상세",
             content = @Content(mediaType = "application/json",
                     schema = @Schema(implementation = AdminLlmKeyDetailResponse.class)))
@@ -152,9 +152,9 @@ public class AdminLlmKeyController {
     @PatchMapping("/{keyId}/expiry")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 만료일 변경",
-            description = "키가 만료되는 날을 바꿉니다. 종료일은 KST 기준 그날까지 포함이고 승인 때와 같은 계산입니다. "
-                    + "이미 만료된 키에 앞날의 종료일을 주면 다시 활성화됩니다. 폐기된 키는 바꿀 수 없고, "
-                    + "OpenRouter 키가 발급된 키는 만료일을 앞당기는 것만 할 수 있습니다.")
+            description = "키의 종료일을 바꿔요. 종료일은 KST 기준 그날을 포함하며 승인할 때와 같이 계산해요. "
+                    + "미래 종료일로 만료 조건을 해소할 수 있어요. 정지 상태와 최초 발급 조건은 그대로 적용돼요. 폐기된 키는 바꿀 수 없고, "
+                    + "OpenRouter 키가 발급돼 있고 현재 만료일이 정해져 있으면 그보다 뒤로 미룰 수 없어요.")
     @ApiResponse(responseCode = "200", description = "변경된 LLM API 키 상세",
             content = @Content(mediaType = "application/json",
                     schema = @Schema(implementation = AdminLlmKeyDetailResponse.class)))
@@ -169,7 +169,7 @@ public class AdminLlmKeyController {
     @PostMapping("/{keyId}/suspend")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 정지",
-            description = "활성 키를 정지합니다. 사유는 감사 기록에 남고 평문 요청 본문은 기록하지 않습니다.")
+            description = "활성 키를 정지해요. 사유는 감사 기록에 남고 평문 요청 본문은 감사 기록에 남기지 않아요.")
     public AdminLlmKeyDetailResponse suspendAdminLlmKey(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId,
@@ -181,7 +181,7 @@ public class AdminLlmKeyController {
     @PostMapping("/{keyId}/resume")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 재개",
-            description = "정지된 키를 다시 활성화합니다.")
+            description = "정지된 키를 다시 활성화해요.")
     public AdminLlmKeyDetailResponse resumeAdminLlmKey(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId,

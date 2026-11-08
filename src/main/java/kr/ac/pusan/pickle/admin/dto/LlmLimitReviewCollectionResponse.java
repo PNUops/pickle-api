@@ -9,7 +9,7 @@ import java.time.LocalDate;
 public record LlmLimitReviewCollectionResponse(
         List<LlmLimitReviewResponse> items,
         long totalItems,
-        @Schema(description = "현재 items가 같은 한도 검토 모집단 전체를 담지 않았는지. 다음 페이지 여부는 page/totalPages로 확인합니다.")
+        @Schema(description = "현재 items에 같은 한도 검토 모집단 전체가 들어 있지 않은지 나타내요. 다음 페이지는 page와 totalPages로 확인해요.")
         boolean truncated, int page, int size, int totalPages,
         LocalDate pressureFrom, LocalDate pressureTo, Instant configurationObservedAt) {
 }

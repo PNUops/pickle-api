@@ -87,11 +87,11 @@ public class WorkspaceController {
 
     @PostMapping("/{workspaceId}/invitations")
     @Operation(summary = "구성원 초대",
-            description = "이메일이나 학번으로 한 번에 1명에서 200명까지 초대합니다. 활성 계정이 있으면 바로 "
+            description = "이메일이나 학번으로 한 번에 1명에서 200명까지 초대해요. 활성 계정이 있으면 바로 "
                     + "구성원(MEMBER)이 되고, 없으면 초대가 대기하다가 그 사람이 가입하거나 학번을 등록하면 "
-                    + "자동으로 구성원이 됩니다. 초대는 만료되지 않으며 소유자가 취소할 수 있습니다. "
-                    + "결과는 항목마다 요청과 같은 순서로 옵니다. 소유자(OWNER)만 호출할 수 있고 "
-                    + "개인 워크스페이스에는 초대할 수 없습니다.")
+                    + "자동으로 구성원이 돼요. 초대는 만료되지 않으며 소유자가 취소할 수 있어요. "
+                    + "결과는 항목마다 요청과 같은 순서로 반환해요. 소유자(OWNER)만 호출할 수 있고 "
+                    + "개인 워크스페이스에는 초대할 수 없어요.")
     public InviteWorkspaceMembersResponse inviteWorkspaceMembers(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId,
@@ -102,7 +102,7 @@ public class WorkspaceController {
 
     @GetMapping("/{workspaceId}/invitations")
     @Operation(summary = "대기 중인 초대 목록",
-            description = "아직 받지 않은 초대만 오래된 순서로 돌려줍니다. 소유자(OWNER)만 볼 수 있습니다.")
+            description = "아직 받지 않은 초대만 오래된 순서로 반환해요. 소유자(OWNER)만 볼 수 있어요.")
     public List<WorkspaceInvitationResponse> listWorkspaceInvitations(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId) {
@@ -112,8 +112,8 @@ public class WorkspaceController {
     @DeleteMapping("/{workspaceId}/invitations/{invitationId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "초대 취소",
-            description = "대기 중인 초대를 취소합니다. 이미 받았거나 취소한 초대는 찾을 수 없음(404)으로 "
-                    + "답합니다. 소유자(OWNER)만 호출할 수 있습니다.")
+            description = "대기 중인 초대를 취소해요. 이미 받았거나 취소한 초대는 찾을 수 없음(404)으로 "
+                    + "응답해요. 소유자(OWNER)만 호출할 수 있어요.")
     public void cancelWorkspaceInvitation(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId,
             @PathVariable UUID invitationId,
@@ -124,11 +124,11 @@ public class WorkspaceController {
 
     @PostMapping("/{workspaceId}/roster/resolve")
     @Operation(summary = "학번 명단 확인",
-            description = "신청 대상자로 지정할 학번 명단을 제출하기 전에 확인합니다. 학번마다 이미 구성원인지, 활성 계정이 "
+            description = "신청 대상자로 지정할 학번 명단을 제출하기 전에 확인해요. 학번마다 이미 구성원인지, 활성 계정이 "
                     + "있지만 구성원이 아닌지, 대기 중인 초대가 있는지, 계정도 초대도 없는지를 요청과 같은 순서로 "
-                    + "돌려줍니다. 아무것도 기록하지 않으며, 구성원 추가와 초대는 학번 대상자로 신청을 제출할 때 "
-                    + "일어납니다. 워크스페이스 소유자나, orgId로 지정한 기관의 신청을 승인할 수 있는 관리자만 "
-                    + "호출할 수 있고 개인 워크스페이스에는 쓸 수 없습니다. 한 번에 500건까지, 1분에 10번까지, 한 시간에 2000건까지입니다.")
+                    + "반환해요. 구성원 추가나 초대는 실행하지 않으며 학번 대상자로 신청을 제출할 때 "
+                    + "처리해요. 워크스페이스 소유자나 orgId로 지정한 기관에서 해당 명단 발급 업무가 있는 담당자만 "
+                    + "호출할 수 있고 개인 워크스페이스에는 쓸 수 없어요. 한 번에 500건까지, 1분에 10번까지, 한 시간에 2000건까지예요.")
     public ResolveRosterResponse resolveWorkspaceRoster(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId,

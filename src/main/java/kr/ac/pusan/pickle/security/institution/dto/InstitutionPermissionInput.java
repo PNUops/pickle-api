@@ -23,7 +23,7 @@ public record InstitutionPermissionInput(
         @NotNull InstitutionPermissionMode mode,
         @NotNull @Size(max = 200) List<@NotNull String> work,
         @NotNull Map<@NotNull InstitutionWorkGroup, @NotNull @Valid InstitutionWorkspaceScopeInput> scopes,
-        @Schema(description = "기존 부여의 현재 버전. 새 부여는 0이며 회수 후 재부여한 버전은 재사용하지 않습니다.")
+        @Schema(description = "기존 부여의 현재 버전을 보내요. 새 부여는 0이며, 회수 후 다시 부여하면 이전과 다른 버전이 할당돼요.")
         @NotNull @Min(0) Long expectedRevision) {
 
     public InstitutionAssignment toAssignment(UUID accountId, UUID institutionId) {

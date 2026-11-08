@@ -34,7 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@link kr.ac.pusan.pickle.publishing.DomainResourceAdapter}.</p>
  */
 @Tag(name = "dns-domain-access",
-        description = "도메인 접근 권한 — 이 도메인에 누가 접근할 수 있는지를 정합니다.")
+        description = "이 도메인에 누가 접근할 수 있는지 정해요.")
 @RestController
 @RequestMapping("/api/v1/dns-domains/{domainId}/access")
 public class DnsDomainAccessGrantController {
@@ -47,7 +47,7 @@ public class DnsDomainAccessGrantController {
 
     @GetMapping
     @Operation(summary = "접근 권한 목록",
-            description = "이 도메인의 접근 권한 전체입니다. 도메인 소유자와 워크스페이스 소유자만 볼 수 있습니다.")
+            description = "이 도메인의 접근 권한 전체예요. 도메인 소유자와 워크스페이스 소유자만 볼 수 있어요.")
     public ResourceAccessListResponse listDnsDomainAccessGrants(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId) {
@@ -57,7 +57,7 @@ public class DnsDomainAccessGrantController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "접근 권한 부여",
-            description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 도메인의 접근 권한을 부여합니다.")
+            description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 도메인의 접근 권한을 부여해요.")
     public ResourceAccessGrantView addDnsDomainAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId,
@@ -82,7 +82,7 @@ public class DnsDomainAccessGrantController {
     @DeleteMapping("/{grantId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "접근 권한 회수",
-            description = "회수해도 이미 존에 들어간 레코드는 그대로 남습니다. 필요하면 레코드를 먼저 정리해 주세요.")
+            description = "접근 권한을 회수해도 이미 존에 들어간 레코드는 그대로 남아요. 필요하면 레코드를 먼저 정리해 주세요.")
     public void removeDnsDomainAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId,

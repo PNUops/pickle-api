@@ -6,11 +6,11 @@ import java.time.LocalDate;
 /** Contract schema {@code LlmKeyUsagePoint}: one KST calendar day. */
 public record LlmKeyUsagePointResponse(
         LocalDate day,
-        @Schema(description = "이 날 이 Key로 들어온 요청 수 — 거부된 것과 실패한 것을 포함합니다.")
+        @Schema(description = "이 날 이 키로 기록된 요청 수이며, 거절되거나 실패한 요청도 포함해요.")
         long requests,
         @Schema(description = "정상 응답한 요청 수")
         long succeeded,
-        @Schema(description = "한도에 걸려 거부된 요청 수. 계속 0이 아니면 한도 상향을 신청할 때입니다.")
+        @Schema(description = "한도에 걸려 거절된 요청 수예요.")
         long rateLimited,
         @Schema(description = "그 밖의 사유로 실패한 요청 수 (업스트림 오류, 시간 초과, 잘못된 요청 등)")
         long failed,
@@ -19,20 +19,19 @@ public record LlmKeyUsagePointResponse(
         @Schema(description = "출력 토큰 합")
         long outputTokens,
         @Schema(description = """
-                토큰 수가 실측이 아니라 추정인 요청 수. 스트리밍 응답에서 업스트림이 사용량을 \
-                주지 않으면 게이트웨이가 추정하므로, 이 값이 크면 위 토큰 합도 그만큼 추정입니다.""")
+                토큰 수에 추정값이 포함된 요청 수예요. 스트리밍 응답에서 업스트림이 사용량을 \
+                제공하지 않아 Gateway가 추정하는 경우 등이 포함돼요.""")
         long estimatedRequests,
         @Schema(description = """
-                입력 토큰 중 공급자가 캐시에서 읽어 처리한 몫. 입력 토큰의 부분집합이라 \
-                입력 토큰에 더하면 이중 계산입니다.""")
+                입력 토큰 중 공급자가 캐시에서 읽어 처리한 부분이에요. 입력 토큰의 부분집합이므로 \
+                inputTokens에 더하면 중복 집계돼요.""")
         long cachedInputTokens,
         @Schema(description = """
-                출력 토큰 중 모델이 답을 내기 전에 생각하는 데 쓴 몫. 출력 토큰의 \
-                부분집합이라 출력 토큰에 더하면 이중 계산입니다.""")
+                출력 토큰 중 모델이 답을 내기 전에 추론에 쓴 부분이에요. 출력 토큰의 부분집합이므로 \
+                outputTokens에 더하면 중복 집계돼요.""")
         long reasoningTokens,
         @Schema(description = """
-                이 날 응답으로 돌아온 이미지 수. 요청한 장수가 아니라 실제로 받은 장수이고, \
-                이미지 생성이 아닌 요청은 여기에 아무것도 더하지 않습니다.""")
+                이 날 응답에 보고된 이미지 수예요. 요청한 장수가 아닌 보고된 응답 값을 집계해요.""")
         long imageCount,
         @Schema(description = "스트리밍으로 받은 요청 수")
         long streamedRequests) {

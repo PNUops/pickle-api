@@ -7,8 +7,8 @@ import tools.jackson.databind.JsonNode;
 public record AdminBulkChangeFieldDiff(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "필드 이름")
         String field,
-        @Schema(description = "현재 값. 문자열이나 숫자, 배열, null입니다.")
+        @Schema(description = "현재 값이며 문자열이나 숫자, boolean, 배열, null이에요.")
         JsonNode oldValue,
-        @Schema(description = "바뀔 값. 문자열이나 숫자, 배열, null입니다.")
+        @Schema(description = "바뀔 값이며 문자열이나 숫자, boolean, 배열, null이에요.")
         JsonNode newValue) {
 }

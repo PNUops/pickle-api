@@ -39,7 +39,7 @@ import org.jspecify.annotations.Nullable;
  * scoping suite is what says so.</p>
  */
 @Tag(name = "dns-domain",
-        description = "도메인 — VM 없이 이름만 발급받아 자기 서버로 연결합니다.")
+        description = "VM 없이 도메인 이름만 발급받아 자기 서버로 연결해요.")
 @RestController
 @RequestMapping("/api/v1/dns-domains")
 public class DnsDomainController {
@@ -55,8 +55,8 @@ public class DnsDomainController {
     @GetMapping
     @Operation(summary = "도메인 목록",
             description = "`workspaceId`를 지정하지 않으면 내가 접근 권한을 가진 도메인만 "
-                    + "옵니다. 지정하면 그 워크스페이스의 도메인 전부이고, 접근 권한이 없는 "
-                    + "도메인도 이름과 상태, 소유자까지는 보입니다.")
+                    + "조회해요. 지정하면 해당 워크스페이스의 도메인 목록을 조회하며 접근 권한이 없는 "
+                    + "도메인도 이름과 상태, 소유자는 보여요.")
     public PageResponse<DnsDomainView> listDnsDomains(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) @Nullable UUID workspaceId,
@@ -70,9 +70,9 @@ public class DnsDomainController {
 
     @PostMapping("/{domainId}/revive")
     @Operation(summary = "해제한 도메인 되살리기",
-            description = "예약 기간 동안 이 워크스페이스가 붙잡고 있는 이름을 되찾습니다. "
+            description = "예약 기간 동안 이 워크스페이스가 보유한 이름을 되살려요. "
                     + "새로 받는 것이 아니라 이미 가진 것을 되살리는 것이므로 승인을 거치지 "
-                    + "않습니다. 레코드는 돌아오지 않으며 다시 넣어야 합니다.")
+                    + "않아요. 레코드는 복구되지 않으므로 다시 입력해야 해요.")
     public DnsDomainView reviveDnsDomain(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId,
@@ -91,8 +91,8 @@ public class DnsDomainController {
     @DeleteMapping("/{domainId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(summary = "도메인 해제",
-            description = "레코드를 지우고 이름을 해제합니다. 이름은 예약 기간 동안 이 워크스페이스에 "
-                    + "남아 있다가 회수됩니다.")
+            description = "레코드를 삭제하고 이름을 해제해요. 이름은 예약 기간 동안 이 워크스페이스에 "
+                    + "남아 있다가 회수돼요.")
     public void deleteDnsDomain(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId,
@@ -102,8 +102,8 @@ public class DnsDomainController {
 
     @PostMapping("/{domainId}/renew")
     @Operation(summary = "사용 연장",
-            description = "사용 기한을 지금부터 다시 전체 기간만큼으로 옮깁니다. 남은 기간에 더하는 것이 "
-                    + "아니라 언제 눌러도 같은 기간을 받습니다.")
+            description = "사용 기한을 지금부터 다시 전체 기간만큼으로 바꿔요. 남은 기간에 더하지 않으므로 "
+                    + "언제 갱신해도 같은 기간을 받아요.")
     public DnsDomainView renewDnsDomain(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId,
@@ -121,8 +121,8 @@ public class DnsDomainController {
 
     @PutMapping("/{domainId}/records")
     @Operation(summary = "레코드 세트 저장",
-            description = "이 이름이 가져야 할 레코드 세트 전체를 보냅니다. 서버가 차이를 계산하므로 "
-                    + "같은 내용을 다시 보내면 아무것도 바뀌지 않습니다. 목록에서 빠진 세트는 존에서 지워집니다.")
+            description = "이 이름에 적용할 레코드 세트 전체를 보내요. 서버가 차이를 계산하므로 "
+                    + "같은 내용을 다시 보내면 바뀌지 않아요. 목록에서 빠진 세트는 존에서 삭제해요.")
     public List<DnsRecordSetView> replaceDnsRecordSets(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId,

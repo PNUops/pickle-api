@@ -56,7 +56,7 @@ public class AnnouncementController {
 
     @PostMapping("/preview")
     @Operation(operationId = "previewAnnouncement", summary = "알림 발송 대상 미리보기",
-            description = "현재 활성 대상자의 예상 인원과 최대 20명 예시를 조회합니다. 발송은 생성 요청 시 다시 대상을 선정하며 이 응답은 발송 예약이 아닙니다.")
+            description = "현재 활성 대상자의 예상 인원과 최대 20명 예시를 조회해요. 실제 발송 대상은 생성 요청 때 다시 선정하며 이 응답으로 발송을 예약하지 않아요.")
     public AnnouncementPreviewResponse previewAnnouncement(@AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody AnnouncementCreateRequest request) {
         return announcementService.preview(principal, request);
@@ -65,7 +65,7 @@ public class AnnouncementController {
     @GetMapping("/{announcementId}")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(operationId = "getAnnouncement", summary = "알림 발송건 상세 조회",
-            description = "저장된 내용과 대상, 발송 당시 선정 인원을 조회합니다. 기관 계층은 허용된 기관 업무와 작성자의 현재 기관 행 및 전체 발송건을 기준으로 조회합니다.")
+            description = "저장된 내용과 대상, 접수 당시 선정 인원을 조회해요. 기관 계층은 허용된 기관 업무와 작성자의 현재 기관 행 및 전체 발송건을 기준으로 조회해요.")
     public AnnouncementDetailResponse getAnnouncement(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID announcementId) {
         return announcementQueryService.get(principal, announcementId);
