@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.llm.dto;
 
 import java.math.BigDecimal;
 import java.util.List;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Gateway → api usage batch (internal contract). Delivery is at-least-once
@@ -46,6 +47,13 @@ public record LlmUsageRequest(
      * value abort the batch. {@code cachedInputTokens} and
      * {@code reasoningTokens} are subsets of the two token counts, never
      * additions to them.</p>
+     *
+     * <p>{@code object} is set on a submit of an async object (a batch, a
+     * video) that the vendor accepted, whether or not the synchronous bind
+     * succeeded: {@code {kind, intentId, objectId, compensated, expiresAt}}.
+     * It is a tree rather than a record because a member Jackson cannot bind
+     * would fail the whole batch; the service reads it leniently and ignores
+     * one it cannot use, so a ledger defect never costs the usage row.</p>
      */
     public record UsageEvent(
             String eventUuid,
@@ -69,6 +77,7 @@ public record LlmUsageRequest(
             Integer imageCount,
             Integer cachedInputTokens,
             Integer reasoningTokens,
-            Boolean streamed) {
+            Boolean streamed,
+            JsonNode object) {
     }
 }

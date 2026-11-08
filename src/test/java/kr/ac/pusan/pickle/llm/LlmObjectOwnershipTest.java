@@ -56,6 +56,8 @@ class LlmObjectOwnershipTest {
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private LlmAsyncObjectSweeper sweeper;
 
     private final List<Long> keyIds = new ArrayList<>();
     private final List<Long> requestIds = new ArrayList<>();
@@ -75,6 +77,7 @@ class LlmObjectOwnershipTest {
     void removeFixtures() {
         jdbcTemplate.update("delete from llm_async_objects");
         for (Long id : keyIds) {
+            jdbcTemplate.update("delete from llm_usage_events where key_id = ?", id);
             jdbcTemplate.update("delete from llm_api_keys where id = ?", id);
         }
         for (Long id : accountIds) {
@@ -320,7 +323,234 @@ class LlmObjectOwnershipTest {
                 .andExpect(status().isUnprocessableContent());
     }
 
+    // ── late bind over the usage channel ───────────────────────────────────
+
+    @Test
+    void usageMemberBindsAPendingIntentLateAndOnRedelivery() throws Exception {
+        Key key = fundedKey("late");
+        UUID intentId = intent(key, "BATCH");
+        Map<String, Object> event = usageEvent(key, "evt-late-" + intentId,
+                member("BATCH", intentId, "batch-late-1", false, "2026-12-09T00:00:00Z"));
+
+        usage(event).andExpect(jsonPath("$.accepted").value(1));
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select state, vendor_object_id, bound_late, expires_at is not null as expiring
+                from llm_async_objects where public_id = ?
+                """, intentId);
+        assertThat(row.get("state")).isEqualTo("OWNED");
+        assertThat(row.get("vendor_object_id")).isEqualTo("batch-late-1");
+        assertThat(row.get("bound_late")).isEqualTo(true);
+        assertThat(row.get("expiring")).isEqualTo(true);
+        assertThat(lookup(key, "BATCH", List.of("batch-late-1"))).containsExactly("batch-late-1");
+
+        usage(event).andExpect(jsonPath("$.duplicates").value(1));
+        assertThat(rows()).isEqualTo(1);
+    }
+
+    @Test
+    void usageMemberAfterASynchronousBindChangesNothing() throws Exception {
+        Key key = fundedKey("sync-then-late");
+        UUID intentId = intent(key, "VIDEO");
+        bind(key, intentId, "VIDEO", "gen-vid-1");
+
+        usage(usageEvent(key, "evt-sync-" + intentId,
+                member("VIDEO", intentId, "gen-vid-1", false, null)))
+                .andExpect(jsonPath("$.accepted").value(1));
+        assertThat(jdbcTemplate.queryForObject(
+                "select bound_late from llm_async_objects where public_id = ?",
+                Boolean.class, intentId)).isFalse();
+    }
+
+    @Test
+    void compensatedSubmitLandsReleased() throws Exception {
+        Key key = fundedKey("compensated");
+        UUID intentId = intent(key, "BATCH");
+        usage(usageEvent(key, "evt-comp-" + intentId,
+                member("BATCH", intentId, "batch-undone", true, null)));
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "select state, release_reason, bound_late from llm_async_objects where public_id = ?",
+                intentId);
+        assertThat(row.get("state")).isEqualTo("RELEASED");
+        assertThat(row.get("release_reason")).isEqualTo("COMPENSATED");
+        assertThat(row.get("bound_late")).isEqualTo(true);
+        assertThat(lookup(key, "BATCH", List.of("batch-undone"))).isEmpty();
+    }
+
+    /** A restore loses the intent row too; the replayed event recreates it. */
+    @Test
+    void replayAfterARestoreRecreatesTheRow() throws Exception {
+        Key key = fundedKey("restore");
+        UUID lostIntent = UUID.randomUUID();
+        usage(usageEvent(key, "evt-restore-" + lostIntent,
+                member("VIDEO", lostIntent, "gen-vid-restored", false, null)))
+                .andExpect(jsonPath("$.accepted").value(1));
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "select key_id, state, bound_late from llm_async_objects where public_id = ?",
+                lostIntent);
+        assertThat(row.get("key_id")).isEqualTo(key.id());
+        assertThat(row.get("state")).isEqualTo("OWNED");
+        assertThat(row.get("bound_late")).isEqualTo(true);
+        assertThat(lookup(key, "VIDEO", List.of("gen-vid-restored")))
+                .containsExactly("gen-vid-restored");
+    }
+
+    @Test
+    void anotherKeysObjectLeavesTheIntentPending() throws Exception {
+        Key owner = fundedKey("taken-owner");
+        Key other = keyOnAccount("taken-other", owner.accountId());
+        bind(owner, intent(owner, "BATCH"), "BATCH", "batch-shared");
+        UUID intentId = intent(other, "BATCH");
+
+        usage(usageEvent(other, "evt-taken-" + intentId,
+                member("BATCH", intentId, "batch-shared", false, null)))
+                .andExpect(jsonPath("$.accepted").value(1));
+        assertThat(jdbcTemplate.queryForObject(
+                "select state from llm_async_objects where public_id = ?", String.class, intentId))
+                .isEqualTo("PENDING");
+        assertThat(lookup(other, "BATCH", List.of("batch-shared"))).isEmpty();
+    }
+
+    @Test
+    void usageMemberForAnObjectTheKeyAlreadyOwnsReleasesTheIntentAsDuplicate() throws Exception {
+        Key key = fundedKey("late-duplicate");
+        bind(key, intent(key, "BATCH"), "BATCH", "batch-same");
+        UUID second = intent(key, "BATCH");
+        usage(usageEvent(key, "evt-dup-" + second, member("BATCH", second, "batch-same", false, null)));
+        assertThat(jdbcTemplate.queryForMap(
+                "select state, release_reason from llm_async_objects where public_id = ?", second))
+                .containsEntry("state", "RELEASED").containsEntry("release_reason", "DUPLICATE");
+        assertThat(lookup(key, "BATCH", List.of("batch-same"))).containsExactly("batch-same");
+    }
+
+    /** Every submit writes an intent, so a member without one recreates nothing. */
+    @Test
+    void usageMemberWithoutAnIntentRecreatesNothing() throws Exception {
+        Key key = fundedKey("no-intent");
+        usage(usageEvent(key, "evt-nointent-" + key.publicId(),
+                Map.of("kind", "VIDEO", "objectId", "gen-vid-orphan", "compensated", false)))
+                .andExpect(jsonPath("$.accepted").value(1));
+        assertThat(rows()).isZero();
+    }
+
+    /** An intent id that already names another key's row is not taken over. */
+    @Test
+    void usageMemberNamingAnotherKeysIntentRecreatesNothing() throws Exception {
+        Key owner = fundedKey("intent-owner");
+        Key other = keyOnAccount("intent-other", owner.accountId());
+        UUID ownersIntent = intent(owner, "BATCH");
+        usage(usageEvent(other, "evt-steal-" + ownersIntent,
+                member("BATCH", ownersIntent, "batch-stolen", false, null)))
+                .andExpect(jsonPath("$.accepted").value(1));
+        assertThat(rows()).isEqualTo(1);
+        assertThat(stateOf(ownersIntent)).isEqualTo("PENDING");
+        assertThat(lookup(other, "BATCH", List.of("batch-stolen"))).isEmpty();
+    }
+
+    /** A member nobody can use costs the ledger nothing and the usage row nothing. */
+    @Test
+    void unusableMembersKeepTheirEvents() throws Exception {
+        Key key = fundedKey("malformed");
+        UUID intentId = intent(key, "BATCH");
+        Map<String, Object> notAnObject = usageEvent(key, "evt-bad-1-" + intentId, "nonsense");
+        Map<String, Object> unknownKind = usageEvent(key, "evt-bad-2-" + intentId,
+                member("CONTAINER", intentId, "c-1", false, null));
+        Map<String, Object> badIntent = usageEvent(key, "evt-bad-3-" + intentId,
+                Map.of("kind", "BATCH", "intentId", "not-a-uuid", "objectId", "b-1"));
+        Map<String, Object> noObjectId = usageEvent(key, "evt-bad-4-" + intentId,
+                Map.of("kind", "BATCH", "intentId", intentId.toString()));
+
+        call("/internal/llm/usage", Map.of("agentVersion", "test",
+                "events", List.of(notAnObject, unknownKind, badIntent, noObjectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(4))
+                .andExpect(jsonPath("$.rejected").value(0));
+        assertThat(jdbcTemplate.queryForObject(
+                "select state from llm_async_objects where public_id = ?", String.class, intentId))
+                .isEqualTo("PENDING");
+    }
+
+    // ── sweep ───────────────────────────────────────────────────────────────
+
+    @Test
+    void sweepReleasesExpiredBatchesAndForgetsStaleRows() throws Exception {
+        Key key = fundedKey("sweep");
+        UUID expired = intent(key, "BATCH");
+        bind(key, expired, "BATCH", "batch-expired");
+        jdbcTemplate.update("update llm_async_objects set expires_at = now() - interval '1 hour' "
+                + "where public_id = ?", expired);
+        UUID live = intent(key, "BATCH");
+        bind(key, live, "BATCH", "batch-live");
+        jdbcTemplate.update("update llm_async_objects set expires_at = now() + interval '1 day' "
+                + "where public_id = ?", live);
+        UUID video = intent(key, "VIDEO");
+        bind(key, video, "VIDEO", "gen-vid-old");
+        jdbcTemplate.update("update llm_async_objects set created_at = now() - interval '400 days' "
+                + "where public_id = ?", video);
+        UUID stalePending = intent(key, "BATCH");
+        jdbcTemplate.update("update llm_async_objects set created_at = now() - interval '31 days' "
+                + "where public_id = ?", stalePending);
+        UUID freshPending = intent(key, "BATCH");
+        UUID oldVideoPending = intent(key, "VIDEO");
+        jdbcTemplate.update("update llm_async_objects set created_at = now() - interval '31 days' "
+                + "where public_id = ?", oldVideoPending);
+        UUID oldReleased = intent(key, "BATCH");
+        release(key, "BATCH", null, oldReleased, "NOT_CREATED");
+        jdbcTemplate.update("update llm_async_objects set released_at = now() - interval '91 days' "
+                + "where public_id = ?", oldReleased);
+
+        sweeper.sweep();
+
+        assertThat(jdbcTemplate.queryForMap(
+                "select state, release_reason from llm_async_objects where public_id = ?", expired))
+                .containsEntry("state", "RELEASED").containsEntry("release_reason", "VENDOR_GONE");
+        assertThat(stateOf(live)).isEqualTo("OWNED");
+        assertThat(stateOf(video)).isEqualTo("OWNED");
+        assertThat(stateOf(freshPending)).isEqualTo("PENDING");
+        assertThat(stateOf(oldVideoPending)).isEqualTo("PENDING");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from llm_async_objects where public_id in (?, ?)",
+                Integer.class, stalePending, oldReleased)).isZero();
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
+
+    private String stateOf(UUID intentId) {
+        return jdbcTemplate.queryForObject(
+                "select state from llm_async_objects where public_id = ?", String.class, intentId);
+    }
+
+    private static Map<String, Object> member(String kind, UUID intentId, String objectId,
+            boolean compensated, String expiresAt) {
+        Map<String, Object> member = new HashMap<>();
+        member.put("kind", kind);
+        member.put("intentId", intentId.toString());
+        member.put("objectId", objectId);
+        member.put("compensated", compensated);
+        if (expiresAt != null) {
+            member.put("expiresAt", expiresAt);
+        }
+        return member;
+    }
+
+    private static Map<String, Object> usageEvent(Key key, String eventId, Object object) {
+        Map<String, Object> event = new HashMap<>();
+        event.put("eventUuid", eventId.length() > 64 ? eventId.substring(0, 64) : eventId);
+        event.put("keyId", key.publicId().toString());
+        event.put("budgetAxis", "CREDIT");
+        event.put("status", "OK");
+        event.put("inputTokens", 0);
+        event.put("outputTokens", 0);
+        event.put("latencyMs", 5);
+        event.put("requestedAt", java.time.Instant.now().toString());
+        event.put("endpoint", "batches");
+        event.put("object", object);
+        return event;
+    }
+
+    private ResultActions usage(Map<String, Object> event) throws Exception {
+        return call("/internal/llm/usage", Map.of("agentVersion", "test", "events", List.of(event)))
+                .andExpect(status().isOk());
+    }
 
     private UUID intent(Key key, String kind) throws Exception {
         String body = intentCall(key.publicId(), kind).andExpect(status().isCreated())

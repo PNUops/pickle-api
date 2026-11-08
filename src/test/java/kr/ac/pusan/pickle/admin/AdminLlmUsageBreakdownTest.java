@@ -290,17 +290,23 @@ class AdminLlmUsageBreakdownTest {
                 "0.00000516", 0, 0, hoursAgo(2));
         event(keyTwo.id(), "openai/gpt-4o-mini-transcribe", "audio_transcriptions",
                 "0.00011625", 37, 14, hoursAgo(2));
+        // A batch status read is a call of its own name, so polling does not
+        // count as using batches.
+        event(keyTwo.id(), "openai/gpt-4o-mini", "batches_read", "0", 0, 0, hoursAgo(2));
         rollupService.refresh();
 
         platformUsage(sysToken, "orgId=" + orgA.getPublicId())
                 .andExpect(status().isOk())
-                // chat, images, embeddings, rerank, speech, transcriptions: the
+                // chat, images, embeddings, rerank, speech, transcriptions, batches: the
                 // grantable capabilities whose use a route can show. web_search and pdf_ocr are judged from the
                 // body and have no row, and names nobody may hold yet have none either.
                 .andExpect(jsonPath("$.breakdown.passthroughGrants[*].capability")
                         .value(org.hamcrest.Matchers.contains(
                                 "chat", "images", "embeddings", "rerank", "speech",
-                                "transcriptions")))
+                                "transcriptions", "batches")))
+                .andExpect(jsonPath(
+                        "$.breakdown.passthroughGrants[?(@.capability == 'batches')].requests")
+                        .value(org.hamcrest.Matchers.contains(0)))
                 .andExpect(jsonPath(
                         "$.breakdown.passthroughGrants[?(@.capability == 'rerank')].usedKeys")
                         .value(org.hamcrest.Matchers.contains(1)))

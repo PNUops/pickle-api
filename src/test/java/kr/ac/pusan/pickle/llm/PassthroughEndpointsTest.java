@@ -93,7 +93,7 @@ class PassthroughEndpointsTest {
         assertThat(errors).hasSize(1);
         assertThat(errors.getFirst().field()).isEqualTo("endpoints[1]");
         assertThat(errors.getFirst().message()).startsWith("아직 부여할 수 없는 기능이에요.")
-                .contains("chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions");
+                .contains("chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions, batches");
     }
 
     /** A feature of chat means nothing without chat. */
@@ -109,6 +109,33 @@ class PassthroughEndpointsTest {
         assertThat(PassthroughEndpoints.normalizeGrant(List.of("pdf_ocr", "chat"),
                 "endpoints", errors)).containsExactly("pdf_ocr", "chat");
         assertThat(errors).isEmpty();
+    }
+
+    /**
+     * Batches stand alone: the vendor's batch carries its requests and results
+     * inline, so granting it brings no file upload with it. It does need chat
+     * or embeddings beside it, the endpoints a batch can target.
+     */
+    @Test
+    void batchesAreGrantableAndDoNotImplyFiles() {
+        List<FieldValidationError> errors = new ArrayList<>();
+        assertThat(PassthroughEndpoints.normalizeGrant(List.of("chat", "batches"),
+                "endpoints", errors)).containsExactly("chat", "batches");
+        assertThat(errors).isEmpty();
+
+        assertThat(PassthroughEndpoints.normalizeGrant(List.of("embeddings", "batches"),
+                "endpoints", errors)).containsExactly("embeddings", "batches");
+        assertThat(errors).isEmpty();
+
+        // A batch needs the grant of the endpoint it targets, so alone it opens nothing.
+        assertThat(PassthroughEndpoints.normalizeGrant(List.of("batches"), "endpoints", errors))
+                .isEmpty();
+        assertThat(errors).hasSize(1);
+        assertThat(errors.getFirst().field()).isEqualTo("endpoints");
+        errors.clear();
+
+        assertThat(PassthroughEndpoints.normalize(List.of("files"), "endpoints", errors)).isEmpty();
+        assertThat(errors).hasSize(1);
     }
 
     /**

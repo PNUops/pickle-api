@@ -84,7 +84,11 @@ public final class PassthroughEndpoints {
     /** Batch submission. */
     public static final String BATCHES = "batches";
 
-    /** File upload. Follows {@link #BATCHES} or {@link #CONTAINERS}. */
+    /**
+     * File upload. Follows {@link #CONTAINERS}. Batches do not take files: the
+     * vendor's batch carries its requests inline and returns its results
+     * inline, so granting batches never implies this.
+     */
     public static final String FILES = "files";
 
     /**
@@ -102,13 +106,13 @@ public final class PassthroughEndpoints {
      * permission neither side can exercise.
      */
     public static final List<String> GRANTABLE = List.of(CHAT, WEB_SEARCH, PDF_OCR,
-            IMAGES, EMBEDDINGS, RERANK, SPEECH, TRANSCRIPTIONS);
+            IMAGES, EMBEDDINGS, RERANK, SPEECH, TRANSCRIPTIONS, BATCHES);
 
     /** Capabilities that are features of a chat request and mean nothing without it. */
     private static final Set<String> UNDER_CHAT = Set.of(WEB_SEARCH, PDF_OCR, CONTAINERS);
 
-    /** Capabilities that need {@link #FILES}; it is granted with either and dropped with both. */
-    private static final Set<String> FILE_USERS = Set.of(BATCHES, CONTAINERS);
+    /** Capabilities that need {@link #FILES}; it is granted with them and dropped without. */
+    private static final Set<String> FILE_USERS = Set.of(CONTAINERS);
 
     /**
      * Matches the DB CHECK. Unreachable through the request DTOs, which carry a
@@ -166,12 +170,14 @@ public final class PassthroughEndpoints {
     /**
      * Normalizes a whole grant: the entries as {@link #normalize} does, then
      * the hierarchy. A feature of chat without chat is refused, because the
-     * approver would read a grant the gateway cannot honour. {@code files} is
+     * approver would read a grant the gateway cannot honour, and so is
+     * {@code batches} without chat or embeddings, the two endpoints a batch
+     * can target. {@code files} is
      * added when a capability that needs it is present and removed when none
-     * is, so it never has to be chosen. Neither {@code containers},
-     * {@code batches} nor {@code files} is grantable yet, so the entry check
-     * refuses them before this point and that half of the hierarchy takes
-     * effect only once {@link #GRANTABLE} widens.
+     * is, so it never has to be chosen. Neither {@code containers} nor
+     * {@code files} is grantable yet, so the entry check refuses them before
+     * this point and that half of the hierarchy takes effect only once
+     * {@link #GRANTABLE} widens.
      *
      * <p>Every write that stores a list lands here: the request's own choice,
      * the approval, the single-key replacement and the merged result of a bulk
@@ -192,6 +198,14 @@ public final class PassthroughEndpoints {
                     return List.of();
                 }
             }
+        }
+        if (entries.contains(BATCHES) && !entries.contains(CHAT)
+                && !entries.contains(EMBEDDINGS)) {
+            // A batch targets one endpoint and needs that endpoint's grant as
+            // well, so a batch grant alone opens nothing.
+            errors.add(new FieldValidationError(field,
+                    "batches 기능은 chat이나 embeddings 기능과 함께 부여해야 해요."));
+            return List.of();
         }
         LinkedHashSet<String> kept = new LinkedHashSet<>(entries);
         if (entries.stream().anyMatch(FILE_USERS::contains)) {
