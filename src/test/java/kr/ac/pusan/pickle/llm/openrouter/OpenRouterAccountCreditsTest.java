@@ -521,7 +521,7 @@ class OpenRouterAccountCreditsTest {
                 "credit-trigger-event", 1L, keyPublicId.toString(), "openai/model",
                 "CREDIT", "openrouter", 1, "error", "credit_exhausted", 0, 0, false,
                 10L, null, NOW.toString(),
-                "chat", null, null, null, null, null, false);
+                "chat", null, null, null, null, null, false, null);
 
         assertThat(usageService.ingest(new LlmUsageRequest("test", java.util.List.of(event)))
                 .accepted()).isEqualTo(1);

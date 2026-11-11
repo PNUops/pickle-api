@@ -184,8 +184,8 @@ public class AdminLlmKeyLimitsRequest {
                     description = "이 키에 부여할 기능 권한이에요. 생략하면 유지하고 빈 배열이나 null이면 "
                             + "chat을 포함한 모든 기능을 닫아요. 기능은 이 목록에 "
                             + "추가해야 열려요. 현재 부여할 수 있는 값은 chat, web_search, "
-                            + "pdf_ocr, images, embeddings, rerank, speech, transcriptions예요. web_search나 pdf_ocr를 부여하려면 chat도 "
-                            + "함께 있어야 해요. 모델 조회는 이 값의 영향을 받지 않아요."))
+                            + "pdf_ocr, images, embeddings, rerank, speech, transcriptions, videos, batches예요. web_search나 pdf_ocr를 부여하려면 chat도 "
+                            + "함께 있어야 하고, batches는 chat이나 embeddings와 함께 있어야 해요. 모델 조회는 이 값의 영향을 받지 않아요."))
     public @Nullable List<String> getPassthroughEndpoints() {
         return passthroughEndpoints;
     }

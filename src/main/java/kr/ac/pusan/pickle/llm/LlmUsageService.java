@@ -80,11 +80,13 @@ public class LlmUsageService {
     private final LlmQuotaService quotaService;
     private final OpenRouterCreditRefreshScheduler creditRefreshScheduler;
     private final LlmUsageCommitFence commitFence;
+    private final LlmAsyncObjectService asyncObjects;
 
     public LlmUsageService(JdbcTemplate jdbcTemplate, LlmQuotaService quotaService,
             OpenRouterCreditRefreshScheduler creditRefreshScheduler,
-            LlmUsageCommitFence commitFence) {
+            LlmUsageCommitFence commitFence, LlmAsyncObjectService asyncObjects) {
         this.jdbcTemplate = jdbcTemplate;
+        this.asyncObjects = asyncObjects;
         this.quotaService = quotaService;
         this.creditRefreshScheduler = creditRefreshScheduler;
         this.commitFence = commitFence;
@@ -128,6 +130,13 @@ public class LlmUsageService {
                 fenced = true;
             }
             Long insertedId = tryInsert(event, eventId, status, errorType, requestedAt, keyId);
+            // Before the duplicate skip: a redelivered event must still bind,
+            // and a restore replay arrives as events the gateway already sent.
+            LlmAsyncObjectService.ObjectMember object =
+                    LlmAsyncObjectService.readMember(event.object(), eventId);
+            if (object != null && keyId != null) {
+                asyncObjects.bindFromUsage(keyId, eventId, object);
+            }
             if (insertedId == null) {
                 duplicates++;
                 continue;

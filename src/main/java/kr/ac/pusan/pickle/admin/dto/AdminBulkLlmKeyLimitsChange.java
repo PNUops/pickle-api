@@ -161,7 +161,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.creditDeniedModels = creditDeniedModels;
     }
 
-    @Schema(description = "기능 권한 목록에 적용할 변경이며 생략하면 유지해요. 현재 변경 요청에는 chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions를 지정할 수 있어요. 결과 목록에 web_search나 pdf_ocr가 있으면 chat도 함께 있어야 해요.")
+    @Schema(description = "기능 권한 목록에 적용할 변경이며 생략하면 유지해요. 현재 변경 요청에는 chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions, videos, batches를 지정할 수 있어요. 결과 목록에 web_search나 pdf_ocr가 있으면 chat도, batches가 있으면 chat이나 embeddings도 함께 있어야 해요.")
     public @Nullable AdminBulkListChange getPassthroughEndpoints() {
         return passthroughEndpoints;
     }

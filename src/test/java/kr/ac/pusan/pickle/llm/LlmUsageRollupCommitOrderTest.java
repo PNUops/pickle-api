@@ -111,7 +111,7 @@ class LlmUsageRollupCommitOrderTest {
                 var event = new LlmUsageRequest.UsageEvent(UUID.randomUUID().toString(),
                         null, null, "pickle-test", "TOKEN", null, null, "OK", null,
                         1, 1, false, 1L, 1L, Instant.now().toString(),
-                        "chat.completions", null, null, null, null, null, false);
+                        "chat.completions", null, null, null, null, null, false, null);
                 usage.ingest(new LlmUsageRequest("test", java.util.List.of(event)));
             });
             try {
