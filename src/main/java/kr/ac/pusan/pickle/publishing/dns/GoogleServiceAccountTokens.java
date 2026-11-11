@@ -136,19 +136,19 @@ public class GoogleServiceAccountTokens {
                                 StandardCharsets.UTF_8);
                         int status = response.getStatusCode().value();
                         if (status != 200) {
-                            throw new DnsProviderException("Google token endpoint HTTP " + status
-                                    + ": " + text);
+                            throw new DnsProviderException("Google 토큰 요청이 실패했어요(HTTP " + status
+                                    + "): " + text);
                         }
                         return text;
                     });
         } catch (ResourceAccessException e) {
-            throw new DnsProviderException("Google token endpoint unreachable: "
+            throw new DnsProviderException("Google 토큰 요청을 완료하지 못했어요: "
                     + e.getMessage(), e);
         }
         JsonNode node = JSON.readTree(body);
         String token = text(node, "access_token");
         if (token == null) {
-            throw new DnsProviderException("Google token endpoint answered without access_token");
+            throw new DnsProviderException("Google 토큰 응답에 access_token이 없어요.");
         }
         long expiresIn = node.path("expires_in").isNumber() ? node.path("expires_in").asLong() : 3600;
         return new Cached(token, now.plusSeconds(expiresIn));

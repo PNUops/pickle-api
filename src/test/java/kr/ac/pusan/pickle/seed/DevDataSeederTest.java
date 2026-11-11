@@ -87,4 +87,34 @@ class DevDataSeederTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("development marker");
     }
+
+    @Test
+    @Transactional
+    void emptySettingsReuseCurrentHelpWithoutAddingOtherKnownKeys() {
+        jdbcTemplate.update("delete from settings");
+
+        seeder.run(null);
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from settings", Integer.class))
+                .isEqualTo(27);
+        assertThat(jdbcTemplate.queryForObject("""
+                select description from settings where key = 'vm_delete_grace_hours'
+                """, String.class)).isEqualTo(
+                        "본인 삭제를 접수한 뒤 파기까지 기다릴 시간이에요(시간). 관리자만 이 유예 기간에 취소할 수 있어요.");
+        assertThat(jdbcTemplate.queryForObject("""
+                select value::text from settings where key = 'vm_delete_grace_hours'
+                """, String.class)).isEqualTo("168");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from settings where key in (
+                    'bulk_provision_concurrency', 'custom_domain_limit_per_hour',
+                    'domain_renewal_days', 'domain_renewal_notice_days', 'llm_usage_retention_days',
+                    'platform_subdomain_reserve_days', 'platform_subdomains_per_vm')
+                """, Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                select description from settings where key = 'dev_environment_marker'
+                """, String.class)).isEqualTo("개발 또는 테스트 환경으로 새로 만든 DB의 시드 확인 표시.");
+        assertThat(jdbcTemplate.queryForObject("""
+                select value::text from settings where key = 'dev_environment_marker'
+                """, String.class)).isEqualTo("true");
+    }
 }

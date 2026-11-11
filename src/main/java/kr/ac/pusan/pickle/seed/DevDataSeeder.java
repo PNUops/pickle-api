@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import java.time.Instant;
 import kr.ac.pusan.pickle.consent.TermsService;
+import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -147,63 +148,39 @@ public class DevDataSeeder implements ApplicationRunner {
         if (rows == null || rows > 0) {
             return;
         }
-        setting("allowed_root_domains", "[\"" + inventory.rootDomain() + "\"]",
-                "허용된 루트 도메인 목록");
+        setting("allowed_root_domains", "[\"" + inventory.rootDomain() + "\"]");
         setting("reserved_subdomains",
-                "[\"www\",\"api\",\"admin\",\"ssh\",\"mail\",\"console\",\"staging\"]",
-                "신청할 수 없는 예약 서브도메인 목록.");
+                "[\"www\",\"api\",\"admin\",\"ssh\",\"mail\",\"console\",\"staging\"]");
         setting("profanity_subdomains",
-                "[\"fuck\",\"shit\",\"porn\",\"sex\",\"admin-official\",\"pnu-official\"]",
-                "욕설이나 사칭을 막는 서브도메인 금칙어 목록이에요. 시스템 관리자가 추가할 수 있어요.");
-        setting("vcpu_overcommit_warn", "3.0",
-                "승인 화면의 할당 vCPU / 물리 스레드 비율 경고 임계값");
-        setting("memory_usage_warn", "0.8",
-                "승인 화면의 할당 메모리 / 물리 메모리 비율 경고 임계값");
-        setting("ip_quarantine_hours", "24",
-                "회수한 IP를 재할당하지 않는 격리 시간이에요(시간). 릴레이 에이전트가 보관한 스냅샷을"
-                        + " 다시 적용할 수 있는 기간(24시간)보다 짧게 설정할 수 없어요.");
-        setting("gpu_unattached_review_hours", "12", "GPU 미연결 검토 기준 시간이에요. 저장한 값은 다음 검토 실행부터 사용해요.");
-        setting("gpu_low_util_window_hours", "12", "GPU 저사용 평균을 계산하는 시간 범위.");
-        setting("gpu_low_util_threshold_percent", "5", "GPU 저사용 검토 기준 이용률이에요(%). 이 기준만으로 자동 회수하지 않아요.");
-        setting("gpu_low_util_snooze_hours", "12", "GPU 유지 결정 후 재검토를 유예할 시간.");
-        setting("gpu_lease_notice_hours", "[24,1]", "GPU 임대 종료까지 남은 시간의 알림 단계예요. 승인한 임대보다 짧은 단계만 보내요.");
-        setting("vm_delete_grace_hours", "168",
-                "본인 삭제 요청의 파기 유예 시간이에요(시간). 관리자만 유예 기간 안에 취소할 수 있어요.");
-        setting("ssh_gateway_enabled", "false",
-                "SSH 게이트웨이의 전역 스위치예요. false면 새 게이트웨이 접속을 차단하며 기존 SSH 연결은 종료하지 않아요.");
-        setting("web_terminal_enabled", "false",
-                "웹 터미널(브라우저 xterm.js)의 전역 스위치예요. false면 새 티켓 발급과 재교환을 거절해요."
-                        + " 열린 세션도 다음 정상 권한 재확인에서 닫혀요. 기본 확인 주기는 60초이며 통신 실패로 늦어질 수 있어요."
-                        + " VM별 차단과 접근 권한도 별도로 확인하며 VM 설정으로 전역 차단을 우회할 수 없어요.");
-        setting("notification_retention_days", "365",
-                "알림 보관 기간이에요(일). 기간이 지난 알림은 정리 작업에서 삭제해요(30~3650).");
-        setting("vm_expiry_notice_days", "[14,7,1]",
-                "VM 사용 종료 사전 알림 시점(D-일). 내림차순 단계 최대 5개, 각 1~90."
-                        + " D-1 알림은 HIGH 중요도로 표시해요.");
-        setting("vm_expiry_autostop_enabled", "true",
-                "사용 기간(end_date, 포함)이 지난 VM의 매시간 자동 종료 요청을 정하는 스위치예요."
-                        + " 끄면 자동 종료를 요청하지 않고 예고 알림만 처리해요.");
-        setting("maintenance_mode", "false",
-                "점검 모드예요. true면 관리자 계층을 제외한 요청을 503(MAINTENANCE_MODE)으로"
-                        + " 거절하며 로그인 등 예외 경로는 유지해요. 상태 캐시의 유효시간은 15초이며 이미 처리 중인 요청은 중단하지 않아요.");
-        setting("maintenance_message", "\"\"",
-                "점검 모드 안내예요. 비우면 기본 안내를 사용해요.");
-        setting("banner_message", "\"\"",
-                "점검 모드와 별개인 콘솔 상단 공지 배너예요. 비우면 배너를 표시하지 않아요.");
-        setting("contact_email", "\"\"",
-                "운영 문의 이메일이에요. 콘솔 푸터와 점검 화면, 오류 화면에 표시하며 비우면 숨겨요.");
-        setting("port_forwarding_enabled", "false",
-                "포트포워딩(릴레이 공개 포트)의 신규 생성 스위치예요. false면 새 매핑 생성을 차단해요."
-                        + " 기존 매핑은 유지해요.");
-        setting("port_forward_alloc_limit_per_hour", "20",
-                "사용자별 포트포워딩 생성 허용 횟수(시간당)");
-        setting("port_forward_band_alert_percent", "80",
-                "릴레이 공개 포트 대역 사용률 경고 임계값이에요(%). 도달하면 시스템 관리자에게 알림을 접수해요.");
-        setting("port_forward_suspend_conns_per_min", "6000",
-                "매핑별 분당 새 연결 수의 자동 정지 임계값이에요. 초과하면 ACTIVE 매핑을 SUSPENDED로 바꿔요.");
-        setting("port_forward_suspend_mbytes_per_min", "1000",
-                "매핑별 분당 전송량(MiB)의 자동 정지 임계값이에요. 초과하면 ACTIVE 매핑을 SUSPENDED로 바꿔요.");
+                "[\"fuck\",\"shit\",\"porn\",\"sex\",\"admin-official\",\"pnu-official\"]");
+        setting("vcpu_overcommit_warn", "3.0");
+        setting("memory_usage_warn", "0.8");
+        setting("ip_quarantine_hours", "24");
+        setting("gpu_unattached_review_hours", "12");
+        setting("gpu_low_util_window_hours", "12");
+        setting("gpu_low_util_threshold_percent", "5");
+        setting("gpu_low_util_snooze_hours", "12");
+        setting("gpu_lease_notice_hours", "[24,1]");
+        setting("vm_delete_grace_hours", "168");
+        setting("ssh_gateway_enabled", "false");
+        setting("web_terminal_enabled", "false");
+        setting("notification_retention_days", "365");
+        setting("vm_expiry_notice_days", "[14,7,1]");
+        setting("vm_expiry_autostop_enabled", "true");
+        setting("maintenance_mode", "false");
+        setting("maintenance_message", "\"\"");
+        setting("banner_message", "\"\"");
+        setting("contact_email", "\"\"");
+        setting("port_forwarding_enabled", "false");
+        setting("port_forward_alloc_limit_per_hour", "20");
+        setting("port_forward_band_alert_percent", "80");
+        setting("port_forward_suspend_conns_per_min", "6000");
+        setting("port_forward_suspend_mbytes_per_min", "1000");
         log.info("Empty settings: seeded the development settings");
+    }
+
+    private void setting(String key, String valueJson) {
+        setting(key, valueJson, SettingsService.descriptionFor(key, null));
     }
 
     private void setting(String key, String valueJson, String description) {
