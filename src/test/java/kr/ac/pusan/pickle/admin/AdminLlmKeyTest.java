@@ -1156,7 +1156,7 @@ class AdminLlmKeyTest {
     void ungrantableAndOrphanCapabilitiesAreRefused() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "부여 불가 키", "ACTIVE", null);
         Map<String, Object> notYet = limits(60, "5.00");
-        notYet.put("passthroughEndpoints", java.util.List.of("chat", "videos"));
+        notYet.put("passthroughEndpoints", java.util.List.of("chat", "containers"));
         putLimits(key.publicId(), sysAdminToken, notYet)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("passthroughEndpoints[1]"));
@@ -1204,7 +1204,7 @@ class AdminLlmKeyTest {
                 .andExpect(jsonPath("$.errors[0].field").value("llmKey.reqPassthroughEndpoints"));
 
         Map<String, Object> notYet = new java.util.LinkedHashMap<>(base);
-        notYet.put("llmKey", Map.of("reqPassthroughEndpoints", java.util.List.of("videos")));
+        notYet.put("llmKey", Map.of("reqPassthroughEndpoints", java.util.List.of("files")));
         postJson("/api/v1/requests", requesterToken, notYet)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field")

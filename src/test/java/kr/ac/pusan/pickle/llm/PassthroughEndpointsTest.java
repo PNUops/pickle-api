@@ -88,12 +88,12 @@ class PassthroughEndpointsTest {
     @Test
     void refusesAKnownNameThatCannotBeGrantedYet() {
         List<FieldValidationError> errors = new ArrayList<>();
-        assertThat(PassthroughEndpoints.normalize(List.of("chat", "videos"), "endpoints", errors))
+        assertThat(PassthroughEndpoints.normalize(List.of("chat", "containers"), "endpoints", errors))
                 .containsExactly("chat");
         assertThat(errors).hasSize(1);
         assertThat(errors.getFirst().field()).isEqualTo("endpoints[1]");
         assertThat(errors.getFirst().message()).startsWith("아직 부여할 수 없는 기능이에요.")
-                .contains("chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions, batches");
+                .contains("chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions, videos, batches");
     }
 
     /** A feature of chat means nothing without chat. */
@@ -136,6 +136,15 @@ class PassthroughEndpointsTest {
 
         assertThat(PassthroughEndpoints.normalize(List.of("files"), "endpoints", errors)).isEmpty();
         assertThat(errors).hasSize(1);
+    }
+
+    /** Video generation stands alone: it targets no other endpoint and takes no file. */
+    @Test
+    void videosAreGrantableAlone() {
+        List<FieldValidationError> errors = new ArrayList<>();
+        assertThat(PassthroughEndpoints.normalizeGrant(List.of("videos"), "endpoints", errors))
+                .containsExactly("videos");
+        assertThat(errors).isEmpty();
     }
 
     /**

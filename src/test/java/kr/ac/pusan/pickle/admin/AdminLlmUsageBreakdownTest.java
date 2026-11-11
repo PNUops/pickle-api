@@ -297,13 +297,13 @@ class AdminLlmUsageBreakdownTest {
 
         platformUsage(sysToken, "orgId=" + orgA.getPublicId())
                 .andExpect(status().isOk())
-                // chat, images, embeddings, rerank, speech, transcriptions, batches: the
+                // chat, images, embeddings, rerank, speech, transcriptions, videos, batches: the
                 // grantable capabilities whose use a route can show. web_search and pdf_ocr are judged from the
                 // body and have no row, and names nobody may hold yet have none either.
                 .andExpect(jsonPath("$.breakdown.passthroughGrants[*].capability")
                         .value(org.hamcrest.Matchers.contains(
                                 "chat", "images", "embeddings", "rerank", "speech",
-                                "transcriptions", "batches")))
+                                "transcriptions", "videos", "batches")))
                 .andExpect(jsonPath(
                         "$.breakdown.passthroughGrants[?(@.capability == 'batches')].requests")
                         .value(org.hamcrest.Matchers.contains(0)))

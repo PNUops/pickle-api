@@ -66,9 +66,9 @@ public class AdminLlmUsageService {
      * <p>{@code chat} lists every chat-protocol route the gateway serves under
      * it: chat completions, messages, responses and legacy completions.
      * {@code rerank} opens one route of the same name; {@code speech} and
-     * {@code transcriptions} open the two audio routes, and {@code batches}
-     * counts batch submits: the gateway names a batch's status reads and its
-     * one price record apart, so polling does not read as use. A capability judged
+     * {@code transcriptions} open the two audio routes, and {@code videos} and
+     * {@code batches} count submits: the gateway names an async object's status
+     * reads and its one price record apart, so polling does not read as use. A capability judged
      * from the request body rather than the route ({@code web_search}, {@code pdf_ocr}) has no entry, because a
      * usage event does not record which plugin or engine a request used, and
      * a row built from the chat routes would count every chat request as a
@@ -81,6 +81,7 @@ public class AdminLlmUsageService {
             PassthroughEndpoints.RERANK, "{rerank}",
             PassthroughEndpoints.SPEECH, "{audio_speech}",
             PassthroughEndpoints.TRANSCRIPTIONS, "{audio_transcriptions}",
+            PassthroughEndpoints.VIDEOS, "{videos}",
             PassthroughEndpoints.BATCHES, "{batches}");
     private static final List<String> PRESSURE_REASONS = List.of(
             "quota_exhausted", "credit_exhausted", "rate_limit_requests",
