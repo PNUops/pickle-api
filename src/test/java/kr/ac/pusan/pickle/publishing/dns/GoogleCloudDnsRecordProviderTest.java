@@ -283,7 +283,7 @@ class GoogleCloudDnsRecordProviderTest {
                 .withBody("{\"error\":\"invalid_grant\"}")));
         assertThatThrownBy(() -> provider.removeA("team-x.example.dev"))
                 .isInstanceOf(DnsProviderException.class)
-                .hasMessageContaining("token endpoint HTTP 401");
+                .hasMessage("Google 토큰 요청이 실패했어요(HTTP 401): {\"error\":\"invalid_grant\"}");
     }
 
     @Test

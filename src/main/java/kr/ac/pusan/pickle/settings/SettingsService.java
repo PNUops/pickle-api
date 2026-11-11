@@ -118,9 +118,9 @@ public class SettingsService {
     /** Pragmatic email check (empty allowed); full RFC compliance is not the goal. */
     private static final Pattern EMAIL = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
 
-    /** One whitelisted (operator-editable) key: declared type + validator. */
+    /** One editable key: declared type, validator and release-owned help. */
     private record Editable(SettingValueType type,
-            Function<JsonNode, List<FieldValidationError>> validator) {
+            Function<JsonNode, List<FieldValidationError>> validator, String description) {
     }
 
     private static final Map<String, Editable> EDITABLE = buildWhitelist();
@@ -264,8 +264,17 @@ public class SettingsService {
         JsonNode value = objectMapper.readTree(valueJson);
         Editable editable = EDITABLE.get(key);
         SettingValueType type = editable != null ? editable.type() : inferType(value);
-        return new SettingView(key, value, type, description != null ? description : "",
+        return new SettingView(key, value, type, descriptionFor(key, description),
                 editable != null, updatedAt);
+    }
+
+    /** Known help belongs to the release; other keys retain their stored prose. */
+    public static String descriptionFor(String key, String storedDescription) {
+        Editable editable = EDITABLE.get(key);
+        if (editable != null) {
+            return editable.description();
+        }
+        return storedDescription != null ? storedDescription : "";
     }
 
     private static SettingValueType inferType(JsonNode value) {
@@ -294,12 +303,16 @@ public class SettingsService {
 
     private static Map<String, Editable> buildWhitelist() {
         Map<String, Editable> map = new LinkedHashMap<>();
-        for (String key : List.of(GPU_UNATTACHED_REVIEW_HOURS, GPU_LOW_UTIL_WINDOW_HOURS, GPU_LOW_UTIL_SNOOZE_HOURS)) {
-            map.put(key, new Editable(SettingValueType.INTEGER, intInRange(1, 8760)));
-        }
+        map.put(GPU_UNATTACHED_REVIEW_HOURS, new Editable(SettingValueType.INTEGER, intInRange(1, 8760),
+                "GPU를 VM에 연결하지 않은 상태가 이 시간 이상 지속되면 검토 대상으로 올려요(시간). 자동으로 회수하지 않아요."));
+        map.put(GPU_LOW_UTIL_WINDOW_HOURS, new Editable(SettingValueType.INTEGER, intInRange(1, 8760),
+                "GPU 저사용 검토에 쓸 최근 이용률 기간이에요(시간). 유효한 표본이 부족하면 저사용으로 판단하지 않아요."));
+        map.put(GPU_LOW_UTIL_SNOOZE_HOURS, new Editable(SettingValueType.INTEGER, intInRange(1, 8760),
+                "관리자가 GPU 유지를 결정한 뒤 다시 검토할 때까지 기다리는 시간이에요(시간)."));
         map.put(GPU_LOW_UTIL_THRESHOLD_PERCENT, new Editable(SettingValueType.NUMBER, value ->
                 value.isNumber() && Double.isFinite(value.asDouble()) && value.asDouble() >= 0 && value.asDouble() <= 100
-                ? List.of() : List.of(new FieldValidationError("value", "0 이상 100 이하의 숫자를 입력해 주세요."))));
+                ? List.of() : List.of(new FieldValidationError("value", "0 이상 100 이하의 숫자를 입력해 주세요.")),
+                "판단 기간의 평균 GPU 이용률이 이 값 미만이면 검토 대상으로 올려요(%). 실제 회수는 관리자가 결정해요."));
         map.put(GPU_LEASE_NOTICE_HOURS, new Editable(SettingValueType.JSON, value -> {
             if (!value.isArray() || value.size() > 5) {
                 return List.of(new FieldValidationError("value", "알림 시점은 최대 5개의 시간을 담은 배열로 입력해 주세요."));
@@ -311,53 +324,82 @@ public class SettingsService {
                 }
             }
             return List.of();
-        }));
-        map.put(BULK_PROVISION_CONCURRENCY, new Editable(SettingValueType.INTEGER, intInRange(1, 8)));
+        },
+                "GPU 임대 종료를 미리 알릴 시점이에요(시간 전). 승인한 임대 기간보다 짧은 단계만 적용하며 만료 시각은 바꾸지 않아요."));
+        map.put(BULK_PROVISION_CONCURRENCY, new Editable(SettingValueType.INTEGER, intInRange(1, 8),
+                "여러 명 몫으로 승인된 VM 신청의 노드별 동시 생성 수예요(1~8). 상한에 닿은 노드는 건너뛰며 일반 노드가 모두 상한이면 GPU 노드도 사용할 수 있어요. 한 명 몫 신청으로 만드는 VM은 세지 않아요."));
         map.put(VCPU_OVERCOMMIT_WARN, new Editable(SettingValueType.NUMBER,
-                numberInRangeExclusiveMin(0, 10)));
+                numberInRangeExclusiveMin(0, 10),
+                "승인 화면에서 할당 vCPU와 물리 스레드의 비율을 경고하는 기준이에요."));
         map.put(MEMORY_USAGE_WARN, new Editable(SettingValueType.NUMBER,
-                numberInRangeExclusiveMin(0, 10)));
+                numberInRangeExclusiveMin(0, 10),
+                "승인 화면에서 할당 메모리와 물리 메모리의 비율을 경고하는 기준이에요."));
         map.put(IP_QUARANTINE_HOURS, new Editable(SettingValueType.INTEGER,
-                intInRange(MIN_IP_QUARANTINE_HOURS, 720)));
+                intInRange(MIN_IP_QUARANTINE_HOURS, 720),
+                "회수한 IP를 다시 할당하지 않는 격리 시간이에요(시간). 릴레이 스냅샷의 부팅 시 재적용 기간인 24시간보다 짧게 설정할 수 없어요."));
         map.put(PLATFORM_SUBDOMAINS_PER_VM, new Editable(SettingValueType.INTEGER,
-                intInRange(0, 100)));
+                intInRange(0, 100),
+                "VM 하나에 연결할 수 있는 플랫폼 서브도메인 수예요. 예약 중인 이름과 커스텀 도메인은 제외하며 0이면 새 플랫폼 서브도메인 연결을 막아요."));
         map.put(PLATFORM_SUBDOMAIN_RESERVE_DAYS, new Editable(SettingValueType.INTEGER,
-                intInRange(0, 365)));
+                intInRange(0, 365),
+                "해제한 플랫폼 이름을 예약해 두는 기간이에요(일). VM에 연결했던 이름은 같은 VM에서 다시 연결할 수 있고, 별도로 발급한 도메인은 같은 워크스페이스에서 되살릴 수 있어요. 기한이 지나면 이름을 정리할 대상이 되며 0이면 해제 뒤 바로 정리 대상이 돼요."));
         // No zero: a deadline of "today" would reclaim a name the moment it is
         // issued, and the button that renews it would never be reachable.
         map.put(DOMAIN_RENEWAL_DAYS, new Editable(SettingValueType.INTEGER,
-                intInRange(1, 3650)));
-        map.put(DOMAIN_RENEWAL_NOTICE_DAYS, new Editable(SettingValueType.JSON, expiryStages()));
+                intInRange(1, 3650),
+                "VM과 별도로 발급한 도메인의 사용 기간이에요(일). 발급이나 연장 시점부터 계산하며 남은 기간에 더하지 않아요."));
+        map.put(DOMAIN_RENEWAL_NOTICE_DAYS, new Editable(SettingValueType.JSON, expiryStages(),
+                "VM과 별도로 발급한 도메인의 사용 기한을 미리 알릴 시점이에요(D-일). 중복 없이 1~90일을 최대 5개 지정해요."));
         map.put(VM_DELETE_GRACE_HOURS, new Editable(SettingValueType.INTEGER,
-                intInRange(1, 2160)));
-        map.put(SSH_GATEWAY_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
-        map.put(WEB_TERMINAL_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
-        map.put(PORT_FORWARDING_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
+                intInRange(1, 2160),
+                "본인 삭제를 접수한 뒤 파기까지 기다릴 시간이에요(시간). 관리자만 이 유예 기간에 취소할 수 있어요."));
+        map.put(SSH_GATEWAY_ENABLED, new Editable(SettingValueType.BOOLEAN, bool(),
+                "SSH 게이트웨이의 전역 스위치예요. false면 새 게이트웨이 접속을 차단하며 기존 SSH 연결은 종료하지 않아요."));
+        map.put(WEB_TERMINAL_ENABLED, new Editable(SettingValueType.BOOLEAN, bool(),
+                "웹 터미널의 전역 스위치예요. false면 새 티켓 발급과 재교환을 거절해요. 열린 세션도 다음 정상 권한 재확인에서 닫혀요. 기본 확인 주기는 60초이며 통신 실패로 늦어질 수 있어요. VM별 차단과 접근 권한도 별도로 확인하며 VM 설정으로 전역 차단을 우회할 수 없어요."));
+        map.put(PORT_FORWARDING_ENABLED, new Editable(SettingValueType.BOOLEAN, bool(),
+                "포트포워딩(릴레이 공개 포트)의 신규 생성 스위치예요. false면 새 매핑 생성을 차단하고 기존 매핑은 유지해요."));
         map.put(CUSTOM_DOMAIN_LIMIT_PER_HOUR, new Editable(SettingValueType.INTEGER,
-                intInRange(1, 1000)));
+                intInRange(1, 1000),
+                "사용자별 커스텀 도메인 연결 요청의 시간당 상한이에요. 플랫폼 서브도메인 연결은 이 제한에 포함하지 않아요."));
         map.put(PORT_FORWARD_ALLOC_LIMIT_PER_HOUR, new Editable(SettingValueType.INTEGER,
-                intInRange(1, 1000)));
+                intInRange(1, 1000),
+                "사용자별 포트포워딩 생성 허용 횟수예요(시간당)."));
         map.put(PORT_FORWARD_BAND_ALERT_PERCENT, new Editable(SettingValueType.INTEGER,
-                intInRange(1, 100)));
+                intInRange(1, 100),
+                "릴레이 공개 포트 대역 사용률의 경고 기준이에요(%). 도달하면 시스템 관리자에게 알림을 접수해요."));
         map.put(PORT_FORWARD_SUSPEND_CONNS_PER_MIN, new Editable(SettingValueType.INTEGER,
-                intInRange(1, 100_000_000)));
+                intInRange(1, 100_000_000),
+                "매핑별 분당 새 연결 수의 자동 정지 임계값이에요. 초과하면 ACTIVE 매핑을 SUSPENDED로 바꿔요."));
         map.put(PORT_FORWARD_SUSPEND_MBYTES_PER_MIN, new Editable(SettingValueType.INTEGER,
-                intInRange(1, 10_000_000)));
-        map.put(VM_EXPIRY_AUTOSTOP_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
-        map.put(ALLOWED_ROOT_DOMAINS, new Editable(SettingValueType.JSON, hostnameArray()));
-        map.put(RESERVED_SUBDOMAINS, new Editable(SettingValueType.JSON, hostnameArray()));
-        map.put(PROFANITY_SUBDOMAINS, new Editable(SettingValueType.JSON, hostnameArray()));
-        map.put(VM_EXPIRY_NOTICE_DAYS, new Editable(SettingValueType.JSON, expiryStages()));
+                intInRange(1, 10_000_000),
+                "매핑별 분당 전송량(MiB)의 자동 정지 임계값이에요. 초과하면 ACTIVE 매핑을 SUSPENDED로 바꿔요."));
+        map.put(VM_EXPIRY_AUTOSTOP_ENABLED, new Editable(SettingValueType.BOOLEAN, bool(),
+                "사용 기간(end_date, 포함)이 지난 VM의 매시간 자동 종료 요청을 정하는 스위치예요. 끄면 자동 종료를 요청하지 않고 예고 알림만 처리해요."));
+        map.put(ALLOWED_ROOT_DOMAINS, new Editable(SettingValueType.JSON, hostnameArray(),
+                "발급을 허용할 루트 도메인 목록이에요."));
+        map.put(RESERVED_SUBDOMAINS, new Editable(SettingValueType.JSON, hostnameArray(),
+                "신청할 수 없는 예약 서브도메인 목록이에요."));
+        map.put(PROFANITY_SUBDOMAINS, new Editable(SettingValueType.JSON, hostnameArray(),
+                "욕설이나 사칭을 막는 서브도메인 금칙어 목록이에요. 시스템 관리자가 추가할 수 있어요."));
+        map.put(VM_EXPIRY_NOTICE_DAYS, new Editable(SettingValueType.JSON, expiryStages(),
+                "VM 사용 종료 사전 알림 시점이에요(D-일). 중복 없이 1~90일을 최대 5개 지정하며 D-1 알림은 중요하게 표시해요."));
         map.put(NOTIFICATION_RETENTION_DAYS, new Editable(SettingValueType.INTEGER,
-                intInRange(30, 3650)));
+                intInRange(30, 3650),
+                "오래된 알림을 정리하는 기준이에요(30~3650일). 발송 대기나 처리 중인 알림은 지우지 않고 전달 결과 기록도 남겨요."));
         map.put(LLM_USAGE_RETENTION_DAYS, new Editable(SettingValueType.INTEGER,
-                zeroOrIntInRange(LlmUsageRetentionPolicy.MINIMUM_RETENTION_DAYS, 3650)));
-        map.put(MAINTENANCE_MODE, new Editable(SettingValueType.BOOLEAN, bool()));
+                zeroOrIntInRange(LlmUsageRetentionPolicy.MINIMUM_RETENTION_DAYS, 3650),
+                "LLM 원본 사용량 이벤트 보관 기간이에요(일). 0은 무기한이고, 기간을 정할 때는 90~3650일로 입력해요. 일별 집계는 남지만 원본이 필요한 지연과 시간대 통계의 조회 기간은 줄어들어요. 삭제된 원본은 기간을 늘려도 돌아오지 않아요."));
+        map.put(MAINTENANCE_MODE, new Editable(SettingValueType.BOOLEAN, bool(),
+                "점검 모드예요. true면 기관과 시스템의 관리자 계층 외 요청을 503(MAINTENANCE_MODE)으로 거절하며 로그인 등 예외 경로는 유지해요. 상태 캐시의 유효시간은 15초이며 이미 처리 중인 요청은 중단하지 않아요."));
         map.put(MAINTENANCE_MESSAGE, new Editable(SettingValueType.STRING,
-                stringMaxLength(MAX_MESSAGE_LENGTH)));
+                stringMaxLength(MAX_MESSAGE_LENGTH),
+                "점검 모드 안내예요. 비우면 기본 안내를 사용해요."));
         map.put(BANNER_MESSAGE, new Editable(SettingValueType.STRING,
-                stringMaxLength(MAX_MESSAGE_LENGTH)));
-        map.put(CONTACT_EMAIL, new Editable(SettingValueType.STRING, emailOrEmpty()));
+                stringMaxLength(MAX_MESSAGE_LENGTH),
+                "점검 모드와 별개인 콘솔 상단 공지 배너예요. 비우면 배너를 표시하지 않아요."));
+        map.put(CONTACT_EMAIL, new Editable(SettingValueType.STRING, emailOrEmpty(),
+                "운영 문의 이메일이에요. 콘솔 푸터와 점검 화면, 오류 화면에 표시하며 비우면 숨겨요."));
         return Map.copyOf(map);
     }
 
