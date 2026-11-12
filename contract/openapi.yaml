@@ -1661,6 +1661,66 @@ components:
       - "financeVisible"
       - "trend"
       type: "object"
+    AdminLlmPerformanceResponse:
+      properties:
+        consumers:
+          $ref: "#/components/schemas/LlmPerformanceConsumers"
+        days:
+          description: "7, 30, 90일 중 선택한 기간이에요. null이면 보관 중인 전체 기간이에요."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        from:
+          description: "전체 기간에서는 권한 범위에 남아 있는 첫 기록 일자예요. 기록이 없으면 null이에요."
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        gatewayReportState:
+          $ref: "#/components/schemas/LlmGatewayReportState"
+        granularity:
+          $ref: "#/components/schemas/LlmPerformanceGranularity"
+        models:
+          items:
+            $ref: "#/components/schemas/LlmPerformanceModelUsage"
+          type: "array"
+        otherModelRequests:
+          format: "int64"
+          type: "integer"
+        population:
+          $ref: "#/components/schemas/LlmPerformancePopulation"
+        rollupLastSuccessAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        timezone:
+          type: "string"
+        to:
+          format: "date"
+          type: "string"
+        totals:
+          $ref: "#/components/schemas/LlmPerformanceTotals"
+        trend:
+          items:
+            $ref: "#/components/schemas/LlmPerformanceTrendPoint"
+          type: "array"
+        usageQueueReportState:
+          $ref: "#/components/schemas/LlmGatewayReportState"
+      required:
+      - "consumers"
+      - "gatewayReportState"
+      - "granularity"
+      - "models"
+      - "otherModelRequests"
+      - "population"
+      - "timezone"
+      - "to"
+      - "totals"
+      - "trend"
+      - "usageQueueReportState"
+      type: "object"
     AdminLlmUsageResponse:
       properties:
         breakdown:
@@ -1984,6 +2044,17 @@ components:
       - "sshUsername"
       - "status"
       - "version"
+      type: "object"
+    AdminPerformanceOverviewResponse:
+      properties:
+        business:
+          anyOf:
+          - $ref: "#/components/schemas/PerformanceOverviewBusiness"
+          - type: "null"
+        hardware:
+          anyOf:
+          - $ref: "#/components/schemas/PerformanceOverviewHardware"
+          - type: "null"
       type: "object"
     AdminPortMappingResponse:
       properties:
@@ -8476,6 +8547,156 @@ components:
           - "string"
           - "null"
       type: "object"
+    LlmPerformanceConsumer:
+      properties:
+        id:
+          format: "uuid"
+          type: "string"
+        inputTokens:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        outputTokens:
+          format: "int64"
+          type: "integer"
+        requests:
+          format: "int64"
+          type: "integer"
+      required:
+      - "id"
+      - "inputTokens"
+      - "name"
+      - "outputTokens"
+      - "requests"
+      type: "object"
+    LlmPerformanceConsumers:
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/LlmPerformanceConsumer"
+          type: "array"
+        level:
+          $ref: "#/components/schemas/LlmUsageConsumerLevel"
+        otherRequests:
+          description: "상위 목록 밖의 다른 귀속 소비처에 기록된 요청 수예요."
+          format: "int64"
+          type: "integer"
+        totalItems:
+          format: "int64"
+          type: "integer"
+        unattributedRequests:
+          description: "키나 기관, 워크스페이스에 연결되지 않아 소비처 목록에 포함하지 못한 요청 수예요."
+          format: "int64"
+          type: "integer"
+      required:
+      - "items"
+      - "level"
+      - "otherRequests"
+      - "totalItems"
+      - "unattributedRequests"
+      type: "object"
+    LlmPerformanceGranularity:
+      enum:
+      - "DAY"
+      - "MONTH"
+      type: "string"
+    LlmPerformanceModelUsage:
+      properties:
+        inputTokens:
+          format: "int64"
+          type: "integer"
+        outputTokens:
+          format: "int64"
+          type: "integer"
+        publicModelName:
+          type:
+          - "string"
+          - "null"
+        requests:
+          format: "int64"
+          type: "integer"
+      required:
+      - "inputTokens"
+      - "outputTokens"
+      - "requests"
+      type: "object"
+    LlmPerformancePopulation:
+      description: "선택 기간에 요청이 기록된 기관과 워크스페이스, 키 수예요. 개인 이용자 수가 아니에요."
+      properties:
+        institutionCount:
+          format: "int64"
+          type: "integer"
+        keyCount:
+          format: "int64"
+          type: "integer"
+        workspaceCount:
+          format: "int64"
+          type: "integer"
+      required:
+      - "institutionCount"
+      - "keyCount"
+      - "workspaceCount"
+      type: "object"
+    LlmPerformanceTotals:
+      properties:
+        cachedInputTokens:
+          description: "입력 토큰에 이미 포함된 캐시 입력 토큰이에요."
+          format: "int64"
+          type: "integer"
+        estimatedRequests:
+          format: "int64"
+          type: "integer"
+        inputTokens:
+          format: "int64"
+          type: "integer"
+        outputTokens:
+          format: "int64"
+          type: "integer"
+        reasoningTokens:
+          description: "출력 토큰에 이미 포함된 추론 토큰이에요."
+          format: "int64"
+          type: "integer"
+        requests:
+          format: "int64"
+          type: "integer"
+        streamedRequests:
+          format: "int64"
+          type: "integer"
+        usedModelCount:
+          description: "성공한 요청에 기록된 모델 이름의 종류 수예요."
+          format: "int64"
+          type: "integer"
+      required:
+      - "cachedInputTokens"
+      - "estimatedRequests"
+      - "inputTokens"
+      - "outputTokens"
+      - "reasoningTokens"
+      - "requests"
+      - "streamedRequests"
+      - "usedModelCount"
+      type: "object"
+    LlmPerformanceTrendPoint:
+      properties:
+        inputTokens:
+          format: "int64"
+          type: "integer"
+        outputTokens:
+          format: "int64"
+          type: "integer"
+        periodStart:
+          format: "date"
+          type: "string"
+        requests:
+          format: "int64"
+          type: "integer"
+      required:
+      - "inputTokens"
+      - "outputTokens"
+      - "periodStart"
+      - "requests"
+      type: "object"
     LlmServedModelUsageResponse:
       properties:
         requests:
@@ -11678,6 +11899,128 @@ components:
       - "resourceType"
       - "role"
       - "workspaceId"
+      type: "object"
+    PerformanceOverviewAsset:
+      properties:
+        cpuCores:
+          format: "int32"
+          type: "integer"
+        cpuModel:
+          type: "string"
+        cpuThreads:
+          format: "int32"
+          type: "integer"
+        displayModel:
+          type: "string"
+        gpus:
+          items:
+            $ref: "#/components/schemas/PerformanceOverviewGpu"
+          type: "array"
+        memoryMiB:
+          format: "int64"
+          type: "integer"
+      required:
+      - "cpuCores"
+      - "cpuModel"
+      - "cpuThreads"
+      - "displayModel"
+      - "gpus"
+      - "memoryMiB"
+      type: "object"
+    PerformanceOverviewBusiness:
+      properties:
+        approvedRequests:
+          format: "int64"
+          type: "integer"
+        approvedRequestsByKind:
+          additionalProperties:
+            format: "int64"
+            type: "integer"
+          type: "object"
+        currentWorkspaces:
+          format: "int64"
+          type: "integer"
+        registeredAccounts:
+          format: "int64"
+          type: "integer"
+        registeredDomains:
+          format: "int64"
+          type: "integer"
+        vmRegistrations:
+          format: "int64"
+          type: "integer"
+        workspacesByKind:
+          additionalProperties:
+            format: "int64"
+            type: "integer"
+          type: "object"
+      required:
+      - "approvedRequests"
+      - "approvedRequestsByKind"
+      - "currentWorkspaces"
+      - "registeredAccounts"
+      - "registeredDomains"
+      - "vmRegistrations"
+      - "workspacesByKind"
+      type: "object"
+    PerformanceOverviewGpu:
+      properties:
+        count:
+          format: "int32"
+          type: "integer"
+        dedicatedMemoryMiB:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        model:
+          type: "string"
+        sharedMemory:
+          type:
+          - "boolean"
+          - "null"
+        unifiedMemoryMiB:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "count"
+      - "model"
+      type: "object"
+    PerformanceOverviewHardware:
+      properties:
+        assets:
+          items:
+            $ref: "#/components/schemas/PerformanceOverviewAsset"
+          type: "array"
+        cpuCores:
+          format: "int64"
+          type: "integer"
+        cpuThreads:
+          format: "int64"
+          type: "integer"
+        dedicatedGpuMemoryMiB:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        gpuDevices:
+          format: "int64"
+          type: "integer"
+        memoryMiB:
+          format: "int64"
+          type: "integer"
+        physicalHosts:
+          format: "int64"
+          type: "integer"
+      required:
+      - "assets"
+      - "cpuCores"
+      - "cpuThreads"
+      - "gpuDevices"
+      - "memoryMiB"
+      - "physicalHosts"
       type: "object"
     PortForwardApplyState:
       enum:
@@ -15434,7 +15777,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API예요. JWT Bearer로 인증해요. 오류 응답은 RFC 9457\
     \ problem+json(Problem 스키마)을 따라요."
   title: "Pickle API"
-  version: "0.115.0"
+  version: "0.116.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -17796,6 +18139,47 @@ paths:
       summary: "관리자 LLM 사용량 통계"
       tags:
       - "admin"
+  /admin/llm/usage/performance:
+    get:
+      description: "권한 범위에 보관 중인 요청과 토큰, 이용 기관과 워크스페이스, 키 수와 추이를 읽어요. 기간을 생략하면 보관\
+        \ 중인 전체 일별 기록을 집계해요. 개인 이용자 수와 비용은 제공하지 않아요."
+      operationId: "getAdminLlmPerformance"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "7, 30, 90 중 선택해요. 생략하면 전체 기간이에요."
+        in: "query"
+        name: "days"
+        required: false
+        schema:
+          format: "int32"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminLlmPerformanceResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류: 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 LLM 활용 성과"
+      tags:
+      - "admin"
   /admin/mail-deliveries:
     get:
       operationId: "listAdminMailDeliveries"
@@ -18585,6 +18969,27 @@ paths:
           description: "오류: 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-os-image-controller"
+  /admin/performance/overview:
+    get:
+      description: "자동 수집한 최신 장비 사양을 읽어요. SYS_ADMIN은 현재 계정과 워크스페이스, 승인 신청과 등록 이력의\
+        \ 전역 집계도 읽어요."
+      operationId: "getAdminPerformanceOverview"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminPerformanceOverviewResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류: 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 플랫폼 활용 규모"
+      tags:
+      - "admin-performance-controller"
   /admin/port-mappings:
     get:
       operationId: "listAdminPortMappings"

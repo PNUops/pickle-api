@@ -6,9 +6,11 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.UUID;
+import kr.ac.pusan.pickle.admin.dto.AdminLlmPerformanceResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmUsageResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmConsumerSort;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,6 +30,19 @@ public class AdminLlmUsageController {
 
     public AdminLlmUsageController(AdminLlmUsageService service) {
         this.service = service;
+    }
+
+    @GetMapping("/performance")
+    @Operation(operationId = "getAdminLlmPerformance", summary = "관리자 LLM 활용 성과",
+            description = "권한 범위에 보관 중인 요청과 토큰, 이용 기관과 워크스페이스, 키 수와 추이를 읽어요. "
+                    + "기간을 생략하면 보관 중인 전체 일별 기록을 집계해요. 개인 이용자 수와 비용은 제공하지 않아요.")
+    public AdminLlmPerformanceResponse performance(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @RequestParam(required = false) UUID orgId,
+            @RequestParam(required = false) UUID workspaceId,
+            @Parameter(description = "7, 30, 90 중 선택해요. 생략하면 전체 기간이에요.")
+            @RequestParam(required = false) @Nullable Integer days) {
+        return service.performance(principal, orgId, workspaceId, days);
     }
 
     @GetMapping

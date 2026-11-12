@@ -485,6 +485,100 @@ class AdminLlmUsageTest {
                 .andExpect(jsonPath("$.quality.unattributedRequests").doesNotExist());
     }
 
+    @Test
+    void performanceDefaultsToAllRetainedDaysAndKeepsUnattributedRequestsSeparate() throws Exception {
+        Key first = key(orgA, workspaceA1, "first", 100L, "0", false, null, null, null, false);
+        Key second = key(orgB, workspaceB, "second", 100L, "0", false, null, null, null, false);
+        LocalDate today = LocalDate.now(ClockConfig.KST);
+        daily(first.id(), "old/model", today.minusDays(400), 5, 50, 25);
+        daily(first.id(), "today/model", today, 3, 30, 15);
+        daily(second.id(), "today/model", today, 2, 20, 10);
+        daily(null, null, today, 7, 0, 0);
+        jdbcTemplate.update("update llm_usage_daily set succeeded=requests, cached_input_tokens=9, reasoning_tokens=4, streamed_requests=1 where key_id=? and day=?", first.id(), today);
+        performance(sysViewerToken, "")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.days").isEmpty())
+                .andExpect(jsonPath("$.from").value(today.minusDays(400).toString()))
+                .andExpect(jsonPath("$.timezone").value("Asia/Seoul"))
+                .andExpect(jsonPath("$.totals.requests").value(17))
+                .andExpect(jsonPath("$.totals.inputTokens").value(100))
+                .andExpect(jsonPath("$.totals.usedModelCount").value(1))
+                .andExpect(jsonPath("$.totals.cachedInputTokens").value(9))
+                .andExpect(jsonPath("$.totals.reasoningTokens").value(4))
+                .andExpect(jsonPath("$.totals.streamedRequests").value(1))
+                .andExpect(jsonPath("$.population.institutionCount").value(2))
+                .andExpect(jsonPath("$.population.workspaceCount").value(2))
+                .andExpect(jsonPath("$.population.keyCount").value(2))
+                .andExpect(jsonPath("$.granularity").value("MONTH"))
+                .andExpect(jsonPath("$.trend[0].periodStart").value(today.minusDays(400).withDayOfMonth(1).toString()))
+                .andExpect(jsonPath("$.consumers.level").value("ORG"))
+                .andExpect(jsonPath("$.consumers.totalItems").value(2))
+                .andExpect(jsonPath("$.consumers.otherRequests").value(0))
+                .andExpect(jsonPath("$.consumers.unattributedRequests").value(7))
+                .andExpect(jsonPath("$.otherModelRequests").value(0));
+        performance(orgViewerToken, "orgId=" + orgA.getPublicId() + "&days=7")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.days").value(7))
+                .andExpect(jsonPath("$.from").value(today.minusDays(6).toString()))
+                .andExpect(jsonPath("$.totals.requests").value(3))
+                .andExpect(jsonPath("$.population.keyCount").value(1))
+                .andExpect(jsonPath("$.granularity").value("DAY"))
+                .andExpect(jsonPath("$.trend.length()").value(7));
+    }
+
+    @Test
+    void performanceRanksAreBoundedButTotalsAndResidualsCoverEveryConsumerAndModel() throws Exception {
+        LocalDate today = LocalDate.now(ClockConfig.KST);
+        for (int i = 1; i <= 10; i++) {
+            Key key = key(orgA, workspaceA1, "rank " + i, 100L, "0", false,
+                    null, null, null, false);
+            daily(key.id(), "model-" + i, today, i, i * 10, i * 5);
+        }
+        String body = performance(orgViewerToken, "orgId=" + orgA.getPublicId()
+                + "&workspaceId=" + workspaceA1.getPublicId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totals.requests").value(55))
+                .andExpect(jsonPath("$.population.keyCount").value(10))
+                .andExpect(jsonPath("$.models.length()").value(8))
+                .andExpect(jsonPath("$.otherModelRequests").value(3))
+                .andExpect(jsonPath("$.consumers.level").value("KEY"))
+                .andExpect(jsonPath("$.consumers.items.length()").value(8))
+                .andExpect(jsonPath("$.consumers.totalItems").value(10))
+                .andExpect(jsonPath("$.consumers.otherRequests").value(3))
+                .andExpect(jsonPath("$.consumers.unattributedRequests").value(0))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(body).doesNotContain("costUsd", "creditLimit", "meteredUsageUsd");
+    }
+
+    @Test
+    void performanceRetainsTheUnobservedEmptyStateAndRejectsUnsupportedPeriodsAndUsers() throws Exception {
+        for (String admin : adminTokens) {
+            performance(admin, "orgId=" + orgA.getPublicId())
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.from").isEmpty())
+                    .andExpect(jsonPath("$.rollupLastSuccessAt").isEmpty())
+                    .andExpect(jsonPath("$.trend").isEmpty())
+                    .andExpect(jsonPath("$.totals.requests").value(0));
+        }
+        performance(userToken, "").andExpect(status().isForbidden());
+        performance(orgViewerToken, "days=365")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("days"));
+    }
+
+    private ResultActions performance(String token, String query) throws Exception {
+        return mockMvc.perform(get("/api/v1/admin/llm/usage/performance" + (query.isEmpty() ? "" : "?" + query))
+                .header("Authorization", "Bearer " + token));
+    }
+
+    private void daily(Long keyId, String model, LocalDate day, long requests,
+            long inputTokens, long outputTokens) {
+        jdbcTemplate.update("""
+                insert into llm_usage_daily(day,key_id,public_model_name,requests,input_tokens,output_tokens)
+                values(?,?,?,?,?,?)
+                """, day, keyId, model, requests, inputTokens, outputTokens);
+    }
+
     private ResultActions usage(String token, String query) throws Exception {
         String suffix = query == null || query.isBlank() ? "" : "?" + query;
         return mockMvc.perform(get("/api/v1/admin/llm/usage" + suffix)
