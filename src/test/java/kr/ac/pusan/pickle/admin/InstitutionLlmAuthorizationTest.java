@@ -97,6 +97,7 @@ class InstitutionLlmAuthorizationTest {
                 .andExpect(jsonPath("$.trend.budget.creditLimit").value(1)).andExpect(jsonPath("$.trend.budget.todayTokens").isEmpty())
                 .andExpect(jsonPath("$.endpointKinds").isEmpty());
         request(observer, "/api/v1/admin/llm/usage?orgId=" + first.getPublicId()).andExpect(status().isForbidden());
+        request(observer, "/api/v1/admin/llm/usage/performance?orgId=" + first.getPublicId()).andExpect(status().isForbidden());
     }
 
     @Test
@@ -130,6 +131,7 @@ class InstitutionLlmAuthorizationTest {
         request(full, "/api/v1/admin/llm/keys/" + foreign).andExpect(status().isOk())
                 .andExpect(jsonPath("$.financeVisible").value(true)).andExpect(jsonPath("$.creditLimit").value(1));
         request(full, "/api/v1/admin/llm/usage?orgId=" + second.getPublicId()).andExpect(status().isNotFound());
+        request(full, "/api/v1/admin/llm/usage/performance?orgId=" + second.getPublicId()).andExpect(status().isNotFound());
         UUID account = jdbc.queryForObject("select a.public_id from openrouter_accounts a join llm_api_keys k on k.openrouter_account_id=a.id where k.public_id=?", UUID.class, foreign);
         request(full, "/api/v1/admin/llm/accounts/" + account).andExpect(status().isNotFound());
     }
@@ -156,6 +158,30 @@ class InstitutionLlmAuthorizationTest {
         request(observer, "/api/v1/admin/llm/usage?orgId=" + first.getPublicId() + "&top=1").andExpect(status().isOk())
                 .andExpect(jsonPath("$.limitReview.totalItems").value(1)).andExpect(jsonPath("$.limitReview.items[0].keyId").value(token.toString()))
                 .andExpect(jsonPath("$.limitReview.items[0].creditLimit").isEmpty()).andExpect(jsonPath("$.limitReview.items[0].financeVisible").value(false));
+    }
+
+    @Test
+    void performanceKeepsEachObservationSourcePairedWithItsInstitutionAndWorkspace() throws Exception {
+        UUID firstVisible = key(first, one, "first visible");
+        UUID secondVisible = key(second, two, "second visible");
+        event(firstVisible, 13); event(secondVisible, 17);
+        event(key(first, two, "crossed first hidden"), 900);
+        event(key(second, one, "crossed second hidden"), 9000);
+        User observer = selected(first, Set.of(InstitutionWork.LLM_OBSERVE), one);
+        grant(observer, second, InstitutionAssignment.selected(observer.getPublicId(), second.getPublicId(),
+                Set.of(InstitutionWork.LLM_OBSERVE), Map.of(InstitutionWorkGroup.LLM,
+                        InstitutionWorkspaceScope.listed(Set.of(two.getPublicId()))), 0));
+        rollup.refresh();
+        String body = request(observer, "/api/v1/admin/llm/usage/performance")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totals.requests").value(2))
+                .andExpect(jsonPath("$.totals.inputTokens").value(30))
+                .andExpect(jsonPath("$.population.institutionCount").value(2))
+                .andExpect(jsonPath("$.population.workspaceCount").value(2))
+                .andExpect(jsonPath("$.population.keyCount").value(2))
+                .andExpect(jsonPath("$.consumers.totalItems").value(2))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(body).doesNotContain("crossed first hidden", "crossed second hidden", "creditLimit", "costUsd");
     }
 
     @Test

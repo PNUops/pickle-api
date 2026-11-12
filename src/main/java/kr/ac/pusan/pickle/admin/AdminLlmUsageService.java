@@ -8,11 +8,14 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
+import kr.ac.pusan.pickle.admin.dto.AdminLlmPerformanceResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmUsageResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmGatewayStatusResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmLimitPressureResponse;
@@ -141,6 +144,154 @@ public class AdminLlmUsageService {
                 demand, consumers, breakdown, limitReview, quality);
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public AdminLlmPerformanceResponse performance(AuthenticatedUser actor,
+            @Nullable UUID orgId, @Nullable UUID workspaceId, @Nullable Integer days) {
+        if (days != null && days != 7 && days != 30 && days != 90) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError(
+                    "days", "조회 기간은 전체 기간이나 7일, 30일, 90일 중에서 선택해 주세요.")));
+        }
+        if (!institutionQueries.observationReader(actor)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없어요", "기관 LLM 관측 업무 권한이 필요해요.");
+        }
+        ScopeContext context = resolveScope(actor, orgId, workspaceId);
+        Instant generatedAt = clock.instant();
+        LocalDate to = ClockConfig.todayKst(clock);
+        LocalDate requestedFrom = days == null ? null : to.minusDays(days - 1L);
+        Map<LocalDate, UsageTotals> byDay = dailyTotals(context, requestedFrom, to);
+        LocalDate from = requestedFrom == null
+                ? byDay.keySet().stream().min(LocalDate::compareTo).orElse(null)
+                : requestedFrom;
+        UsageTotals totals = byDay.values().stream().reduce(UsageTotals.ZERO, UsageTotals::plus);
+        LocalDate queryFrom = from == null ? to : from;
+        AdminLlmPerformanceResponse.LlmPerformanceGranularity granularity =
+                ChronoUnit.DAYS.between(queryFrom, to) + 1 > 180
+                        ? AdminLlmPerformanceResponse.LlmPerformanceGranularity.MONTH
+                        : AdminLlmPerformanceResponse.LlmPerformanceGranularity.DAY;
+        List<AdminLlmPerformanceResponse.LlmPerformanceModelUsage> models =
+                performanceModels(context, queryFrom, to);
+        long modelRequests = models.stream().mapToLong(
+                AdminLlmPerformanceResponse.LlmPerformanceModelUsage::requests).sum();
+        Instant rollupLastSuccess = jdbcTemplate.queryForObject(
+                "select max(last_success_at) from llm_usage_rollup_state", Instant.class);
+        LlmGatewayStatusResponse gateway = observabilityService.gatewayStatus(actor, generatedAt);
+        PerformanceFacts facts = performanceFacts(context, queryFrom, to);
+        return new AdminLlmPerformanceResponse(days, from, to, TIMEZONE,
+                new AdminLlmPerformanceResponse.LlmPerformanceTotals(totals.requests(), totals.inputTokens(),
+                        totals.outputTokens(), totals.estimatedRequests(), facts.usedModelCount(),
+                        facts.cachedInputTokens(), facts.reasoningTokens(), facts.streamedRequests()),
+                facts.population(), granularity,
+                performanceTrend(byDay, from, to, granularity), models,
+                totals.requests() - modelRequests,
+                performanceConsumers(context, queryFrom, to, totals.requests()),
+                rollupLastSuccess, gateway.reportState(), gateway.usageQueueReportState());
+    }
+
+    private PerformanceFacts performanceFacts(
+            ScopeContext context, LocalDate from, LocalDate to) {
+        SqlParts parts = scopedParts(context, "k.org_id", "k.workspace_id");
+        List<Object> args = new ArrayList<>(List.of(from, to));
+        args.addAll(parts.args());
+        return jdbcTemplate.queryForObject("""
+                select count(distinct k.org_id) filter (where d.requests > 0) as institutions,
+                       count(distinct k.workspace_id) filter (where d.requests > 0) as workspaces,
+                       count(distinct k.id) filter (where d.requests > 0) as keys,
+                       count(distinct d.public_model_name) filter (where d.succeeded > 0) as models,
+                       coalesce(sum(d.cached_input_tokens),0) as cached_input_tokens,
+                       coalesce(sum(d.reasoning_tokens),0) as reasoning_tokens,
+                       coalesce(sum(d.streamed_requests),0) as streamed_requests
+                  from llm_usage_daily d
+                  left join llm_api_keys k on k.id = d.key_id
+                 where d.day >= ? and d.day <= ?
+                """ + parts.clause(), (rs, rowNum) -> new PerformanceFacts(
+                        new AdminLlmPerformanceResponse.LlmPerformancePopulation(
+                        rs.getLong("institutions"), rs.getLong("workspaces"),
+                        rs.getLong("keys")), rs.getLong("models"), rs.getLong("cached_input_tokens"),
+                        rs.getLong("reasoning_tokens"), rs.getLong("streamed_requests")), args.toArray());
+    }
+
+    private static List<AdminLlmPerformanceResponse.LlmPerformanceTrendPoint> performanceTrend(
+            Map<LocalDate, UsageTotals> byDay, @Nullable LocalDate from, LocalDate to,
+            AdminLlmPerformanceResponse.LlmPerformanceGranularity granularity) {
+        if (from == null) return List.of();
+        boolean monthly = granularity == AdminLlmPerformanceResponse.LlmPerformanceGranularity.MONTH;
+        Map<LocalDate, UsageTotals> buckets = new TreeMap<>();
+        byDay.forEach((day, totals) -> buckets.merge(
+                monthly ? day.withDayOfMonth(1) : day, totals, UsageTotals::plus));
+        List<AdminLlmPerformanceResponse.LlmPerformanceTrendPoint> points = new ArrayList<>();
+        for (LocalDate bucket = monthly ? from.withDayOfMonth(1) : from;
+                !bucket.isAfter(to); bucket = monthly ? bucket.plusMonths(1) : bucket.plusDays(1)) {
+            UsageTotals value = buckets.getOrDefault(bucket, UsageTotals.ZERO);
+            points.add(new AdminLlmPerformanceResponse.LlmPerformanceTrendPoint(bucket,
+                    value.requests(), value.inputTokens(), value.outputTokens()));
+        }
+        return List.copyOf(points);
+    }
+
+    private List<AdminLlmPerformanceResponse.LlmPerformanceModelUsage> performanceModels(
+            ScopeContext context, LocalDate from, LocalDate to) {
+        SqlParts parts = scopedParts(context, "k.org_id", "k.workspace_id");
+        List<Object> args = new ArrayList<>(List.of(from, to));
+        args.addAll(parts.args());
+        return jdbcTemplate.query("""
+                select d.public_model_name, sum(d.requests) as requests,
+                       sum(d.input_tokens) as input_tokens, sum(d.output_tokens) as output_tokens
+                  from llm_usage_daily d
+                  left join llm_api_keys k on k.id = d.key_id
+                 where d.day >= ? and d.day <= ?
+                """ + parts.clause() + """
+                 group by d.public_model_name
+                having sum(d.requests) > 0
+                 order by requests desc, d.public_model_name nulls last
+                 limit 8
+                """, (rs, rowNum) -> new AdminLlmPerformanceResponse.LlmPerformanceModelUsage(
+                        rs.getString("public_model_name"), rs.getLong("requests"),
+                        rs.getLong("input_tokens"), rs.getLong("output_tokens")), args.toArray());
+    }
+
+    private AdminLlmPerformanceResponse.LlmPerformanceConsumers performanceConsumers(
+            ScopeContext context, LocalDate from, LocalDate to, long totalRequests) {
+        LlmUsageConsumerLevel level = context.workspace() != null
+                ? LlmUsageConsumerLevel.KEY
+                : (!context.actor().role().isOrgTier() && context.scope().isUnrestricted()
+                        ? LlmUsageConsumerLevel.ORG : LlmUsageConsumerLevel.WORKSPACE);
+        String dimension = switch (level) {
+            case ORG -> "o";
+            case WORKSPACE -> "w";
+            case KEY -> "k";
+        };
+        SqlParts parts = scopedParts(context, "k.org_id", "k.workspace_id");
+        List<Object> args = new ArrayList<>(List.of(from, to));
+        args.addAll(parts.args());
+        List<PerformanceConsumerRow> rows = jdbcTemplate.query("""
+                select %1$s.public_id, %1$s.name,
+                       sum(d.requests) as requests, sum(d.input_tokens) as input_tokens,
+                       sum(d.output_tokens) as output_tokens, count(*) over () as total_items,
+                       sum(sum(d.requests)) over () as consumer_requests
+                  from llm_usage_daily d
+                  join llm_api_keys k on k.id = d.key_id
+                  join workspaces w on w.id = k.workspace_id
+                  join orgs o on o.id = k.org_id
+                 where d.day >= ? and d.day <= ?
+                """.formatted(dimension) + parts.clause() + """
+                 group by %1$s.id, %1$s.public_id, %1$s.name
+                having sum(d.requests) > 0
+                 order by requests desc, %1$s.id
+                 limit 8
+                """.formatted(dimension), (rs, rowNum) -> new PerformanceConsumerRow(
+                        new AdminLlmPerformanceResponse.LlmPerformanceConsumer(rs.getObject("public_id", UUID.class),
+                                rs.getString("name"), rs.getLong("requests"),
+                                rs.getLong("input_tokens"), rs.getLong("output_tokens")),
+                        rs.getLong("total_items"), rs.getLong("consumer_requests")), args.toArray());
+        long consumerRequests = rows.isEmpty() ? 0 : rows.getFirst().consumerRequests();
+        long shownRequests = rows.stream().mapToLong(row -> row.item().requests()).sum();
+        return new AdminLlmPerformanceResponse.LlmPerformanceConsumers(level,
+                rows.stream().map(PerformanceConsumerRow::item).toList(),
+                rows.isEmpty() ? 0 : rows.getFirst().totalItems(),
+                consumerRequests - shownRequests, totalRequests - consumerRequests);
+    }
+
     private ScopeContext resolveScope(AuthenticatedUser actor, @Nullable UUID orgId,
             @Nullable UUID workspaceId) {
         Long requestedOrgId = orgId == null ? null
@@ -172,11 +323,11 @@ public class AdminLlmUsageService {
     }
 
     private Map<LocalDate, UsageTotals> dailyTotals(ScopeContext context,
-            LocalDate from, LocalDate to) {
+            @Nullable LocalDate from, LocalDate to) {
         SqlParts parts = scopedParts(context, "k.org_id", "k.workspace_id");
         List<Object> args = new ArrayList<>();
-        args.add(from);
         args.add(to);
+        if (from != null) args.add(from);
         args.addAll(parts.args());
         List<DailyRow> rows = jdbcTemplate.query("""
                 select d.day,
@@ -189,8 +340,8 @@ public class AdminLlmUsageService {
                        coalesce(sum(d.unknown_axis_requests), 0) as unknown_axis_requests
                   from llm_usage_daily d
                   left join llm_api_keys k on k.id = d.key_id
-                 where d.day >= ? and d.day <= ?
-                """ + parts.clause() + """
+                 where d.day <= ?
+                """ + (from == null ? "" : " and d.day >= ?") + parts.clause() + """
                  group by d.day
                  order by d.day
                 """, (rs, rowNum) -> new DailyRow(
@@ -834,6 +985,14 @@ public class AdminLlmUsageService {
     }
 
     private record ConsumerRow(LlmUsageConsumerResponse item, long totalItems) {
+    }
+
+    private record PerformanceConsumerRow(AdminLlmPerformanceResponse.LlmPerformanceConsumer item,
+            long totalItems, long consumerRequests) {
+    }
+
+    private record PerformanceFacts(AdminLlmPerformanceResponse.LlmPerformancePopulation population,
+            long usedModelCount, long cachedInputTokens, long reasoningTokens, long streamedRequests) {
     }
 
     private record LimitRow(LlmLimitReviewResponse item, long totalItems) {
