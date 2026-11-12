@@ -14,24 +14,24 @@ import org.jspecify.annotations.Nullable;
  * seed references stay stable).
  */
 public record UpdateVmFlavorRequest(
-        @Size(max = 100, message = "표시명은 100자 이하여야 합니다.")
+        @Size(max = 100, message = "표시명은 100자 이내로 입력해 주세요.")
         @Nullable String displayName,
 
-        @Min(value = 1, message = "vCPU는 1 이상이어야 합니다.")
+        @Min(value = 1, message = "vCPU는 1 이상으로 입력해 주세요.")
         @Nullable Integer vcpu,
 
-        @Min(value = 256, message = "메모리는 256MiB 이상이어야 합니다.")
+        @Min(value = 256, message = "메모리는 256MiB 이상으로 입력해 주세요.")
         @Nullable Integer memoryMb,
 
-        @Min(value = 1, message = "디스크는 1GiB 이상이어야 합니다.")
+        @Min(value = 1, message = "디스크는 1GiB 이상으로 입력해 주세요.")
         @Nullable Integer diskGb,
 
-        @Size(max = 2000, message = "비고는 2000자 이하여야 합니다.")
+        @Size(max = 2000, message = "비고는 2000자 이내로 입력해 주세요.")
         @Nullable String notes,
 
         @Schema(description = "ACTIVE = 신청 화면에 노출, DISABLED = 은퇴 (기존 신청과 VM 무영향)")
         @Nullable CatalogStatus status,
 
-        @Schema(description = "신청 화면에서의 표시 순서. 값이 같으면 먼저 만든 것이 앞에 옵니다.")
+        @Schema(description = "신청 화면의 표시 순서예요. 값이 같으면 먼저 만든 항목이 앞에 와요.")
         @Nullable Integer displayOrder) {
 }

@@ -7,7 +7,7 @@ import java.util.UUID;
 /** Contract op {@code applyAdminBulkChange} response. */
 public record AdminBulkChangeApplyResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-                description = "이 적용의 식별자. 대상별 감사 기록과 요약 기록이 같은 값을 담습니다.")
+                description = "이 적용의 ID이며 대상별 감사 기록과 요약 기록에 같은 값을 담아요.")
         UUID batchId,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<AdminBulkChangeApplyItem> items) {
 }

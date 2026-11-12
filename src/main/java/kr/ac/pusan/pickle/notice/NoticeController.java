@@ -44,7 +44,7 @@ public class NoticeController {
     @GetMapping
     public PageResponse<NoticeView> listNotices(
             @AuthenticationPrincipal @Nullable AuthenticatedUser principal,
-            @Parameter(description = "true이면 기존 열람 범위 안에서 팝업 공지만 조회합니다. 생략하거나 false이면 기존 목록을 반환합니다.")
+            @Parameter(description = "true이면 기존 열람 범위 안에서 팝업 공지만 조회해요. 생략하거나 false이면 기존 목록을 반환해요.")
             @RequestParam(defaultValue = "false") boolean popup,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {

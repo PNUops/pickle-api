@@ -145,7 +145,7 @@ public final class ManagedVmRecoveryGuard {
     public record Location(long nodeId, String nodeName, int vmid) {
         public Location {
             if (nodeId <= 0 || nodeName == null || nodeName.isBlank() || vmid <= 0) {
-                throw new IllegalArgumentException("VM 위치가 올바르지 않습니다.");
+                throw new IllegalArgumentException("VM 위치 정보를 확인해 주세요.");
             }
         }
     }
@@ -155,7 +155,7 @@ public final class ManagedVmRecoveryGuard {
         public GuestIdentity {
             if (hostname == null || hostname.isBlank() || macAddress == null
                     || !macAddress.matches("[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}")) {
-                throw new IllegalArgumentException("복구할 VM의 네트워크 신원이 올바르지 않습니다.");
+                throw new IllegalArgumentException("복구할 VM의 네트워크 신원을 확인해 주세요.");
             }
             address = CidrBlock.host(address).toString().split("/", 2)[0];
             macAddress = macAddress.toLowerCase(java.util.Locale.ROOT);
@@ -206,7 +206,7 @@ public final class ManagedVmRecoveryGuard {
             int gpuOperations, boolean pendingPowerAction, boolean pendingDeletion) {
         public Activity {
             if (provisioningTasks < 0 || powerDispatches < 0 || gpuOperations < 0) {
-                throw new IllegalArgumentException("진행 중인 작업 수가 올바르지 않습니다.");
+                throw new IllegalArgumentException("진행 중인 작업 수는 음수일 수 없어요.");
             }
         }
     }
@@ -256,7 +256,7 @@ public final class ManagedVmRecoveryGuard {
         private final Rejection reason;
 
         private RecoveryRejected(Rejection reason) {
-            super("VM 복구 조건이 충족되지 않았습니다. 상태를 다시 확인해 주세요. (" + reason + ")");
+            super("VM 복구 조건이 맞지 않아요. 상태를 다시 확인해 주세요. (" + reason + ")");
             this.reason = reason;
         }
 

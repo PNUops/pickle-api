@@ -61,7 +61,7 @@ public class AdminRequestController {
             @RequestParam(required = false) ResourceType type,
             @RequestParam(required = false) UUID orgId,
             @RequestParam(required = false) UUID workspaceId,
-            @RequestParam(required = false) @Size(max = 100, message = "검색어는 100자 이하여야 합니다.") String q,
+            @RequestParam(required = false) @Size(max = 100, message = "검색어는 100자 이내로 입력해 주세요.") String q,
             @RequestParam(required = false) LocalDate requestedEndFrom,
             @RequestParam(required = false) LocalDate requestedEndTo,
             @RequestParam(required = false) Boolean reqIndefinite,
@@ -110,8 +110,8 @@ public class AdminRequestController {
     @PostMapping("/{requestId}/recipients/{recipientId}/retry")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "대상자 생성 다시 시도",
-            description = "여러 사람에게 리소스를 만드는 신청에서 생성에 실패한 대상자를 다시 생성 대기로 돌립니다. "
-                    + "실패한 대상자만 다시 시도할 수 있습니다.")
+            description = "여러 사람에게 리소스를 만드는 신청에서 생성에 실패한 대상자를 다시 생성 대기로 돌려요. "
+                    + "실패한 대상자만 다시 시도할 수 있어요.")
     public RequestDetailResponse retryRequestRecipient(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID requestId, @PathVariable UUID recipientId,
             HttpServletRequest httpRequest) {

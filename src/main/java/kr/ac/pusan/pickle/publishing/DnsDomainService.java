@@ -137,8 +137,8 @@ public class DnsDomainService {
             // the owner is left with a name that never resolves and nothing
             // saying why.
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
-                    "지금은 도메인을 발급할 수 없습니다",
-                    "DNS 제공자가 설정되어 있지 않습니다. 관리자에게 문의해 주세요.");
+                    "지금은 도메인을 발급할 수 없어요",
+                    "DNS 제공자가 설정되지 않았어요. 관리자에게 문의해 주세요.");
         }
         try {
             return domainRepository.saveAndFlush(Domain.external(workspaceId,
@@ -186,7 +186,7 @@ public class DnsDomainService {
         Workspace workspace = requireMembership(actor, held);
         if (held.getReleasedAt() == null) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
-                    "해제한 이름이 아닙니다", "이 도메인은 지금 쓰이고 있습니다.");
+                    "해제한 이름이 아니에요", "해제 후 예약 중인 도메인만 되살릴 수 있어요.");
         }
         // The root has to still be one we issue under. A name reserved beneath
         // a root that was withdrawn meanwhile cannot come back to life, and
@@ -333,8 +333,8 @@ public class DnsDomainService {
         standing.requireVisible(DomainResourceAdapter.MESSAGES);
         if (!standing.atLeast(required)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                    "이 작업을 수행할 권한이 없습니다",
-                    "이 도메인에 대해 더 높은 등급이 필요합니다. 자원 소유자에게 요청해 주세요.");
+                    "이 작업을 수행할 권한이 없어요",
+                    "이 도메인의 접근 등급이 부족해요. 리소스 소유자에게 요청해 주세요.");
         }
         return domain;
     }
@@ -352,12 +352,12 @@ public class DnsDomainService {
     private static void requireStillHeld(Domain domain) {
         if (domain.getStatus() == DomainStatus.REMOVED) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "해당 도메인이 존재하지 않습니다", "이미 회수된 이름입니다.");
+                    "해당 도메인을 찾을 수 없어요", "이미 회수된 이름이에요.");
         }
         if (domain.getReleasedAt() != null) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
-                    "이미 해제한 도메인입니다",
-                    "해제한 이름에는 더 이상 손댈 수 없습니다. 예약 기간 동안 같은 이름으로 다시 만들 수 있습니다.");
+                    "이미 해제한 도메인이에요",
+                    "해제한 도메인은 수정하거나 다시 해제할 수 없어요. 예약 중인 이름은 도메인 상세에서 되살려 주세요.");
         }
     }
 
@@ -377,7 +377,7 @@ public class DnsDomainService {
 
     private static ApiException workspaceNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "워크스페이스를 찾을 수 없습니다", "해당 워크스페이스가 존재하지 않습니다.");
+                "워크스페이스를 찾을 수 없어요", "해당 워크스페이스를 찾을 수 없어요.");
     }
 
     private String resolveRoot(String requested) {
@@ -388,8 +388,8 @@ public class DnsDomainService {
             // Nothing is configured, which is an operator's problem rather than
             // a mistake in a field the caller did not send.
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
-                    "발급할 수 있는 루트 도메인이 없습니다",
-                    "허용된 루트 도메인이 설정되어 있지 않습니다. 관리자에게 문의해 주세요.");
+                    "발급할 수 있는 루트 도메인이 없어요",
+                    "허용된 루트 도메인이 설정되지 않았어요. 관리자에게 문의해 주세요.");
         }
         List<FieldValidationError> errors = new ArrayList<>();
         subdomainPolicy.validateRootDomain(rootDomain, "rootDomain", errors);
@@ -420,10 +420,10 @@ public class DnsDomainService {
                 DomainKind.EXTERNAL, DomainStatus.REMOVED);
         if (held >= DEFAULT_DOMAINS_PER_WORKSPACE) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DNS_DOMAIN_LIMIT_REACHED,
-                    "도메인을 더 만들 수 없습니다",
+                    "도메인을 더 만들 수 없어요",
                     "워크스페이스당 " + DEFAULT_DOMAINS_PER_WORKSPACE
-                            + "개까지 가질 수 있습니다. 해제한 이름도 예약 기간 동안은 자리를 차지하므로, "
-                            + "예약이 끝나기를 기다리거나 쓰고 있는 이름을 정리해 주세요.");
+                            + "개까지 가질 수 있어요. 예약 중인 이름도 개수에 포함돼요. "
+                            + "예약이 끝나 정리되기를 기다리거나 관리자에게 문의해 주세요.");
         }
     }
 
@@ -440,16 +440,16 @@ public class DnsDomainService {
     private static ApiException heldBy(Domain held, long askingWorkspaceId) {
         if (held.getReleasedAt() != null && held.getWorkspaceId() == askingWorkspaceId) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_FQDN_TAKEN,
-                    "이 워크스페이스가 예약 중인 이름입니다",
-                    "해제한 이름이라 아직 이 워크스페이스의 것입니다. 도메인 목록에서 되살려 주세요.");
+                    "이 워크스페이스가 예약 중인 이름이에요",
+                    "예약한 외부 도메인은 도메인 상세에서 되살려 주세요. VM에 연결했던 이름은 같은 VM에서 다시 연결해 주세요.");
         }
         return fqdnTaken();
     }
 
     private static ApiException fqdnTaken() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_FQDN_TAKEN,
-                "이미 사용 중인 이름입니다",
-                "다른 이름을 입력해 주세요. 최근에 해제된 이름은 예약 기간이 끝나야 다시 쓸 수 있습니다.");
+                "이미 사용 중인 이름이에요",
+                "다른 이름을 입력해 주세요. 예약 중인 이름은 예약이 끝나야 사용할 수 있어요.");
     }
 
     private static DnsRecordSetView toView(DomainRecord record) {

@@ -18,26 +18,26 @@ import org.jspecify.annotations.Nullable;
  */
 public record LlmKeyBudgetResponse(
         @Schema(description = """
-                하루에 쓸 수 있는 토큰 수. null이면 한도가 없고, 0이면 자체 서빙 모델을 \
-                쓸 수 없습니다.""")
+                하루에 쓸 수 있는 토큰 수예요. null이면 한도가 없고 0이면 자체 서빙 모델을 \
+                쓸 수 없어요.""")
         @Nullable Long dailyTokens,
         @Schema(description = """
-                오늘(KST) 자체 서빙 모델에 쓴 입출력 토큰 합계. 유료 모델 사용은 금액 \
-                한도에 계상되므로 여기 들어가지 않습니다. 사용량 전송이 배치라 방금 쓴 만큼은 \
-                아직 반영되지 않았을 수 있습니다.""")
+                오늘(KST) 자체 서빙 모델에 기록된 입출력 토큰 합계예요. 유료 모델 사용량은 금액 \
+                한도로 계산하므로 포함하지 않아요. 사용량은 배치로 전달돼 최근 사용량이 \
+                아직 반영되지 않았을 수 있어요.""")
         long todayTokens,
-        @Schema(description = "한도에 도달해 자체 서빙 모델 요청이 거절되고 있는 상태.")
+        @Schema(description = "자체 서빙 모델의 일일 토큰 한도 소진 상태")
         boolean quotaExhausted,
-        @Schema(description = "유료 모델에 쓸 수 있는 금액 한도(USD). 0이면 유료 모델을 쓸 수 없습니다.")
+        @Schema(description = "유료 모델의 금액 한도예요(USD). 0이면 유료 모델을 쓸 수 없어요.")
         BigDecimal creditLimit,
         @Schema(description = """
-                공급자가 보고한 현재 한도 창 사용액(USD). DAILY/WEEKLY/MONTHLY 리셋 뒤에는 \
-                감소할 수 있습니다. 아직 보고된 적이 없으면 null입니다.""")
+                공급자가 보고한 키의 누적 사용액이에요(USD). 일간과 주간, 월간 리셋별 사용액이나 \
+                현재 창의 소비량을 뜻하지 않아요. 아직 보고된 적이 없으면 null이에요.""")
         @Nullable BigDecimal creditUsage,
-        @Schema(description = "그 한도 창 사용액을 읽어 온 시각. 30분마다 갱신됩니다.")
+        @Schema(description = "누적 사용액을 읽어 온 시각이에요. 30분 주기로 갱신을 시도해요.")
         @Nullable Instant creditUsageAt,
         @Schema(description = """
-                최근 소비 속도로 금액 한도에 도달할 것으로 보이는 날짜. 이력이 부족하거나 \
-                최근에 쓴 적이 없으면 null입니다.""")
+                총액 한도를 최근 소비 속도로 소진할 것으로 예상하는 날짜예요. 주기별 한도이거나 \
+                이력이 부족하거나 최근 소비가 없으면 null이에요.""")
         @Nullable LocalDate creditDepletionForecast) {
 }

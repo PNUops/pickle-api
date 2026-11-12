@@ -155,7 +155,7 @@ public class AdminBulkChangeService {
     private AdminBulkChangeApplyResponse repeat(AuthenticatedUser actor, AdminBulkChangeRequest request,
             String binding, AdminBulkChangeStore.Operation previous) {
         if (!previous.previewId().equals(request.previewId()) || !previous.binding().equals(binding)) {
-            throw AdminBulkChangeStore.conflict("같은 적용 식별자에 다른 요청을 보낼 수 없습니다.");
+            throw AdminBulkChangeStore.conflict("같은 적용 식별자에 다른 요청을 보낼 수 없어요.");
         }
         if (previous.result() == null) { throw new IllegalStateException("committed operation has no receipt"); }
         return maskResult(actor, store.preview(actor.id(), previous.previewId()).request(), previous.result());
@@ -395,11 +395,11 @@ public class AdminBulkChangeService {
         AdminBulkChangeKind kind = change.kind();
         if (!kind.accepts(request.targetType())) {
             errors.add(new FieldValidationError("targetType",
-                    "이 변경 종류는 " + request.targetType() + " 대상에 쓸 수 없습니다."));
+                    "이 변경 종류는 " + request.targetType() + " 대상에 쓸 수 없어요."));
         }
         Set<UUID> distinct = new HashSet<>(request.targetIds());
         if (distinct.size() != request.targetIds().size()) {
-            errors.add(new FieldValidationError("targetIds", "같은 대상을 두 번 지정했습니다."));
+            errors.add(new FieldValidationError("targetIds", "같은 대상을 두 번 지정했어요."));
         }
         checkMembers(change, errors);
         if (applying) {
@@ -441,7 +441,7 @@ public class AdminBulkChangeService {
             if (kind == change.kind() && member == null) {
                 errors.add(new FieldValidationError(field, "이 변경 종류의 내용을 채워 주세요."));
             } else if (kind != change.kind() && member != null) {
-                errors.add(new FieldValidationError(field, "변경 종류와 다른 내용은 보낼 수 없습니다."));
+                errors.add(new FieldValidationError(field, "변경 종류와 다른 내용은 보낼 수 없어요."));
             }
         }
     }

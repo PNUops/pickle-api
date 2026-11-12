@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** Permanent delivery metadata; account bodies and authentication material stay in memory. */
 @Service
 public class MailDeliveryJournal {
-    private static final Set<String> FINAL_STATES = Set.of("PENDING", "SENT", "FAILED", "UNKNOWN");
+    private static final Set<String> FINAL_STATES = Set.of("PENDING", "SENT", "FAILED", "SKIPPED", "UNKNOWN");
     private static final Map<String, String> ACCOUNT_TITLES = Map.of(
             "account.signup_verification", "회원가입 이메일 인증",
             "account.password_reset", "비밀번호 재설정",

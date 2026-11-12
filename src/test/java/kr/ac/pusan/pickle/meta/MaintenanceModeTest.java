@@ -122,7 +122,7 @@ class MaintenanceModeTest {
 
         mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.detail").value("서비스 점검 중입니다. 잠시 후 다시 이용해 주세요."));
+                .andExpect(jsonPath("$.detail").value("서비스 점검 중이에요. 잠시 후 다시 이용해 주세요."));
     }
 
     @Test

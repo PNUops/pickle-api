@@ -5,7 +5,7 @@ import java.time.Instant;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCreditsFreshness;
 import org.jspecify.annotations.Nullable;
 
-@Schema(description = "서버 cache의 출처·시각과 독립적인 품질입니다. reset 변경, 변경하지 않은 미보고 키, stale이 함께 존재할 수 있습니다. 창이 있는 vendor 사용액의 자연 리셋 정렬은 확인되지 않았으며 다음 대사 전에는 남은 배정을 과소 표시할 수도 있습니다.")
+@Schema(description = "캐시의 출처와 시각, 품질을 나타내요. reset 변경과 변경하지 않은 미보고 키, stale이 함께 존재할 수 있어요. 공급자의 리셋 창 정렬은 확인되지 않았으며 다음 대사 전에는 남은 배정을 과소 표시할 수도 있어요.")
 public record LlmAccountImpactQuality(String source, Instant observedAt,
         OpenRouterCreditsFreshness creditsFreshness, OpenRouterCreditsFreshness keyMetersFreshness,
         @Nullable Instant creditsLastSuccessAt, @Nullable Instant creditsLastAttemptAt,

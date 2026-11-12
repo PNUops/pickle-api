@@ -12,11 +12,11 @@ import org.jspecify.annotations.Nullable;
  */
 public class UpdateWorkspaceRequest {
 
-    @Size(max = 100, message = "워크스페이스 이름은 100자 이하여야 합니다.")
+    @Size(max = 100, message = "워크스페이스 이름은 100자 이내로 입력해 주세요.")
     private String name;
     private boolean nameSet;
 
-    @Size(max = 500, message = "설명은 500자 이하여야 합니다.")
+    @Size(max = 500, message = "설명은 500자 이내로 입력해 주세요.")
     private @Nullable String description;
     private boolean descriptionSet;
 
@@ -57,7 +57,7 @@ public class UpdateWorkspaceRequest {
     }
 
     @io.swagger.v3.oas.annotations.media.Schema(
-            description = "워크스페이스 유형. PERSONAL 워크스페이스는 유형을 바꿀 수 없습니다")
+            description = "워크스페이스 유형이에요. PERSONAL 워크스페이스는 유형을 바꿀 수 없어요.")
     public CreatableWorkspaceKind getKind() {
         return kind;
     }

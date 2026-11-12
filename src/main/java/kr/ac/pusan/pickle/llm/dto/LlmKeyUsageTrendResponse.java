@@ -23,18 +23,18 @@ public record LlmKeyUsageTrendResponse(
         LocalDate from,
         LocalDate to,
         @Schema(description = """
-                게이트웨이가 이 키의 사용량을 마지막으로 보고한 시각. 보고는 배치라 몇 분 \
-                늦을 수 있습니다. 보고가 한 번도 없었으면 null입니다.""")
+                Gateway가 이 키의 사용량을 마지막으로 보고한 시각이에요. 배치로 보고해 \
+                지연될 수 있어요. 보고 기록이 없으면 null이에요.""")
         @Nullable Instant reportedUntil,
         @Schema(description = "하루 한 점, 오래된 날부터")
         List<LlmKeyUsagePointResponse> points,
-        @Schema(description = "이 기간에 실제로 호출된 모델만, 요청이 많은 순")
+        @Schema(description = "이 기간에 요청이 기록된 모델이며, 요청이 많은 순서")
         List<LlmKeyModelUsageResponse> models,
         @Schema(description = "이 기간의 실패를 종류별로, 많은 순")
         List<LlmKeyErrorTypeResponse> errorTypes,
-        @Schema(description = "정상 응답 요청의 응답 시간 백분위. 정상 응답이 없으면 null입니다.")
+        @Schema(description = "정상 응답 요청의 응답 시간 백분위이며, 정상 응답이 없으면 null이에요.")
         @Nullable LlmKeyLatencyResponse latency,
-        @Schema(description = "요일 x 시각(KST) 요청 분포. 요청이 있는 칸만 담깁니다.")
+        @Schema(description = "요일과 시각(KST)에 따른 요청 분포이며, 요청이 있는 칸만 제공해요.")
         List<LlmKeyHourlyUsageResponse> hourly,
         @Schema(description = "기간이 아니라 현재 시점의 두 예산 축 상태")
         LlmKeyBudgetResponse budget) {

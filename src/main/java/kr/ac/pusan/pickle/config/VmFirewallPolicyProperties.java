@@ -69,11 +69,11 @@ public record VmFirewallPolicyProperties(
         Set<String> canonical = new LinkedHashSet<>();
         for (String value : values) {
             if (value == null) {
-                throw new IllegalArgumentException("VM 방화벽 source IP가 비어 있습니다.");
+                throw new IllegalArgumentException("VM 방화벽 source IP가 비어 있어요.");
             }
             CidrBlock block = CidrBlock.host(value.strip());
             if (block.ipv6()) {
-                throw new IllegalArgumentException("VM 방화벽 system source는 현재 IPv4만 지원합니다.");
+                throw new IllegalArgumentException("VM 방화벽 system source는 현재 IPv4만 지원해요.");
             }
             canonical.add(block.toString().replace("/32", ""));
         }

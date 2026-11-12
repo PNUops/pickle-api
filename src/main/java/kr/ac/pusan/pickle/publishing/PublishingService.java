@@ -161,7 +161,7 @@ public class PublishingService {
         requirePublishableState(vm);
         if (Texts.blankToNull(subdomain) != null && Texts.blankToNull(customDomain) != null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("subdomain",
-                    "플랫폼 서브도메인과 커스텀 도메인은 동시에 지정할 수 없습니다.")));
+                    "플랫폼 서브도메인과 커스텀 도메인 중 하나만 지정해 주세요.")));
         }
         int resolvedPort = validatePort(port);
         String requestedCustom = Texts.blankToNull(customDomain);
@@ -237,8 +237,8 @@ public class PublishingService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_DELETE,
                 "domain", domain.getPublicId(), Map.of("fqdn", domain.getFqdn()), ip);
         return domain.getReleasedAt() != null && domain.getStatus() != DomainStatus.REMOVED
-                ? new MessageResponse("도메인 해제를 접수했습니다. 이름은 유예 기간 동안 이 VM에 예약됩니다.")
-                : new MessageResponse("도메인 삭제를 접수했습니다.");
+                ? new MessageResponse("도메인 해제를 접수했어요. 이름은 유예 기간 동안 이 VM에 예약돼요.")
+                : new MessageResponse("도메인 삭제를 접수했어요.");
     }
 
     // ── domain reads ─────────────────────────────────────────────────────────
@@ -285,7 +285,7 @@ public class PublishingService {
         }
         if (domain.getKind() != DomainKind.CUSTOM) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
-                    "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
+                    "검증할 수 없는 도메인이에요", "플랫폼 서브도메인은 소유권 검증이 필요하지 않아요.");
         }
         // Each trigger enqueues a (slow) DNS job on the shared JobRunr pool:
         // per-user rate limit + per-domain in-flight dedupe bound the abuse.
@@ -423,7 +423,7 @@ public class PublishingService {
         String label = Texts.blankToNull(requestedSubdomain);
         if (label == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("subdomain",
-                    "공개할 서브도메인을 입력해 주세요. (자동 생성은 지원하지 않습니다)")));
+                    "공개할 서브도메인을 입력해 주세요. 이름을 자동으로 만들지는 않아요.")));
         }
         // Normalize before validating: validateLabel lowercases only its local
         // copy, and the FQDN below must match what was validated (DNS is
@@ -435,7 +435,7 @@ public class PublishingService {
         }
         if (rootDomain == null) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "공개할 수 없습니다", "허용된 루트 도메인이 설정되어 있지 않습니다. 관리자에게 문의해 주세요.");
+                    "공개할 수 없어요", "허용된 루트 도메인이 설정되지 않았어요. 관리자에게 문의해 주세요.");
         }
         List<FieldValidationError> errors = new ArrayList<>();
         subdomainPolicy.validateLabel(label, "subdomain", errors);
@@ -470,8 +470,8 @@ public class PublishingService {
                 vmId, SubdomainPolicy.CAPPED_KINDS, DomainStatus.REMOVED);
         if (serving >= limit) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_LIMIT_REACHED,
-                    "플랫폼 서브도메인 개수 제한에 도달했습니다",
-                    "이 VM에는 플랫폼 서브도메인을 최대 " + limit + "개까지 연결할 수 있습니다. "
+                    "플랫폼 서브도메인 개수 제한에 도달했어요",
+                    "이 VM에는 플랫폼 서브도메인을 최대 " + limit + "개까지 연결할 수 있어요. "
                             + "기존 서브도메인을 해제하거나 커스텀 도메인을 사용해 주세요.");
         }
     }
@@ -492,8 +492,8 @@ public class PublishingService {
                 .isPresent();
         if (!usable) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "공개할 수 없습니다",
-                    "'" + rootDomain + "' 루트 도메인에 사용할 수 있는 인증서가 없습니다. 관리자에게 문의해 주세요.");
+                    "공개할 수 없어요",
+                    "'" + rootDomain + "' 루트 도메인에 사용할 수 있는 인증서가 없어요. 관리자에게 문의해 주세요.");
         }
     }
 
@@ -507,8 +507,8 @@ public class PublishingService {
     private void requireDnsProvider() {
         if (!dnsRecords.configured()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "공개할 수 없습니다",
-                    "플랫폼 서브도메인의 DNS 레코드를 만들 수 있는 제공자가 설정되어 있지 않습니다. 관리자에게 문의해 주세요.");
+                    "공개할 수 없어요",
+                    "플랫폼 서브도메인의 DNS 제공자가 설정되지 않았어요. 관리자에게 문의해 주세요.");
         }
     }
 
@@ -642,9 +642,9 @@ public class PublishingService {
         int value = port != null ? port : 80;
         List<FieldValidationError> errors = new ArrayList<>();
         if (value < 1 || value > 65535) {
-            errors.add(new FieldValidationError("port", "포트는 1~65535 범위여야 합니다."));
+            errors.add(new FieldValidationError("port", "포트는 1~65535 범위로 입력해 주세요."));
         } else if (value == 22) {
-            errors.add(new FieldValidationError("port", "VM의 SSH 포트(22)는 공개할 수 없습니다."));
+            errors.add(new FieldValidationError("port", "VM의 SSH 포트(22)는 공개할 수 없어요."));
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
@@ -659,10 +659,10 @@ public class PublishingService {
                 && java.util.Arrays.stream(labels).allMatch(l -> LABEL.matcher(l).matches());
         if (!validLabels) {
             errors.add(new FieldValidationError("customDomain",
-                    "완전한 외부 도메인(FQDN)이어야 하며 단일 라벨은 사용할 수 없습니다."));
+                    "전체 도메인(FQDN)을 입력해 주세요. 단일 라벨은 사용할 수 없어요."));
         } else if (subdomainPolicy.isUnderPlatformRoot(fqdn)) {
             errors.add(new FieldValidationError("customDomain",
-                    "플랫폼이 관리하는 도메인 하위 값은 커스텀 도메인으로 사용할 수 없습니다."));
+                    "플랫폼이 관리하는 도메인의 하위 이름은 커스텀 도메인으로 사용할 수 없어요."));
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
@@ -671,8 +671,8 @@ public class PublishingService {
 
     private static ApiException fqdnTaken() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_FQDN_TAKEN,
-                "이미 사용 중인 도메인입니다",
-                "요청한 도메인이 이미 다른 곳에 연결되어 있습니다. 다른 도메인을 사용해 주세요.");
+                "이미 사용 중인 도메인이에요",
+                "요청한 도메인을 사용할 수 없어요. 다른 도메인을 입력해 주세요.");
     }
 
     // ── authorization helpers ────────────────────────────────────────────────
@@ -693,20 +693,20 @@ public class PublishingService {
         return vmAccessService.of(vmRepository.findById(vmId)
                 .orElseThrow(VmAccessService::vmNotFound), actor.id())
                 .requireAtLeast(ResourceRole.EDITOR,
-                        "도메인을 관리할 권한이 없습니다", "이 VM의 편집자 이상만 도메인을 관리할 수 있습니다.");
+                        "도메인을 관리할 권한이 없어요", "이 VM의 편집자 이상만 도메인을 관리할 수 있어요.");
     }
 
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, UUID vmId) {
         return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
-                "HTTP 서비스를 공개할 권한이 없습니다",
-                "이 VM의 소유자 또는 편집자만 도메인·포트를 설정할 수 있습니다.");
+                "HTTP 서비스를 공개할 권한이 없어요",
+                "이 VM의 편집자 이상만 도메인과 포트를 설정할 수 있어요.");
     }
 
     private void requirePublishableState(Vm vm) {
         if (vm.getStatus() != VmStatus.RUNNING && vm.getStatus() != VmStatus.STOPPED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 공개할 수 없습니다",
-                    "RUNNING 또는 STOPPED 상태의 VM만 공개할 수 있습니다. (현재 상태 " + vm.getStatus() + ")");
+                    "현재 상태에서는 공개할 수 없어요",
+                    "RUNNING 또는 STOPPED 상태의 VM만 공개할 수 있어요. (현재 상태 " + vm.getStatus() + ")");
         }
     }
 
@@ -756,11 +756,11 @@ public class PublishingService {
 
     private static ApiException domainNotServing() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "공개 설정을 찾을 수 없습니다", "이 도메인은 현재 서비스 중이 아닙니다. 도메인을 다시 연결해 주세요.");
+                "공개 설정을 찾을 수 없어요", "이 도메인의 활성 공개 설정을 찾을 수 없어요. 도메인을 다시 연결해 주세요.");
     }
 
     private static ApiException domainNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 도메인이 존재하지 않습니다.");
+                "리소스를 찾을 수 없어요", "해당 도메인을 찾을 수 없어요.");
     }
 }

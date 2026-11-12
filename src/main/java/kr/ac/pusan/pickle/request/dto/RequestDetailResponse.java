@@ -21,20 +21,20 @@ import org.jspecify.annotations.Nullable;
 public record RequestDetailResponse(
         UUID id,
         ResourceType type,
-        @Schema(description = "신청 대상 워크스페이스. 행이 사라진 경우에만 null입니다.")
+        @Schema(description = "신청 대상 워크스페이스예요. 행이 사라졌을 때만 null이에요.")
         @Nullable UUID workspaceId,
         String workspaceName,
-        @Schema(description = "신청 대상 기관. 행이 사라진 경우에만 null입니다.")
+        @Schema(description = "신청 대상 기관이에요. 행이 사라졌을 때만 null이에요.")
         @Nullable UUID orgId,
         String orgName,
-        @Schema(description = "신청자. 행이 사라진 경우에만 null입니다.")
+        @Schema(description = "신청자예요. 행이 사라졌을 때만 null이에요.")
         @Nullable UUID requesterId,
         String requesterName,
         String purpose,
         @Nullable String extraNote,
-        @Schema(description = "신청한 사용 종료일. 값이 없으면 무기한을 요청한 것입니다.")
+        @Schema(description = "공통 사용 기간을 정하는 신청의 종료일이에요. 해당 신청에서 값이 없으면 무기한을 요청한 뜻이에요.")
         @Nullable LocalDate reqEndDate,
-        @Schema(description = "종료일을 고른 기간 항목의 이름. 직접 적었으면 null입니다.",
+        @Schema(description = "신청할 때 고른 기간 항목의 현재 이름이에요. 직접 입력한 경우에는 null이에요.",
                 example = "2026학년도 1학기")
         @Nullable String periodName,
         String displayName,
@@ -50,8 +50,8 @@ public record RequestDetailResponse(
         @Nullable DomainRequestSpecResponse domain,
         Instant createdAt,
         Instant updatedAt,
-        @Schema(description = "여러 사람에게 리소스를 만드는 신청의 대상자. 신청자 본인이 받는 일반 신청은 빈 배열입니다.")
+        @Schema(description = "리소스를 받을 대상자 목록이에요. 신청자 본인이 받는 일반 신청은 빈 배열이에요.")
         List<RequestRecipientResponse> recipients,
-        @Schema(description = "현재 신청에서 허용된 기관 업무. 개인 OWNER·ACL 권한과 구분하며, 유료 승인 예산은 같은 출처의 결정 업무와 함께 허용될 때만 포함합니다.")
+        @Schema(description = "현재 신청에서 허용된 기관 업무예요. 개인 OWNER 및 ACL 권한과 구분하며, 유료 승인 예산은 같은 출처의 결정 업무와 함께 허용될 때만 포함해요.")
         @Nullable List<String> allowedWorkIds) {
 }

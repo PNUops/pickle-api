@@ -8,10 +8,10 @@ import jakarta.validation.constraints.Pattern;
  * must be present — enforced in the service (422) so the message is specific.
  */
 public record MfaLoginRequest(
-        @NotBlank(message = "인증 세션 토큰이 필요합니다.")
+        @NotBlank(message = "인증 세션 토큰이 필요해요.")
         String mfaToken,
 
-        @Pattern(regexp = "^[0-9]{6}$", message = "인증 코드는 6자리 숫자입니다.")
+        @Pattern(regexp = "^[0-9]{6}$", message = "인증 코드는 6자리 숫자로 입력해 주세요.")
         String code,
 
         String recoveryCode) {

@@ -52,7 +52,7 @@ public class ObservationReader {
         if (!InstitutionLlmAccess.systemRead(actor)) return new CapacityTelemetry(CapacityTelemetryStatus.NOT_PROVIDED, null);
         if (!properties.bound()) return new CapacityTelemetry(CapacityTelemetryStatus.NOT_CONFIGURED, null);
         if (requestedSource != null && !requestedSource.equals(properties.sourceId())) throw new ApiException(
-                HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "관측 원천을 찾을 수 없습니다", "설정된 관측 원천을 확인해 주세요.");
+                HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "관측 원천을 찾을 수 없어요", "설정된 관측 원천을 확인해 주세요.");
         Instant now = clock.instant(), cutoff = now.minusSeconds(ObservationLimits.RETENTION_DAYS * 86400L);
         var latest = jdbc.query("""
                 select upstream_id,upstream_name,observed_at from inference_observation_samples

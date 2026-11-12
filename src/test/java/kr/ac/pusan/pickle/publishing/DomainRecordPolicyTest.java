@@ -58,11 +58,11 @@ class DomainRecordPolicyTest {
         // one that matters: a name under a university root aimed at another
         // machine on that network is what a convincing phishing page needs.
         assertThat(messages(set("", DnsRecordType.A, "164.125.249.87")))
-                .anyMatch(m -> m.contains("플랫폼이 응답하는 주소"));
+                .anyMatch(m -> m.contains("플랫폼 주소나 교내 대역 주소"));
         assertThat(messages(set("", DnsRecordType.A, "164.125.18.138")))
-                .anyMatch(m -> m.contains("플랫폼이 응답하는 주소"));
+                .anyMatch(m -> m.contains("플랫폼 주소나 교내 대역 주소"));
         assertThat(messages(set("", DnsRecordType.A, "52.78.104.182")))
-                .anyMatch(m -> m.contains("플랫폼이 응답하는 주소"));
+                .anyMatch(m -> m.contains("플랫폼 주소나 교내 대역 주소"));
         // A CNAME reaches the same place by name rather than by address.
         assertThat(messages(set("www", DnsRecordType.CNAME, "other.pusan.dev")))
                 .anyMatch(m -> m.contains("플랫폼이 관리하는 이름"));
@@ -75,12 +75,12 @@ class DomainRecordPolicyTest {
                 "192.0.2.5", "203.0.113.5")) {
             assertThat(messages(set("", DnsRecordType.A, value)))
                     .as("A %s", value)
-                    .anyMatch(m -> m.contains("도달할 수 있는 주소가 아닙니다"));
+                    .anyMatch(m -> m.contains("공개 인터넷용 대상 주소로 쓸 수 없어요"));
         }
         for (String value : List.of("::1", "fd00::1", "fe80::1", "2001:db8::1")) {
             assertThat(messages(set("", DnsRecordType.AAAA, value)))
                     .as("AAAA %s", value)
-                    .anyMatch(m -> m.contains("도달할 수 있는 주소가 아닙니다"));
+                    .anyMatch(m -> m.contains("공개 인터넷용 대상 주소로 쓸 수 없어요"));
         }
     }
 
@@ -113,7 +113,7 @@ class DomainRecordPolicyTest {
         List<FieldValidationError> errors = errors(
                 set("www", DnsRecordType.CNAME, "pages.github.io."),
                 set("www", DnsRecordType.A, PUBLIC_V4));
-        assertThat(messages(errors)).anyMatch(m -> m.contains("CNAME과 다른 종류를 함께"));
+        assertThat(messages(errors)).anyMatch(m -> m.contains("CNAME과 다른 종류의 레코드를 함께"));
     }
 
     @Test
@@ -160,9 +160,9 @@ class DomainRecordPolicyTest {
         // record's content choose what this server looks up, and would answer
         // for a name rather than for the address being published.
         assertThat(messages(set("", DnsRecordType.A, "localhost")))
-                .anyMatch(m -> m.contains("올바른 IP 주소가 아닙니다"));
+                .anyMatch(m -> m.contains("올바른 IP 주소가 아니에요"));
         assertThat(messages(set("", DnsRecordType.A, "example.com")))
-                .anyMatch(m -> m.contains("올바른 IP 주소가 아닙니다"));
+                .anyMatch(m -> m.contains("올바른 IP 주소가 아니에요"));
     }
 
     @Test

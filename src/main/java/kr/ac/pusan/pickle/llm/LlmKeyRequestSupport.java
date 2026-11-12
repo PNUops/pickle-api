@@ -85,17 +85,17 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // only that a number somebody did write is a number that can be granted.
         if (spec.reqRpm() != null && spec.reqTpm() != null && spec.reqTpm() < spec.reqRpm()) {
             errors.add(new FieldValidationError("llmKey.reqTpm",
-                    "분당 토큰 수는 분당 요청 수보다 작을 수 없습니다."));
+                    "분당 토큰 수는 분당 요청 수보다 작을 수 없어요."));
         }
         // 축은 다르다. 한도와 달리 비워 둔 것이 "기본값"을 뜻하지 않으므로, 무엇을
         // 쓰겠다는 것인지 하나는 말해야 한다.
         if (!useCampus(spec) && !useCommercial(spec)) {
             errors.add(new FieldValidationError("llmKey.useCampusModels",
-                    "Pickle LLM과 유료 모델 중 최소 하나는 선택해 주세요."));
+                    "Pickle LLM과 유료 모델 중 하나 이상을 선택해 주세요."));
         }
         if (spec.reqCreditLimit() != null && !useCommercial(spec)) {
             errors.add(new FieldValidationError("llmKey.reqCreditLimit",
-                    "유료 모델을 쓰지 않는 신청에는 금액을 적을 수 없습니다."));
+                    "유료 모델을 쓰지 않는 신청에는 금액을 적을 수 없어요."));
         }
         // The same whole-grant rules an approval meets, so the list a reviewer
         // opens on is one they could approve as it stands. Bean validation has
@@ -153,13 +153,13 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
             // decision: it grants the service defaults. The member has to be
             // present so the reviewer's intent is explicit, but it may be empty.
             errors.add(new FieldValidationError("llmKey",
-                    "LLM API 키 승인 항목(llmKey)을 입력해 주세요. 기본 한도로 승인하려면 빈 객체를 보내주세요."));
+                    "LLM API 키 승인 항목(llmKey)을 입력해 주세요. 기본 한도로 승인하려면 빈 객체를 보내 주세요."));
             return;
         }
         if (spec.grantedRpm() != null && spec.grantedTpm() != null
                 && spec.grantedTpm() < spec.grantedRpm()) {
             errors.add(new FieldValidationError("llmKey.grantedTpm",
-                    "분당 토큰 수는 분당 요청 수보다 작을 수 없습니다."));
+                    "분당 토큰 수는 분당 요청 수보다 작을 수 없어요."));
         }
         // A reset window without a positive limit renews nothing; the reviewer
         // almost certainly forgot the amount, so say it rather than store it.
@@ -167,7 +167,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                 && (spec.grantedCreditLimit() == null
                         || spec.grantedCreditLimit().signum() <= 0)) {
             errors.add(new FieldValidationError("llmKey.grantedCreditLimit",
-                    "리셋 창을 두려면 0보다 큰 금액 한도가 필요합니다."));
+                    "리셋 창을 두려면 0보다 큰 금액 한도가 필요해요."));
         }
         // Same shape, same reason: a model allow list on a key with no money
         // restricts nothing, because there is nothing on the money axis to
@@ -178,7 +178,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                 && (spec.grantedCreditLimit() == null
                         || spec.grantedCreditLimit().signum() <= 0)) {
             errors.add(new FieldValidationError("llmKey.grantedCreditLimit",
-                    "모델 허용 목록을 두려면 0보다 큰 금액 한도가 필요합니다."));
+                    "모델 허용 목록을 두려면 0보다 큰 금액 한도가 필요해요."));
         }
         // The deny list is checked for format and nothing else. It carries no
         // "needs money" rule, because a refusal is true at an amount of zero and

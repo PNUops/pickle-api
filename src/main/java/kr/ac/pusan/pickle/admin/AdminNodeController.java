@@ -56,7 +56,7 @@ public class AdminNodeController {
     @GetMapping("/{nodeId}/metrics")
     @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public NodeMetricsResponse getAdminNodeMetrics(@PathVariable UUID nodeId,
-            @Parameter(description = "조회 구간 — HOUR/DAY/WEEK/MONTH/YEAR "
+            @Parameter(description = "조회 구간: HOUR/DAY/WEEK/MONTH/YEAR "
                     + "(해상도는 구간에 따라 거칠어짐)")
             @RequestParam(defaultValue = "HOUR") RrdTimeframe timeframe) {
         return adminNodeMetricsService.metrics(nodeId, timeframe);

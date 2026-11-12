@@ -48,7 +48,7 @@ public class VmNetworkPolicyRuntimeGate {
         boolean firewallLabel = node.vmFirewallPolicy().isPresent();
         boolean nicLabel = node.vmNicRequirements().isPresent();
         if (firewallLabel != nicLabel) {
-            throw VmNetworkPolicyStore.unavailable("노드의 VM 방화벽 준비 label이 완전하지 않습니다.");
+            throw VmNetworkPolicyStore.unavailable("노드의 VM 방화벽과 NIC 준비 label을 함께 확인할 수 없어요.");
         }
         return firewallLabel;
     }
@@ -64,7 +64,7 @@ public class VmNetworkPolicyRuntimeGate {
         Node node = preparedNode(vmId);
         VmNetworkPolicyStore.Target target = target(vmId, node);
         if (!"CREATING".equals(target.vmStatus())) {
-            throw VmNetworkPolicyStore.unavailable("초기 VM 통신 정책은 생성 중인 VM에만 설정할 수 있습니다.");
+            throw VmNetworkPolicyStore.unavailable("초기 VM 통신 정책은 생성 중인 VM에만 설정할 수 있어요.");
         }
         publishedPaths.requireNoLegacyForInitialOptIn(vmId);
         List<VmNetworkPolicyCompiler.PublishedPath> paths = publishedPaths.find(vmId);
@@ -72,14 +72,14 @@ public class VmNetworkPolicyRuntimeGate {
         VmNetworkPolicyStore.Snapshot policy = store.initialize(vmId, hash);
         if (policy.revision() != 0 || policy.desiredGeneration() != 1
                 || !policy.rules().isEmpty() || !hash.equals(policy.desiredHash())) {
-            throw VmNetworkPolicyStore.unavailable("초기 VM 통신 정책 행이 예상 상태와 다릅니다.");
+            throw VmNetworkPolicyStore.unavailable("초기 VM 통신 정책 행이 예상 상태와 달라요.");
         }
         VmNetworkPolicyCompiler.Plan plan = VmNetworkPolicyCompiler.compile(
                 target.ip(), properties, paths, policy.rules());
         reconciler.prepareInitial(target.providerTarget(), plan);
         if (!store.markApplied(vmId, policy.desiredGeneration(), hash, target)) {
             throw VmNetworkPolicyStore.unavailable(
-                    "VM 대상 정보가 바뀌어 초기 통신 정책 결과를 반영하지 않았습니다.");
+                    "현재 정책이나 VM 대상 정보가 달라 초기 통신 정책 결과를 반영하지 못했어요.");
         }
     }
 
@@ -119,7 +119,7 @@ public class VmNetworkPolicyRuntimeGate {
         Node node = preparedNode(vmId);
         VmNetworkPolicyStore.Target target = target(vmId, node);
         if (!expectedDbStatus.equals(target.vmStatus())) {
-            throw VmNetworkPolicyStore.unavailable("VM 상태가 전원 작업의 통신 정책 gate와 다릅니다.");
+            throw VmNetworkPolicyStore.unavailable("VM 상태가 전원 작업의 통신 정책 gate와 달라요.");
         }
         List<VmNetworkPolicyCompiler.PublishedPath> paths = publishedPaths.find(vmId);
         String currentHash = VmNetworkPolicyHashes.desired(properties, paths, policy.rules());
@@ -128,7 +128,7 @@ public class VmNetworkPolicyRuntimeGate {
                 || policy.appliedGeneration() != policy.desiredGeneration()
                 || !currentHash.equals(policy.desiredHash())
                 || !currentHash.equals(policy.appliedHash())) {
-            throw VmNetworkPolicyStore.unavailable("최신 VM 통신 정책이 적용된 상태가 아닙니다.");
+            throw VmNetworkPolicyStore.unavailable("최신 VM 통신 정책의 적용이 확인되지 않았어요.");
         }
         VmNetworkPolicyCompiler.Plan plan = VmNetworkPolicyCompiler.compile(
                 target.ip(), properties, paths, policy.rules());
@@ -141,11 +141,11 @@ public class VmNetworkPolicyRuntimeGate {
     private Node preparedNode(long vmId) {
         VmNetworkPolicyStore.Target provisional = store.target(vmId, 1370);
         Node node = nodes.findById(provisional.nodeId())
-                .orElseThrow(() -> VmNetworkPolicyStore.unavailable("VM 노드가 존재하지 않습니다."));
+                .orElseThrow(() -> VmNetworkPolicyStore.unavailable("VM 노드를 찾을 수 없어요."));
         node.vmFirewallPolicy().orElseThrow(() -> VmNetworkPolicyStore.unavailable(
-                "노드의 VM 방화벽 정책 준비 label이 없습니다."));
+                "노드의 VM 방화벽 정책 준비 label을 확인할 수 없어요."));
         node.vmNicRequirements().orElseThrow(() -> VmNetworkPolicyStore.unavailable(
-                "노드의 VM NIC 준비 label이 없습니다."));
+                "노드의 VM NIC 준비 label을 확인할 수 없어요."));
         return node;
     }
 
@@ -155,13 +155,13 @@ public class VmNetworkPolicyRuntimeGate {
         if (!target.apiHost().equals(node.getApiHost())
                 || !target.nodeName().equals(node.getName())
                 || !target.bridge().equals(node.getVmBridge())) {
-            throw VmNetworkPolicyStore.unavailable("VM 방화벽 target tuple이 노드 정보와 다릅니다.");
+            throw VmNetworkPolicyStore.unavailable("VM 방화벽 target tuple이 노드 정보와 달라요.");
         }
         return target;
     }
 
     private static RuntimeException busy() {
         return VmNetworkPolicyStore.unavailable(
-                "VM 통신 정책을 다른 작업이 처리 중입니다. 작성 중인 규칙을 유지하고 다시 시도해 주세요.");
+                "다른 작업이 VM 통신 정책을 사용 중이에요. 작성 중인 규칙을 유지하고 다시 시도해 주세요.");
     }
 }

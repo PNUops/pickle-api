@@ -34,7 +34,7 @@ public class GpuReconciliationService {
         GpuMutationService.requireSystemOperator(actor);
         GpuAllocation observed = store.allocation(id).orElseThrow(GpuErrors::notFound);
         if (observed.connectionStatus() != GpuConnectionStatus.ERROR || observed.operationId() == null || observed.vmId() == null) {
-            throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "오류로 멈춘 GPU 작업만 다시 확인할 수 있습니다.");
+            throw GpuErrors.conflict(ErrorCodes.GPU_INVALID_STATE, "오류로 멈춘 GPU 작업만 다시 확인할 수 있어요.");
         }
         var vm = vms.findById(observed.vmId()).orElseThrow(GpuErrors::notFound);
         var gpu = store.gpu(observed.gpuId()).orElseThrow(GpuErrors::notFound);
@@ -47,23 +47,23 @@ public class GpuReconciliationService {
             state = operations.inspect(node, vm);
             state.requireKnown(gpu);
         } catch (RuntimeException e) {
-            throw GpuErrors.conflict(ErrorCodes.GPU_STATE_UNCONFIRMED, "실제 연결 상태를 확인하지 못했습니다. GPU 점유와 가상머신 잠금을 유지합니다.");
+            throw GpuErrors.conflict(ErrorCodes.GPU_STATE_UNCONFIRMED, "실제 연결 상태를 확인하지 못했어요. GPU 점유와 VM 잠금을 유지해요.");
         }
         boolean attached = state.attached(gpu);
         tx.executeWithoutResult(ignored -> {
             GpuAllocation a = store.lock(observed.id());
             if (!observed.operationId().equals(a.operationId()) || a.connectionStatus() != GpuConnectionStatus.ERROR) {
-                throw GpuErrors.conflict(ErrorCodes.GPU_OPERATION_CHANGED, "다른 작업이 상태를 변경했습니다. 다시 확인해 주세요.");
+                throw GpuErrors.conflict(ErrorCodes.GPU_OPERATION_CHANGED, "작업 상태가 바뀌었어요. 다시 확인해 주세요.");
             }
             try { operations.requireUnchangedRemoteProof(a.operationId(), proof); }
-            catch (IllegalStateException e) { throw GpuErrors.conflict(ErrorCodes.GPU_STATE_UNCONFIRMED, "상태 확인 중 원격 작업 기록이 바뀌었습니다. 잠금을 유지합니다."); }
+            catch (IllegalStateException e) { throw GpuErrors.conflict(ErrorCodes.GPU_STATE_UNCONFIRMED, "상태 확인 중 원격 작업 기록이 바뀌었어요. 잠금을 유지해요."); }
             var owners = store.jdbc().queryForList("select power_operation_id from vms where id = ? for update", UUID.class, a.vmId());
             if (owners.isEmpty() || !a.operationId().equals(owners.getFirst())) {
-                throw GpuErrors.conflict(ErrorCodes.GPU_OPERATION_CHANGED, "가상머신 작업 소유권이 바뀌었습니다. 현재 상태를 유지합니다.");
+                throw GpuErrors.conflict(ErrorCodes.GPU_OPERATION_CHANGED, "VM 작업 소유권을 확인할 수 없어요. 현재 상태를 유지해요.");
             }
             int changed = store.jdbc().update("update gpu_operations set phase = 'DONE', step = 'RECONCILED', updated_at = ? where id = ? and phase = 'ERROR'",
                     Timestamp.from(clock.instant()), a.operationId());
-            if (changed != 1) { throw GpuErrors.conflict(ErrorCodes.GPU_OPERATION_IN_PROGRESS, "진행 중인 작업을 확인해야 합니다."); }
+            if (changed != 1) { throw GpuErrors.conflict(ErrorCodes.GPU_OPERATION_IN_PROGRESS, "GPU 작업 상태를 먼저 확인해 주세요."); }
             store.jdbc().update("""
                     update gpu_allocations set connection_status = ?::gpu_connection_status, vm_id = ?,
                         operation_id = null, error = null, attached_at = ?, unattached_since = ?, updated_at = ?

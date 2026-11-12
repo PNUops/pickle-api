@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.OffsetDateTime;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
@@ -20,8 +21,10 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * {@code GET /admin/settings} + {@code PUT /admin/settings/{key}} per contract
@@ -48,6 +51,9 @@ class AdminSettingsTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     private String sysAdminToken;
     private String orgAdminToken;
@@ -103,6 +109,80 @@ class AdminSettingsTest {
                 // present in DB but not whitelisted → visible, read-only
                 .andExpect(jsonPath("$[?(@.key=='adset_internal_probe' && @.valueType=='STRING'"
                         + " && @.editable==false)]").exists());
+    }
+
+    @Test
+    @Transactional
+    void listUsesCurrentKnownHelpWithoutChangingStoredSettings() throws Exception {
+        jdbcTemplate.update("""
+                update settings set description = '이전 릴리스의 안내입니다.',
+                       updated_at = '2001-01-02T03:04:05Z' where key = 'vm_delete_grace_hours'
+                """);
+        jdbcTemplate.update("""
+                insert into settings (key, value, description, updated_at) values
+                    ('adset_custom_help_probe', '"custom"'::jsonb, '직접 관리하는 설명입니다.', '2001-01-02T03:04:05Z'),
+                    ('adset_null_help_probe', 'false'::jsonb, null, '2001-01-02T03:04:05Z'),
+                    ('adset_empty_help_probe', '1'::jsonb, '', '2001-01-02T03:04:05Z')
+                """);
+        jdbcTemplate.update("delete from settings where key = 'maintenance_message'");
+        var before = jdbcTemplate.queryForList("""
+                select key, value::text, description, updated_at from settings order by key
+                """);
+
+        var result = mockMvc.perform(get("/api/v1/admin/settings")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.key=='vm_delete_grace_hours' && @.description=='"
+                        + "본인 삭제를 접수한 뒤 파기까지 기다릴 시간이에요(시간). 관리자만 이 유예 기간에 취소할 수 있어요.'"
+                        + " && @.value==" + graceHoursBackup + " && @.updatedAt=='2001-01-02T03:04:05Z')]")
+                        .exists())
+                .andExpect(jsonPath("$[?(@.key=='adset_custom_help_probe' && @.description=='"
+                        + "직접 관리하는 설명입니다.' && @.editable==false)]").exists())
+                .andExpect(jsonPath("$[?(@.key=='adset_null_help_probe' && @.description=='')]")
+                        .exists())
+                .andExpect(jsonPath("$[?(@.key=='adset_empty_help_probe' && @.description=='')]")
+                        .exists())
+                .andExpect(jsonPath("$[?(@.key=='dev_environment_marker' && @.description=='"
+                        + "개발 또는 테스트 환경으로 새로 만든 DB의 시드 확인 표시.' && @.editable==false)]").exists())
+                .andExpect(jsonPath("$[?(@.key=='maintenance_message')]").isEmpty())
+                .andReturn();
+
+        var returned = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(returned.size()).isEqualTo(before.size());
+        for (int i = 0; i < before.size(); i++) {
+            assertThat(returned.get(i).get("key").asString()).isEqualTo(before.get(i).get("key"));
+        }
+
+        assertThat(jdbcTemplate.queryForList("""
+                select key, value::text, description, updated_at from settings order by key
+                """)).isEqualTo(before);
+    }
+
+    @Test
+    @Transactional
+    void updateReturnsCurrentHelpWithoutRewritingStoredDescription() throws Exception {
+        jdbcTemplate.update("""
+                update settings set description = '이전 릴리스의 안내입니다.',
+                       updated_at = '2001-01-02T03:04:05Z'
+                 where key = 'vm_delete_grace_hours'
+                """);
+
+        mockMvc.perform(put("/api/v1/admin/settings/vm_delete_grace_hours")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\": 200}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.value").value(200))
+                .andExpect(jsonPath("$.description").value(
+                        "본인 삭제를 접수한 뒤 파기까지 기다릴 시간이에요(시간). 관리자만 이 유예 기간에 취소할 수 있어요."));
+
+        assertThat(readValue("vm_delete_grace_hours")).isEqualTo("200");
+        assertThat(jdbcTemplate.queryForObject(
+                "select updated_at from settings where key = 'vm_delete_grace_hours'", OffsetDateTime.class))
+                .isAfter(OffsetDateTime.parse("2001-01-02T03:04:05Z"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select description from settings where key = 'vm_delete_grace_hours'", String.class))
+                .isEqualTo("이전 릴리스의 안내입니다.");
     }
 
     @Test

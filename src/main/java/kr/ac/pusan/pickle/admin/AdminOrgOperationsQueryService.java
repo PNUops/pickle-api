@@ -252,11 +252,11 @@ public class AdminOrgOperationsQueryService {
 
     static ApiException invalidState() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.ORG_OPERATIONS_CONFLICT,
-                "기관 권한 상태를 확인해 주세요", "기관 권한이나 표시 역할이 일치하지 않습니다. 자동으로 권한을 복구하지 않습니다.");
+                "기관 권한 상태를 확인해 주세요", "기관 권한이나 표시 역할이 맞지 않아요. 권한을 자동으로 복구하지 않아요.");
     }
 
     private static ApiException notFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "기관을 찾을 수 없습니다", "조회할 수 있는 기관을 찾을 수 없습니다.");
+        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "기관을 찾을 수 없어요", "조회할 수 있는 기관을 찾을 수 없어요.");
     }
 
     record InstitutionStaffRow(UUID userId, String name, String email, UserStatus status,

@@ -34,12 +34,12 @@ public class ApiException extends RuntimeException {
 
     public static ApiException validationFailed(List<FieldValidationError> errors) {
         return new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.VALIDATION_FAILED,
-                "입력값이 올바르지 않습니다", "요청 값을 확인해 주세요.", errors, null);
+                "입력값을 확인해 주세요", "요청 값을 확인해 주세요.", errors, null);
     }
 
     public static ApiException rateLimited(long retryAfterSeconds) {
         return new ApiException(HttpStatus.TOO_MANY_REQUESTS, ErrorCodes.RATE_LIMITED,
-                "요청이 너무 많습니다", "잠시 후 다시 시도해 주세요.", null, retryAfterSeconds);
+                "요청이 너무 많아요", "잠시 후 다시 시도해 주세요.", null, retryAfterSeconds);
     }
 
     public HttpStatus getStatus() {

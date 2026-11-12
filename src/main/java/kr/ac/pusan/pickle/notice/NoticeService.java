@@ -99,7 +99,7 @@ public class NoticeService {
         List<FieldValidationError> errors = new ArrayList<>();
         Instant startsAt = request.startsAt() == null ? Instant.now() : request.startsAt();
         if (request.endsAt() != null && !request.endsAt().isAfter(startsAt)) {
-            errors.add(new FieldValidationError("endsAt", "게시 종료 시각은 시작 시각보다 뒤여야 합니다."));
+            errors.add(new FieldValidationError("endsAt", "게시 종료 시각은 시작 시각보다 늦게 지정해 주세요."));
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
@@ -133,7 +133,7 @@ public class NoticeService {
 
         List<FieldValidationError> errors = new ArrayList<>();
         if (endsAt != null && !endsAt.isAfter(startsAt)) {
-            errors.add(new FieldValidationError("endsAt", "게시 종료 시각은 시작 시각보다 뒤여야 합니다."));
+            errors.add(new FieldValidationError("endsAt", "게시 종료 시각은 시작 시각보다 늦게 지정해 주세요."));
         }
         if (request.isTitleSet() && Texts.blankToNull(request.getTitle()) == null) {
             errors.add(new FieldValidationError("title", "제목을 입력해 주세요."));
@@ -204,8 +204,8 @@ public class NoticeService {
         }
         if (noticeImageStore.count(notice.getId()) >= NoticeImageTypes.MAX_PER_NOTICE) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.NOTICE_IMAGE_LIMIT_EXCEEDED,
-                    "이미지를 더 첨부할 수 없습니다",
-                    "공지 하나에 첨부할 수 있는 이미지는 " + NoticeImageTypes.MAX_PER_NOTICE + "장까지입니다.");
+                    "이미지를 더 첨부할 수 없어요",
+                    "공지 하나에 첨부할 수 있는 이미지는 " + NoticeImageTypes.MAX_PER_NOTICE + "장까지예요.");
         }
         byte[] bytes = read(file);
         if (bytes.length > NoticeImageTypes.MAX_BYTES) {
@@ -215,8 +215,8 @@ public class NoticeService {
         // leading bytes say it is, and anything off the whitelist is refused.
         String contentType = NoticeImageTypes.sniff(bytes)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNPROCESSABLE_CONTENT,
-                        ErrorCodes.NOTICE_IMAGE_TYPE_UNSUPPORTED, "지원하지 않는 이미지 형식입니다",
-                        "PNG, JPEG, WebP, GIF 이미지만 첨부할 수 있습니다."));
+                        ErrorCodes.NOTICE_IMAGE_TYPE_UNSUPPORTED, "지원하지 않는 이미지 형식이에요",
+                        "PNG와 JPEG, WebP, GIF 이미지만 첨부할 수 있어요."));
         NoticeImageMeta stored = noticeImageStore.store(notice.getId(),
                 Texts.sanitizeReported(file.getOriginalFilename(), 255), contentType, bytes);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
@@ -231,7 +231,7 @@ public class NoticeService {
         actor = currentWriter(actor);
         Notice notice = writable(noticeId);
         if (!noticeImageStore.delete(notice.getId(), imageId)) {
-            throw notFound("해당 이미지가 존재하지 않습니다.");
+            throw notFound("해당 이미지를 찾을 수 없어요.");
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.NOTICE_IMAGE_DELETE, "notice", notice.getPublicId(),
@@ -257,14 +257,14 @@ public class NoticeService {
                 && !authorization.decision(current, InstitutionWork.NOTICE_MANAGE,
                         InstitutionWorkTarget.global()).allowed()) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "공지를 관리할 권한이 없습니다.");
+                    "접근 권한이 없어요", "공지를 관리할 권한이 없어요.");
         }
         return current;
     }
 
     private Notice writable(UUID noticeId) {
         return noticeRepository.findByPublicId(noticeId)
-                .orElseThrow(() -> notFound("해당 공지가 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 공지를 찾을 수 없어요."));
     }
 
     private AdminNoticeView view(Notice notice) {
@@ -287,17 +287,17 @@ public class NoticeService {
             return file.getBytes();
         } catch (IOException broken) {
             throw ApiException.validationFailed(List.of(
-                    new FieldValidationError("file", "이미지를 읽지 못했습니다. 다시 첨부해 주세요.")));
+                    new FieldValidationError("file", "이미지를 읽지 못했어요. 다시 첨부해 주세요.")));
         }
     }
 
     private static ApiException imageTooLarge() {
         return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, ErrorCodes.NOTICE_IMAGE_TOO_LARGE,
-                "이미지가 너무 큽니다", "이미지 한 장은 2 MiB까지 첨부할 수 있습니다.");
+                "이미지가 너무 커요", "이미지 한 장은 2 MiB까지 첨부할 수 있어요.");
     }
 
     private static ApiException notFound(String detail) {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", detail);
+                "리소스를 찾을 수 없어요", detail);
     }
 }

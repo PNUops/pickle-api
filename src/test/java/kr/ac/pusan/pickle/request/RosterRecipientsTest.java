@@ -286,7 +286,7 @@ class RosterRecipientsTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select body from notifications where user_id = ? and event = 'request.approved' and link_path = ?
                 """, String.class, orgAdmin().getId(), "/console/requests/" + created.get("id").asString()))
-                .contains("대상자 1명 중 1명의 리소스는 생성 대기열에 들어갔습니다.");
+                .contains("대상자 1명 중 1명의 리소스는 생성 대기열에 들어갔어요.");
     }
 
     /** Only people the submission really added or invited are charged, not 학번 already settled. */

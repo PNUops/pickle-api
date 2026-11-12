@@ -1176,7 +1176,7 @@ class AdminBulkChangeTest {
         mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", custom) + "/verify")
                         .header("Authorization", "Bearer " + orgManagerToken))
                 .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.message").value("소유권 재검증을 접수했습니다. 잠시 후 상태가 갱신됩니다."));
+                .andExpect(jsonPath("$.message").value("소유권 재검증 요청을 접수했어요."));
         long platform = platformDomain(orgA.getId(), workspaceA, false);
         mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", platform) + "/verify")
                         .header("Authorization", "Bearer " + orgManagerToken))
@@ -1186,7 +1186,7 @@ class AdminBulkChangeTest {
                         + "/force-release").header("Authorization", "Bearer " + orgManagerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value(
-                        "도메인을 강제 해제했습니다. 라우트 제거가 곧 적용되며, 이름은 즉시 회수됩니다."));
+                        "도메인을 강제 해제하고 이름을 반환했어요. 라우트와 플랫폼이 관리하는 DNS 레코드의 정리는 비동기로 진행해요."));
         mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", external)
                         + "/force-release").header("Authorization", "Bearer " + orgManagerToken))
                 .andExpect(status().isNotFound());

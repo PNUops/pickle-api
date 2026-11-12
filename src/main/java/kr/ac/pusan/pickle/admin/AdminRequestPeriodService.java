@@ -81,11 +81,11 @@ public class AdminRequestPeriodService {
     public AdminRequestPeriodResponse update(AuthenticatedUser actor, UUID periodId,
             UpdateRequestPeriodRequest request, String ip) {
         RequestPeriodPreset preset = repository.findByPublicId(periodId)
-                .orElseThrow(() -> notFound("해당 사용 기간이 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 사용 기간을 찾을 수 없어요."));
         if (request.displayName() == null && request.endDate() == null
                 && request.status() == null && request.displayOrder() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("displayName",
-                    "변경할 필드를 최소 1개 지정해야 합니다.")));
+                    "변경할 필드를 1개 이상 지정해 주세요.")));
         }
 
         Map<String, Object> changes = new LinkedHashMap<>();
@@ -116,11 +116,11 @@ public class AdminRequestPeriodService {
 
     private static ApiException nameTaken() {
         return ApiException.validationFailed(List.of(
-                new FieldValidationError("name", "이미 사용 중인 기간 이름입니다.")));
+                new FieldValidationError("name", "이미 사용 중인 기간 이름이에요.")));
     }
 
     private static ApiException notFound(String detail) {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", detail);
+                "리소스를 찾을 수 없어요", detail);
     }
 }

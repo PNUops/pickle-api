@@ -60,7 +60,7 @@ public class NodePlacementService {
             Node node = nodeRepository.findById(forcedNodeId)
                     .filter(n -> n.getStatus() == NodeStatus.ACTIVE)
                     .orElseThrow(() -> new IllegalStateException(
-                            "관리자 지정 노드 " + forcedNodeId + "를 사용할 수 없습니다"));
+                            "관리자 지정 노드 " + forcedNodeId + " 항목을 사용할 수 없어요"));
             // Backstop for approval-time validation: the image can be
             // deactivated between approval and provisioning. Fail here — the
             // same IllegalStateException the no-candidate path throws, so the
@@ -71,7 +71,7 @@ public class NodePlacementService {
                     .filter(candidate -> OsImageReplicaResolver.compatible(image, candidate))
                     .isEmpty()) {
                 throw new IllegalStateException("관리자 지정 노드 " + node.getId()
-                        + "에 OS 이미지 " + image.getName() + "이(가) 없습니다");
+                        + "에 OS 이미지 " + image.getName() + " 항목이 없어요");
             }
             log.info("placement for vm {}: admin-forced node {} ({})", vm.getId(), node.getId(),
                     node.getName());
@@ -94,7 +94,7 @@ public class NodePlacementService {
                     return node;
                 })
                 .orElseThrow(() -> new IllegalStateException(
-                        "요청 사양을 수용할 수 있는 노드가 없습니다 (OS 이미지 " + image.getName() + ")"));
+                        "요청 사양을 수용할 수 있는 노드가 없어요 (OS 이미지 " + image.getName() + ")"));
     }
 
     private boolean hasMemoryHeadroom(Node node, Vm vm) {

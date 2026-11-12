@@ -30,7 +30,7 @@ public class LifecycleActors {
     private AuthenticatedUser enforceMfa(AuthenticatedUser current) {
         if (mfaProperties.enforceAdmin() && current.role().isSysTier() && !mfaService.isEnrolled(current.id())) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.MFA_ENROLLMENT_REQUIRED,
-                    "2단계 인증 등록이 필요합니다", "관리자 계정은 2단계 인증 등록 후 이용할 수 있습니다.");
+                    "2단계 인증 등록이 필요해요", "2단계 인증을 등록한 뒤 다시 요청해 주세요.");
         }
         return current;
     }

@@ -82,7 +82,7 @@ public class DomainRequestSupport implements RequestTypeHandler {
             issuancePolicy.requireIssuable(root);
         } catch (RuntimeException refused) {
             errors.add(new FieldValidationError("domain.rootDomain",
-                    "이 루트 도메인으로는 지금 이름을 발급할 수 없습니다."));
+                    "이 루트 도메인으로는 지금 이름을 발급할 수 없어요."));
             return;
         }
         String fqdn = label + "." + root;
@@ -97,8 +97,8 @@ public class DomainRequestSupport implements RequestTypeHandler {
             boolean theirs = held.getReleasedAt() != null
                     && workspaceOf(form).map(id -> id.equals(held.getWorkspaceId())).orElse(false);
             errors.add(new FieldValidationError("domain.label", theirs
-                    ? "이 워크스페이스가 예약 중인 이름입니다. 도메인 목록에서 되살려 주세요."
-                    : "이미 사용 중인 이름입니다."));
+                    ? "이 워크스페이스가 예약 중인 이름이에요. 외부 도메인은 도메인 상세에서 되살리고, VM에 연결했던 이름은 같은 VM에서 다시 연결해 주세요."
+                    : "이미 사용 중인 이름이에요."));
             return;
         }
         // The cap, at submission as well as at creation. It is counted under a
@@ -118,8 +118,8 @@ public class DomainRequestSupport implements RequestTypeHandler {
             if (standing + (queued == null ? 0 : queued)
                     >= DnsDomainService.DEFAULT_DOMAINS_PER_WORKSPACE) {
                 errors.add(new FieldValidationError("domain.label",
-                        "이 워크스페이스가 가질 수 있는 도메인 수를 다 썼습니다. 검토를 기다리는 신청도 "
-                                + "함께 셉니다. 해제한 이름도 예약 기간 동안은 자리를 차지합니다."));
+                        "이 워크스페이스의 도메인 한도에 도달했어요. "
+                                + "검토를 기다리는 신청과 예약 중인 이름도 개수에 포함돼요."));
             }
         });
         // Two requests for one name is the collision this catches. Nothing
@@ -134,7 +134,7 @@ public class DomainRequestSupport implements RequestTypeHandler {
                 """, Integer.class, label, root);
         if (pending != null && pending > 0) {
             errors.add(new FieldValidationError("domain.label",
-                    "다른 신청이 검토를 기다리고 있는 이름입니다."));
+                    "다른 신청이 검토를 기다리는 이름이에요."));
         }
     }
 

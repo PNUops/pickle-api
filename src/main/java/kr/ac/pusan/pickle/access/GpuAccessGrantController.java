@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "gpu-access",
-        description = "GPU 접근 권한 — 이 GPU에 누가 접근할 수 있는지를 정합니다.")
+        description = "이 GPU에 누가 접근할 수 있는지 정해요.")
 @RestController
 @RequestMapping("/api/v1/gpu-allocations/{allocationId}/access")
 public class GpuAccessGrantController {
@@ -38,8 +38,8 @@ public class GpuAccessGrantController {
 
     @GetMapping
     @Operation(summary = "접근 권한 목록",
-            description = "이 GPU의 접근 권한 전체와, 그 목록이 어느 GPU의 것인지 알려 주는 최소 정보입니다. "
-                    + "GPU 소유자와 워크스페이스 소유자만 볼 수 있습니다.")
+            description = "이 GPU의 접근 권한 전체와 대상 GPU를 구분하는 최소 정보예요. "
+                    + "GPU 소유자와 워크스페이스 소유자만 볼 수 있어요.")
     public ResourceAccessListResponse listGpuAllocationAccessGrants(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID allocationId) {
@@ -49,9 +49,9 @@ public class GpuAccessGrantController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "접근 권한 부여",
-            description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 GPU의 접근 권한을 부여합니다. "
+            description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 GPU의 접근 권한을 부여해요. "
                     + "사용자는 이 GPU를 소유한 워크스페이스의 구성원이어야 하고, 워크스페이스 전체에는 "
-                    + "참여자·열람자까지만 부여할 수 있습니다.")
+                    + "참여자나 열람자 권한까지만 부여할 수 있어요.")
     public ResourceAccessGrantView addGpuAllocationAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID allocationId,
@@ -76,7 +76,7 @@ public class GpuAccessGrantController {
     @DeleteMapping("/{grantId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "접근 권한 회수",
-            description = "접근 권한만 회수하며 연결된 가상머신은 재시작하지 않습니다.")
+            description = "접근 권한만 회수하며 연결된 가상머신은 재시작하지 않아요.")
     public void removeGpuAllocationAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID allocationId,

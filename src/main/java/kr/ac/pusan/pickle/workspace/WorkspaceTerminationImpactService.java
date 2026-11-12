@@ -82,7 +82,7 @@ public class WorkspaceTerminationImpactService {
                 .filter(found -> found.getWorkspaceId().equals(workspace.getId()))
                 .filter(found -> found.getStatus() == WorkspaceInvitationStatus.PENDING)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.WORKSPACE_INVITATION_NOT_FOUND,
-                        "초대를 찾을 수 없습니다", "대기 중인 초대가 아닙니다. 이미 수락되었거나 취소되었을 수 있습니다."));
+                        "초대를 찾을 수 없어요", "이 워크스페이스에서 대기 중인 초대를 찾을 수 없어요. 초대 목록을 다시 확인해 주세요."));
         return observe(actor, workspace, invitation, support, page, size, resourcePage);
     }
 
@@ -95,7 +95,7 @@ public class WorkspaceTerminationImpactService {
             kr.ac.pusan.pickle.security.institution.InstitutionWork work) {
         if (users.findById(actor.id()).map(user -> user.getStatus()).orElse(null) != UserStatus.ACTIVE) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
-                    "인증이 필요합니다", "현재 활성 계정으로 다시 로그인해 주세요.");
+                    "인증이 필요해요", "현재 활성 계정으로 다시 로그인해 주세요.");
         }
 
         Workspace workspace = workspaces.findByPublicIdAndDeletedAtIsNull(publicId).orElseThrow(WorkspaceTerminationImpactService::notFound);
@@ -104,7 +104,7 @@ public class WorkspaceTerminationImpactService {
             WorkspaceMember membership = members.findByWorkspaceIdAndUserId(workspace.getId(), actor.id()).orElseThrow(WorkspaceTerminationImpactService::notFound);
             if (membership.getRole() != WorkspaceMemberRole.OWNER) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                        "종료 영향을 조회할 권한이 없습니다", "워크스페이스의 현재 OWNER만 종료 영향을 조회할 수 있습니다.");
+                        "종료 영향을 조회할 권한이 없어요", "워크스페이스의 현재 OWNER만 종료 영향을 조회할 수 있어요.");
             }
         }
         return workspace;
@@ -113,7 +113,7 @@ public class WorkspaceTerminationImpactService {
     private WorkspaceTerminationImpactResponse observe(AuthenticatedUser actor, Workspace workspace,
             @Nullable WorkspaceInvitation invitation, boolean support, int page, int size, int resourcePage) {
         if (page < 0 || resourcePage < 0 || size < 1 || size > 100) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("page", "페이지는 0 이상, 크기는 1에서 100 사이여야 합니다.")));
+            throw ApiException.validationFailed(List.of(new FieldValidationError("page", "페이지는 0 이상, 크기는 1~100으로 지정해 주세요.")));
         }
         boolean deleting = invitation == null;
         String condition = deleting ? "r.workspace_id = ?" : "r.workspace_id = ? and rr.invitation_id = ?";
@@ -323,6 +323,6 @@ public class WorkspaceTerminationImpactService {
     }
 
     private static ApiException notFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다", "해당 워크스페이스가 존재하지 않습니다.");
+        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요", "해당 워크스페이스를 찾을 수 없어요.");
     }
 }

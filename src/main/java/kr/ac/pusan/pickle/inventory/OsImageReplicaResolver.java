@@ -20,7 +20,7 @@ public class OsImageReplicaResolver {
                         granted.getName(), granted.getVersion(), nodeId, CatalogStatus.ACTIVE)
                 .filter(candidate -> compatible(granted, candidate))
                 .orElseThrow(() -> new IllegalStateException(
-                        "선택한 노드에 승인된 OS 이미지와 동일한 버전이 없습니다 ("
+                        "선택한 노드에 승인된 OS 이미지와 같은 버전이 없어요 ("
                                 + granted.getName() + ", 버전 " + granted.getVersion() + ")"));
     }
 

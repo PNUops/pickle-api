@@ -14,11 +14,11 @@ import org.jspecify.annotations.Nullable;
  */
 public record UpdateCampusIpRequestStatusRequest(
         @NotNull
-        @Schema(description = "전환할 상태 (APPROVED = 승인, GRANTED = 교내 IP 연결 완료, "
+        @Schema(description = "전환할 상태 (APPROVED = 승인, GRANTED = 교내 IP 주소 등록, "
                 + "REJECTED = 반려, REVOKED = 회수)")
         CampusIpRequestStatus status,
         @Nullable @Size(max = 45)
-        @Schema(description = "연결한 교내 IP 주소 (GRANTED 전환 시 필수, 10.0.0.0/8 대역)")
+        @Schema(description = "등록할 교내 IP 주소 (GRANTED 전환 시 필수, 10.0.0.0/8 대역)")
         String grantedAddress,
         @Nullable @Size(max = 1000)
         @Schema(description = "관리자 메모 (신청자 알림에 포함)")

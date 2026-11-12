@@ -91,10 +91,10 @@ public class AdminNotificationService {
                     notificationId);
             if (found == null || found == 0) {
                 throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "리소스를 찾을 수 없습니다", "해당 알림이 존재하지 않습니다.");
+                        "리소스를 찾을 수 없어요", "해당 알림을 찾을 수 없어요.");
             }
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.NOTIFICATION_NOT_RESENDABLE,
-                    "재발송할 수 없는 알림입니다", "발송에 실패한(FAILED) 알림만 재발송할 수 있습니다.");
+                    "재발송할 수 없는 알림이에요", "발송에 실패한(FAILED) 알림만 재발송할 수 있어요.");
         }
         jdbcTemplate.update("""
                 update mail_deliveries set state = 'PENDING', next_attempt_at = now(), bundle = false,
@@ -102,7 +102,7 @@ public class AdminNotificationService {
                 """, notificationId);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.NOTIFICATION_RESEND, "notification", notificationId, Map.of(), ip);
-        return new MessageResponse("알림 재발송을 접수했습니다. 잠시 후 발송 상태가 갱신됩니다.");
+        return new MessageResponse("알림 재발송 요청을 접수했어요.");
     }
 
     private static AdminNotificationResponse mapRow(ResultSet rs, int rowNum) throws SQLException {

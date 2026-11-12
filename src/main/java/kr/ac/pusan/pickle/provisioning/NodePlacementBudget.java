@@ -15,7 +15,7 @@ public final class NodePlacementBudget {
 
     private NodePlacementBudget(long cpuThreads, long memoryMb, @Nullable Long diskGb, boolean reservationAware) {
         if (cpuThreads <= 0 || memoryMb <= 0 || (diskGb != null && diskGb <= 0)) {
-            throw new IllegalStateException("노드의 배치 가능 용량을 확인할 수 없습니다.");
+            throw new IllegalStateException("노드의 배치 가능 용량을 확인할 수 없어요.");
         }
         this.cpuThreads = cpuThreads;
         this.memoryMb = memoryMb;

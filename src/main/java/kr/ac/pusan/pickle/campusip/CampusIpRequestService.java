@@ -142,7 +142,7 @@ public class CampusIpRequestService {
                 .filter(row -> row.getVmId() == vmId)
                 .orElseThrow(CampusIpRequestService::requestNotFound);
         if (request.getStatus() != CampusIpRequestStatus.REQUESTED) {
-            throw invalidTransition("검토가 시작되기 전(REQUESTED)의 신청만 취소할 수 있습니다.");
+            throw invalidTransition("REQUESTED 상태의 신청만 취소할 수 있어요.");
         }
         requestRepository.delete(request);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
@@ -191,20 +191,20 @@ public class CampusIpRequestService {
         CampusIpRequestStatus from = request.getStatus();
         CampusIpRequestStatus to = body.status();
         if (!isLegalTransition(from, to)) {
-            throw invalidTransition("'" + from + "'에서 '" + to + "'(으)로 전환할 수 없습니다.");
+            throw invalidTransition("'" + from + "' 상태에서 '" + to + "' 상태로 바꿀 수 없어요.");
         }
         if (to == CampusIpRequestStatus.GRANTED) {
             String address = Texts.blankToNull(body.grantedAddress());
             if (address == null || !IPV4.matcher(address).matches()) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError(
-                        "grantedAddress", "GRANTED 전환에는 올바른 IPv4 주소가 필요합니다.")));
+                        "grantedAddress", "GRANTED 상태로 바꾸려면 올바른 IPv4 주소를 입력해 주세요.")));
             }
             // Campus addresses live in 10.0.0.0/8; anything else is a typo or
             // a wrong network, and recording it would advertise an address the
             // VM is not actually reachable at.
             if (!address.startsWith(CAMPUS_PREFIX)) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError(
-                        "grantedAddress", "교내 IP는 10.0.0.0/8 대역의 주소여야 합니다.")));
+                        "grantedAddress", "교내 IP는 10.0.0.0/8 대역의 주소로 입력해 주세요.")));
             }
             request.setGrantedAddress(address);
         }
@@ -284,13 +284,13 @@ public class CampusIpRequestService {
             Integer port = ports.get(i);
             if (port == null || port < 1 || port > 65535) {
                 errors.add(new FieldValidationError("ports[" + i + "]",
-                        "포트는 1~65535 범위여야 합니다."));
+                        "포트는 1~65535 범위로 입력해 주세요."));
             } else {
                 normalized.add(port);
             }
         }
         if (normalized.size() > 32) {
-            errors.add(new FieldValidationError("ports", "포트는 최대 32개까지 신청할 수 있습니다."));
+            errors.add(new FieldValidationError("ports", "포트는 최대 32개까지 신청할 수 있어요."));
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
@@ -338,23 +338,23 @@ public class CampusIpRequestService {
 
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, UUID vmId) {
         return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
-                "교내 IP를 신청할 권한이 없습니다",
-                "이 VM의 소유자 또는 편집자만 교내 IP를 신청할 수 있습니다.");
+                "교내 IP 신청을 관리할 권한이 없어요",
+                "이 VM의 소유자나 편집자만 교내 IP 신청을 관리할 수 있어요.");
     }
 
     private static ApiException liveRequestExists() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.CAMPUS_IP_REQUEST_EXISTS,
-                "이미 진행 중인 신청이 있습니다",
-                "이 VM에는 진행 중인 교내 IP 신청이 이미 있습니다. 기존 신청이 끝난 뒤 다시 신청해 주세요.");
+                "이미 진행 중인 신청이 있어요",
+                "이 VM에 진행 중인 교내 IP 신청이 있어요. 기존 신청의 상태를 확인해 주세요.");
     }
 
     private static ApiException invalidTransition(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.CAMPUS_IP_INVALID_TRANSITION,
-                "전환할 수 없는 상태입니다", detail);
+                "바꿀 수 없는 상태예요", detail);
     }
 
     private static ApiException requestNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 교내 IP 신청이 존재하지 않습니다.");
+                "리소스를 찾을 수 없어요", "해당 교내 IP 신청을 찾을 수 없어요.");
     }
 }

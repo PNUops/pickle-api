@@ -32,7 +32,7 @@ public class SourcePolicyProducer {
         }
         if (!properties.enabled()) {
             throw new SourcePolicyUnavailableException(
-                    "출발지 정책 기능이 꺼져 있어 저장된 정책을 적용할 수 없습니다.");
+                    "출발지 정책 기능이 꺼져 있어 저장된 정책을 적용할 수 없어요.");
         }
         return Optional.of(new SourcePolicyWire(stored.map(Stored::allowedCidrs).orElse(List.of())));
     }

@@ -34,8 +34,8 @@ public class AdminUserSupportController {
 
     @GetMapping("/support")
     @Operation(summary = "사용자의 관계와 실제 신청 결과 조회",
-            description = "학생 지원과 관계별 조회 업무·대상 범위로 구성원·초대·신청·리소스 관계를 조회합니다. 기관은 선택 필터입니다. "
-                    + "저장된 학번과 대기 초대의 연결, 생성 대기와 실제 리소스 상태를 구분합니다.")
+            description = "학생 지원과 관계별 조회 업무 및 대상 범위에 따라 구성원과 초대, 신청, 리소스 관계를 조회해요. 기관은 선택 필터예요. "
+                    + "저장된 학번과 대기 초대의 연결, 생성 대기와 실제 리소스 상태를 구분해요.")
     public AdminUserSupportResponse getAdminUserSupport(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID userId, @RequestParam(required = false) UUID orgId) {
         return support.support(actor, userId, orgId);
@@ -43,8 +43,8 @@ public class AdminUserSupportController {
 
     @GetMapping("/support/access")
     @Operation(summary = "사용자와 리소스의 공통 접근 조건 조회",
-            description = "접근 목록 읽기 업무와 대상 범위로 지정 리소스의 구성원·부여·공통 상태를 설명합니다. "
-                    + "학생 지원과 독립적인 진단은 연결된 계정의 최소 상태를 제공하며 실제 사용자 인가와 연결 상태는 변경하지 않습니다.")
+            description = "접근 목록 읽기 업무와 대상 범위에 따라 지정 리소스의 구성원과 부여, 공통 상태를 설명해요. "
+                    + "학생 지원과 독립적인 진단은 연결된 계정의 최소 상태를 제공하며 실제 사용자 인가와 연결 상태는 바꾸지 않아요.")
     public AdminUserResourceAccessResponse getAdminUserResourceAccess(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID userId, @RequestParam(required = false) UUID orgId,
             @RequestParam ResourceType type, @RequestParam UUID resourceId) {
@@ -55,8 +55,8 @@ public class AdminUserSupportController {
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     @Operation(summary = "프로필 정정과 계정 활성화의 초대 영향 미리보기",
             description = "제안된 프로필 또는 복원할 계정 상태에서 수락 가능한 초대와 가입 대기 신청의 다음 상태를 "
-                    + "조회합니다. 프로필 정정 업무를 가진 기관 계정과 시스템 관리자가 정정을 미리보며 계정 활성화 미리보기는 시스템 관리자만 수행합니다. "
-                    + "값을 저장하거나 초대를 수락하지 않습니다. 미리보기는 예약이 아니며 생성 대기는 실제 생성 완료가 아닙니다.")
+                    + "조회해요. 프로필 정정 업무를 가진 기관 계정과 시스템 관리자가 정정을 미리 보며 계정 활성화 미리보기는 시스템 관리자만 수행해요. "
+                    + "값을 저장하거나 초대를 수락하지 않아요. 미리보기는 예약이 아니며 생성 대기는 실제 생성 완료가 아니에요.")
     public AdminUserProfileImpactResponse previewAdminUserProfileImpact(@AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable UUID userId, @Valid @RequestBody AdminUserProfileImpactRequest request) {
         return impact.preview(actor, userId, request);

@@ -89,7 +89,7 @@ public class RequestRecipientCancellationService {
         entities.refresh(recipient);
         String reason = input.reason() == null ? "" : input.reason().strip();
         if (reason.isBlank() || reason.length() > 500) {
-            throw ApiException.validationFailed(List.of(new kr.ac.pusan.pickle.common.error.FieldValidationError("reason", "취소 사유는 1자에서 500자 사이여야 합니다.")));
+            throw ApiException.validationFailed(List.of(new kr.ac.pusan.pickle.common.error.FieldValidationError("reason", "취소 사유는 1~500자로 입력해 주세요.")));
         }
         List<StoredReceipt> saved = storedReceipts(List.of(recipient));
         if (!saved.isEmpty()) {
@@ -98,7 +98,7 @@ public class RequestRecipientCancellationService {
                     && previous.support() == support && previous.receipt().reason().equals(reason)
                     && input.confirmation() != null && input.confirmation().confirmed()
                     && previous.fingerprint().equals(input.confirmation().fingerprint())) return previous.receipt();
-            throw conflict("이미 다른 내용으로 취소된 대상자입니다. 신청 상세에서 기존 결과를 확인해 주세요.");
+            throw conflict("이미 다른 내용으로 취소된 대상자예요. 신청 상세에서 기존 결과를 확인해 주세요.");
         }
         var impact = impact(actor, request, workspace, recipient, support);
         TerminationConfirmations.requireConfirmed(impact.fingerprint(), input.confirmation());
@@ -159,7 +159,7 @@ public class RequestRecipientCancellationService {
             boolean owner = actor != null && owned.contains(request.getWorkspaceId());
             boolean support = actor != null && supportAuthority(actor, request.getWorkspaceId());
             out.put(row.getPublicId(), new RequestRecipientCancellationCapability(blocked == null && owner,
-                    blocked == null && support, blocked != null ? blocked : !owner && !support ? "현재 OWNER 또는 지원 쓰기 권한이 필요합니다." : null));
+                    blocked == null && support, blocked != null ? blocked : !owner && !support ? "워크스페이스의 현재 OWNER이거나 지원 쓰기 권한이 있어야 해요." : null));
         }
         return out;
     }
@@ -213,23 +213,23 @@ public class RequestRecipientCancellationService {
     }
 
     private static @Nullable String blocked(Request request, boolean deleted, RequestRecipient recipient, Registration registration) {
-        if (deleted) return "삭제된 워크스페이스의 대상자는 취소할 수 없습니다.";
+        if (deleted) return "삭제된 워크스페이스의 대상자는 취소할 수 없어요.";
         if (request.getStatus() != RequestStatus.APPROVED || request.getResourceType() != ResourceType.VM && request.getResourceType() != ResourceType.LLM_API_KEY)
-            return "승인된 VM 또는 LLM 키 명단의 대상자만 취소할 수 있습니다.";
-        if (recipient.getResourceId() != null) return "자원 연결이 있는 대상자입니다. 기존 자원 상세에서 삭제 또는 폐기 경로를 확인해 주세요.";
-        if (registration.ambiguous()) return "신청에 귀속을 확인할 수 없는 등록 자원이 있습니다. 기존 자원 상세에서 연결과 삭제 또는 폐기 경로를 확인해 주세요.";
+            return "VM 또는 LLM 키 신청이 승인된 경우에만 대상자를 취소할 수 있어요.";
+        if (recipient.getResourceId() != null) return "자원 연결이 있는 대상자예요. 기존 자원 상세에서 삭제 또는 폐기 경로를 확인해 주세요.";
+        if (registration.ambiguous()) return "신청에 귀속을 확인할 수 없는 등록 자원이 있어요. 기존 자원 상세에서 연결과 삭제 또는 폐기 경로를 확인해 주세요.";
         if (!List.of(RequestRecipientStatus.PENDING_JOIN, RequestRecipientStatus.QUEUED, RequestRecipientStatus.FAILED).contains(recipient.getStatus()))
-            return "가입 또는 생성 대기와 자원 등록 전 실패 대상자만 취소할 수 있습니다.";
+            return "가입 대기, 생성 대기 또는 자원 등록 전 실패 상태의 대상자만 취소할 수 있어요.";
         return null;
     }
 
     private void requireAuthority(AuthenticatedUser actor, Workspace workspace, boolean support) {
         if (support) {
             if (!supportAuthority(actor, workspace.getId())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "이 워크스페이스의 대상자 취소 권한이 없습니다.");
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "이 워크스페이스의 대상자 취소 권한이 없어요.");
             }
         } else if (!owner(actor.id(), workspace.getId())) throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                "생성 대기를 취소할 권한이 없습니다", "워크스페이스의 현재 실제 OWNER만 생성 대기를 취소할 수 있습니다.");
+                "생성 대기를 취소할 권한이 없어요", "워크스페이스의 현재 OWNER만 생성 대기를 취소할 수 있어요.");
     }
     private boolean supportAuthority(AuthenticatedUser actor, long workspaceId) {
         if (actor.role() == UserRole.SYS_ADMIN) { return true; }
@@ -245,9 +245,9 @@ public class RequestRecipientCancellationService {
         catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
     private static ApiException conflict(@Nullable String reason) {
-        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_RECIPIENT_NOT_CANCELABLE, "생성 대기를 취소할 수 없습니다", reason);
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_RECIPIENT_NOT_CANCELABLE, "생성 대기를 취소할 수 없어요", reason);
     }
     private static ApiException notFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "대상자를 찾을 수 없습니다", "해당 신청 대상자가 존재하지 않습니다.");
+        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "대상자를 찾을 수 없어요", "해당 신청 대상자를 찾을 수 없어요.");
     }
 }

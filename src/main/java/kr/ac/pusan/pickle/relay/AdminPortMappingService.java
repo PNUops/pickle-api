@@ -185,7 +185,7 @@ public class AdminPortMappingService {
             String reason, String ip) {
         PortMapping mapping = requireMapping(mappingId);
         if (mapping.getStatus() != PortMappingStatus.ACTIVE) {
-            throw mappingStateConflict("이미 정지된 매핑입니다.");
+            throw mappingStateConflict("ACTIVE 상태의 매핑만 정지할 수 있어요.");
         }
         boolean managed = networkPaths.retirePort(mapping.getVmId(), mapping.getId(),
                 VmNetworkPathOperationStore.Action.SUSPEND);
@@ -220,7 +220,7 @@ public class AdminPortMappingService {
             String ip) {
         PortMapping mapping = requireMapping(mappingId);
         if (mapping.getStatus() != PortMappingStatus.SUSPENDED) {
-            throw mappingStateConflict("정지 상태의 매핑이 아닙니다.");
+            throw mappingStateConflict("정지 상태의 매핑이 아니에요.");
         }
         boolean managed = networkPaths.managed(mapping.getVmId());
         long generation;
@@ -286,7 +286,7 @@ public class AdminPortMappingService {
                         "vmId", auditIds.vm(mapping.getVmId()),
                         "proto", mapping.getProto().name(),
                         "publicPort", mapping.getPublicPort()), ip);
-        return new MessageResponse("매핑을 삭제했습니다. 잠시 후 릴레이에서 제거됩니다.");
+        return new MessageResponse("매핑 삭제 요청을 접수했어요.");
     }
 
     // ── guards ───────────────────────────────────────────────────────────────
@@ -315,8 +315,8 @@ public class AdminPortMappingService {
                     && value.asInt() <= GUARD_VALUE_MAX) {
                 parsed = value.asInt();
             } else {
-                errors.add(new FieldValidationError(field, field + "는 0 이상 " + GUARD_VALUE_MAX
-                        + " 이하의 정수 또는 null이어야 합니다."));
+                errors.add(new FieldValidationError(field, field + " 항목에는 0 이상 " + GUARD_VALUE_MAX
+                        + " 이하의 정수나 null을 입력해 주세요."));
                 continue;
             }
             changes.put(field, parsed == null ? "null" : parsed);
@@ -334,7 +334,7 @@ public class AdminPortMappingService {
         }
         if (changes.isEmpty()) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("body",
-                    "변경할 가드 항목을 최소 1개 지정해야 합니다.")));
+                    "변경할 가드 항목을 1개 이상 지정해 주세요.")));
         }
         // Cross-field constraint on the RESULTING state: the agent refuses a
         // burst without a positive matching rate (and a strict applier refuses
@@ -344,12 +344,12 @@ public class AdminPortMappingService {
         if (mapping.getNewConnBurst() != null
                 && (mapping.getNewConnRate() == null || mapping.getNewConnRate() <= 0)) {
             pairErrors.add(new FieldValidationError("newConnBurst",
-                    "newConnBurst는 newConnRate가 0보다 큰 값일 때만 지정할 수 있습니다."));
+                    "newConnBurst는 newConnRate가 0보다 클 때만 지정할 수 있어요."));
         }
         if (mapping.getPerSourceBurst() != null
                 && (mapping.getPerSourceRate() == null || mapping.getPerSourceRate() <= 0)) {
             pairErrors.add(new FieldValidationError("perSourceBurst",
-                    "perSourceBurst는 perSourceRate가 0보다 큰 값일 때만 지정할 수 있습니다."));
+                    "perSourceBurst는 perSourceRate가 0보다 클 때만 지정할 수 있어요."));
         }
         if (!pairErrors.isEmpty()) {
             throw ApiException.validationFailed(pairErrors); // tx rollback discards the edits
@@ -413,12 +413,12 @@ public class AdminPortMappingService {
         return portMappingRepository.findByPublicId(mappingId)
                 .filter(mapping -> mapping.getStatus() != PortMappingStatus.REMOVING)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
-                        ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
-                        "해당 포트 매핑이 존재하지 않습니다."));
+                        ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요",
+                        "해당 포트 매핑을 찾을 수 없어요."));
     }
 
     private static ApiException mappingStateConflict(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                "현재 상태에서는 수행할 수 없는 작업입니다", detail);
+                "현재 상태에서는 할 수 없는 작업이에요", detail);
     }
 }

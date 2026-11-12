@@ -25,11 +25,11 @@ import org.jspecify.annotations.Nullable;
  */
 public record VmRequestSpecResponse(
         UUID imageId,
-        @Schema(description = "요청한 OS 이미지의 표시 이름. 카탈로그에서 내려간 이미지도 이름이 남습니다.")
+        @Schema(description = "요청한 OS 이미지의 표시 이름이에요. 카탈로그에서 내려간 이미지의 이름도 제공해요.")
         String imageName,
         @Nullable UUID flavorId,
         @Nullable
-        @Schema(description = "요청한 사양 프리셋의 표시 이름. flavorId가 있을 때 함께 있습니다.")
+        @Schema(description = "요청한 사양 프리셋의 표시 이름이에요. flavorId가 있을 때 함께 있어요.")
         String flavorName,
         int reqVcpu,
         int reqMemoryMb,

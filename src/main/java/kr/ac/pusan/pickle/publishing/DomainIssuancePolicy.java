@@ -70,15 +70,15 @@ public class DomainIssuancePolicy {
                 .orElseThrow(() -> fromForm
                         ? ApiException.validationFailed(List.of(
                                 new FieldValidationError("rootDomain",
-                                        "이 루트 도메인으로는 이름을 발급할 수 없습니다.")))
+                                        "이 루트 도메인으로는 이름을 발급할 수 없어요.")))
                         : new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
-                                "지금은 이 루트 도메인으로 발급할 수 없습니다",
-                                "이 루트 도메인은 더 이상 발급 대상이 아닙니다. 신청자에게 다른 이름을 받아야 합니다."));
+                                "지금은 이 루트 도메인으로 발급할 수 없어요",
+                                "이 루트 도메인은 더 이상 발급 대상이 아니에요. 신청자에게 다른 이름을 요청해 주세요."));
         Org org = orgRepository.findById(root.getOrgId()).orElse(null);
         if (org == null || org.getStatus() != OrgStatus.ACTIVE) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
-                    "지금은 이 루트 도메인으로 발급할 수 없습니다",
-                    "이 루트를 소유한 기관이 활성 상태가 아닙니다. 관리자에게 문의해 주세요.");
+                    "지금은 이 루트 도메인으로 발급할 수 없어요",
+                    "이 루트를 소유한 기관이 활성 상태가 아니에요. 관리자에게 문의해 주세요.");
         }
         return root;
     }

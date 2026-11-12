@@ -39,6 +39,7 @@ class LlmBodyRetentionScheduleTest {
 
         assertThat(ids).contains(
                 LlmBodyRetentionSweeper.JOB_ID,
+                LlmAsyncObjectSweeper.JOB_ID,
                 "llm-usage-retention-sweeper",
                 "notification-retention-sweeper",
                 "auth-token-retention-sweeper");

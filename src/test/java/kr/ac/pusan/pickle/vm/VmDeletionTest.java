@@ -214,15 +214,15 @@ class VmDeletionTest {
         List<MailMessage> mails = mockMailSender.getMessages();
         assertThat(mails).extracting(MailMessage::to).contains(owner.getEmail());
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody())
-                .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다")
-                .contains("삭제 취소는 관리자만 가능합니다");
+                .contains("플랫폼은 VM 데이터를 백업하지 않아요. 삭제한 데이터는 복구할 수 없어요")
+                .contains("삭제는 관리자만 취소할 수 있어요");
 
         // stacking another deletion on top → 409
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"))
-                .andExpect(jsonPath("$.detail").value("이미 삭제가 접수되었거나 진행 중인 VM입니다."));
+                .andExpect(jsonPath("$.detail").value("이미 삭제를 접수했거나 삭제 중인 VM이에요."));
     }
 
     @Test
@@ -477,7 +477,7 @@ class VmDeletionTest {
         notificationDispatchJob.dispatch();
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody())
                 .contains("사용 종료일이 지난 VM 정리")
-                .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다");
+                .contains("플랫폼은 VM 데이터를 백업하지 않아요. 삭제한 데이터는 복구할 수 없어요");
 
         // double-schedule and regular-user access → 409 / 403
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/schedule-delete")
@@ -515,7 +515,7 @@ class VmDeletionTest {
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", selfVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("삭제가 취소되었습니다."));
+                .andExpect(jsonPath("$.message").value("삭제를 취소했어요."));
         assertThat(statusOf(selfVm)).isEqualTo("STOPPED");
         assertThat(column(selfVm, "delete_kind")).isNull();
         assertThat(eventTypes(selfVm)).contains("CANCEL_SCHEDULED_DELETE");
@@ -567,19 +567,35 @@ class VmDeletionTest {
         // alone must not strand an intact VM in an uncancelable state.
         long dueVm = createVm(VmStatus.RUNNING);
         markPendingDeletion(dueVm, "ADMIN", Instant.now().minus(Duration.ofMinutes(3)));
+        String dueDetail = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/admin/vms/" + pub("vms", dueVm))
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletion.kind").value("ADMIN"))
+                .andExpect(jsonPath("$.deletion.cancelable").isBoolean())
+                .andReturn().getResponse().getContentAsString();
+        boolean dueCancelable = objectMapper.readTree(dueDetail).get("deletion").get("cancelable").asBoolean();
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", dueVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
         assertThat(statusOf(dueVm)).isEqualTo("RUNNING");
         assertThat(column(dueVm, "delete_kind")).isNull();
 
-        // Once the destroy pipeline claimed the VM (DELETING), cancel refuses.
+        // Once destruction claims the VM, cancel refuses even before the deadline.
         long claimedVm = createVm(VmStatus.DELETING);
-        markPendingDeletion(claimedVm, "ADMIN", Instant.now().minus(Duration.ofMinutes(3)));
+        markPendingDeletion(claimedVm, "ADMIN", Instant.now().plus(Duration.ofMinutes(3)));
+        String claimedDetail = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/admin/vms/" + pub("vms", claimedVm))
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletion.kind").value("ADMIN"))
+                .andExpect(jsonPath("$.deletion.cancelable").isBoolean())
+                .andReturn().getResponse().getContentAsString();
+        boolean claimedCancelable = objectMapper.readTree(claimedDetail).get("deletion").get("cancelable").asBoolean();
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", claimedVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
+
+        assertThat(List.of(dueCancelable, claimedCancelable)).containsExactly(true, false);
     }
 
     @Test
@@ -634,7 +650,7 @@ class VmDeletionTest {
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").value(
-                        "강제 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다."));
+                        "유예 없는 강제 삭제 요청을 접수했어요. 취소할 수 없어요."));
 
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
         assertThat(column(vmId, "delete_kind")).isEqualTo("FORCE");
@@ -649,7 +665,9 @@ class VmDeletionTest {
         assertThat(enqueued).isPositive();
         assertDeletionNoticeOwners(vmId, "vm.delete.force", noticeOwners);
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("관리자");
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody())
+                .contains("관리자", "삭제를 요청했어요", "삭제는 취소할 수 없고", "삭제한 데이터는 복구할 수 없어요")
+                .doesNotContain("자원은 회수됐고", "삭제가 완료됐어요");
 
         // already destroyed → 409
         setStatus(vmId, VmStatus.DELETED);
@@ -753,7 +771,7 @@ class VmDeletionTest {
         // Owners remain available after destruction and receive the completion.
         assertDeletionNoticeOwners(vmId, "vm.delete.completed", noticeOwners);
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("파기");
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("삭제가 완료됐어요", "데이터는 복구할 수 없어요");
     }
 
     @Test
@@ -776,7 +794,7 @@ class VmDeletionTest {
         wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuBasePath())));
         assertThat(taskState(vmId).get(0)).isEqualTo("NEEDS_ADMIN");
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
-        assertThat(statusDetailOf(vmId)).contains("파기 대상 불일치");
+        assertThat(statusDetailOf(vmId)).contains("파기 대상이 일치하지 않아요");
     }
 
     @Test
@@ -1030,7 +1048,7 @@ class VmDeletionTest {
 
         assertThat(taskState(vmId)).containsExactly("NEEDS_ADMIN", 1);
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
-        assertThat(statusDetailOf(vmId)).contains("삭제 보호가 켜진 상태");
+        assertThat(statusDetailOf(vmId)).contains("삭제 보호가 켜져 있어 파기를 보류했어요");
         // no Proxmox interaction at all: PVE protection stays armed, no destroy
         assertThat(wm.server().getAllServeEvents()).isEmpty();
 

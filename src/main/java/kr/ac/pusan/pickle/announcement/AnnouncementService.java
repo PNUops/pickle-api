@@ -116,10 +116,10 @@ public class AnnouncementService {
         Target target = audience.target();
         List<String> warnings = new ArrayList<>();
         if (audience.recipients().isEmpty()) {
-            warnings.add("발송 대상자가 0명입니다. 알림과 메일이 생성되지 않습니다.");
+            warnings.add("현재 발송 대상자가 0명이에요. 발송 범위를 확인해 주세요.");
         }
         if (!current.role().isSysTier() && audience.recipients().stream().anyMatch(recipient -> recipient.role().isSysTier())) {
-            warnings.add("일부 발송 대상자는 계정 열람 권한 때문에 예시에 표시되지 않습니다.");
+            warnings.add("계정 조회 권한 때문에 일부 발송 대상자는 예시에 표시하지 않아요.");
         }
         return new AnnouncementPreviewResponse(target.scope(), target.orgPublicId(), target.workspacePublicId(),
                 audience.recipients().size(), Instant.now(), sample, audience.recipients().size() > sample.size(),
@@ -148,18 +148,18 @@ public class AnnouncementService {
             case ALL -> {
                 if (actor.role() != UserRole.SYS_ADMIN) {
                     throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                            "접근 권한이 없습니다", "전체 공지는 시스템 관리자만 발송할 수 있습니다.");
+                            "접근 권한이 없어요", "전체 공지는 시스템 관리자만 발송할 수 있어요.");
                 }
                 if (request.orgId() != null) {
-                    errors.add(new FieldValidationError("orgId", "전체 공지에는 기관을 지정할 수 없습니다."));
+                    errors.add(new FieldValidationError("orgId", "전체 공지에는 기관을 지정할 수 없어요."));
                 }
                 if (request.workspaceId() != null) {
-                    errors.add(new FieldValidationError("workspaceId", "전체 공지에는 워크스페이스를 지정할 수 없습니다."));
+                    errors.add(new FieldValidationError("workspaceId", "전체 공지에는 워크스페이스를 지정할 수 없어요."));
                 }
             }
             case ORG -> {
                 if (request.workspaceId() != null) {
-                    errors.add(new FieldValidationError("workspaceId", "기관 공지에는 워크스페이스를 지정할 수 없습니다."));
+                    errors.add(new FieldValidationError("workspaceId", "기관 공지에는 워크스페이스를 지정할 수 없어요."));
                 }
                 if (actor.role() != UserRole.SYS_ADMIN) {
                     // The one place the actor's own organisation becomes a
@@ -172,7 +172,7 @@ public class AnnouncementService {
                             .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
                     if (administered.isEmpty()) {
                         throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                                "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
+                                "접근 권한이 없어요", "기관 공지를 발송할 권한이 없어요.");
                     }
                     if (request.orgId() != null) {
                         // An id no organisation has and one this account does not
@@ -181,28 +181,28 @@ public class AnnouncementService {
                         // test comes first; an unknown ID must remain a defined validation refusal.
                         if (requestedOrgId == null || !administered.contains(requestedOrgId)) {
                             errors.add(new FieldValidationError("orgId",
-                                    "자기 기관에만 기관 공지를 발송할 수 있습니다."));
+                                    "발송 권한이 있는 기관만 선택해 주세요."));
                         }
                         orgId = requestedOrgId;
                     } else if (administered.size() == 1) {
                         orgId = administered.iterator().next();
                     } else {
                         errors.add(new FieldValidationError("orgId",
-                                "기관 공지에는 대상 기관이 필요합니다."));
+                                "기관 공지의 대상 기관을 선택해 주세요."));
                     }
                 } else {
                     if (request.orgId() == null) {
-                        errors.add(new FieldValidationError("orgId", "기관 공지에는 대상 기관이 필요합니다."));
+                        errors.add(new FieldValidationError("orgId", "기관 공지의 대상 기관을 선택해 주세요."));
                     }
                     orgId = requestedOrgId;
                 }
             }
             case WORKSPACE -> {
                 if (request.orgId() != null) {
-                    errors.add(new FieldValidationError("orgId", "워크스페이스 공지에는 기관을 지정할 수 없습니다."));
+                    errors.add(new FieldValidationError("orgId", "워크스페이스 공지에는 기관을 지정할 수 없어요."));
                 }
                 if (request.workspaceId() == null) {
-                    errors.add(new FieldValidationError("workspaceId", "워크스페이스 공지에는 대상 워크스페이스가 필요합니다."));
+                    errors.add(new FieldValidationError("workspaceId", "워크스페이스 공지의 대상 워크스페이스를 선택해 주세요."));
                 }
                 workspaceId = requestedWorkspaceId;
             }
@@ -212,14 +212,14 @@ public class AnnouncementService {
         }
 
         if (scope == AnnouncementScope.ORG && (orgId == null || !orgRepository.existsById(orgId))) {
-            throw notFound("해당 기관이 존재하지 않습니다.");
+            throw notFound("해당 기관을 찾을 수 없어요.");
         }
         if (scope == AnnouncementScope.WORKSPACE) {
             // Unknown workspace and a workspace without qualification in
             // their org answer the same 404 — workspace existence stays private.
             if (workspaceId == null || !workspaceRepository.existsByIdAndDeletedAtIsNull(workspaceId)
                     || (actor.role() != UserRole.SYS_ADMIN && !canSendToWorkspace(actor, workspaceId))) {
-                throw notFound("해당 워크스페이스가 존재하지 않습니다.");
+                throw notFound("해당 워크스페이스를 찾을 수 없어요.");
             }
         }
 
@@ -300,7 +300,7 @@ public class AnnouncementService {
 
     private static ApiException forbidden() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                "접근 권한이 없습니다", "이 범위에 알림을 발송할 권한이 없습니다.");
+                "접근 권한이 없어요", "이 범위에 알림을 발송할 권한이 없어요.");
     }
 
     private boolean workspaceLinkedToOrg(long workspaceId, Collection<Long> orgIds) {
@@ -318,6 +318,6 @@ public class AnnouncementService {
 
     private static ApiException notFound(String detail) {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", detail);
+                "리소스를 찾을 수 없어요", detail);
     }
 }

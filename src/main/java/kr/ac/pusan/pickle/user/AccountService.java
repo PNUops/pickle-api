@@ -106,7 +106,7 @@ public class AccountService {
                 && !mfaService.verifyEnrolledCode(user.getId(), totpCode, recoveryCode)) {
             rateLimitService.registerCodeFailure(user.getEmail(), ip);
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_MFA_CODE_INVALID,
-                    "본인 확인에 실패했습니다", "인증 코드를 다시 확인해 주세요.");
+                    "본인 확인에 실패했어요", "인증 코드를 다시 확인해 주세요.");
         }
         rateLimitService.clearLoginFailures(user.getEmail(), ip);
         rateLimitService.clearCodeFailures(user.getEmail(), ip);
@@ -146,7 +146,7 @@ public class AccountService {
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_WITHDRAWN,
                 Map.of("userId", user.getId(), "userEmail", user.getEmail()),
                 "account_withdrawn:" + user.getId());
-        return new MessageResponse("탈퇴가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.");
+        return new MessageResponse("회원 탈퇴가 완료됐어요.");
     }
 
     private void checkWithdrawBlockers(List<WorkspaceMember> liveMemberships) {
@@ -155,14 +155,14 @@ public class AccountService {
             if (member.getRole() == WorkspaceMemberRole.OWNER && workspace.getKind() != WorkspaceKind.PERSONAL
                     && workspaceMemberRepository.countByWorkspaceIdAndRole(workspace.getId(), WorkspaceMemberRole.OWNER) <= 1) {
                 throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_SOLE_OWNER_OF_ACTIVE_WORKSPACE,
-                        "탈퇴할 수 없습니다",
-                        "워크스페이스의 마지막 소유자입니다. 소유자를 위임하거나 워크스페이스를 삭제한 뒤 다시 시도해 주세요.");
+                        "탈퇴할 수 없어요",
+                        "워크스페이스의 마지막 소유자예요. 소유자를 위임하거나 워크스페이스를 삭제한 뒤 다시 시도해 주세요.");
             }
         }
         personalWorkspace(liveMemberships).ifPresent(workspace -> {
             if (vmRepository.countActiveByWorkspaceId(workspace.getId(), VmStatus.DELETED) > 0) {
                 throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_HAS_ACTIVE_VMS,
-                        "탈퇴할 수 없습니다", "사용 중인 VM이 남아 있습니다. VM을 먼저 삭제한 뒤 다시 시도해 주세요.");
+                        "탈퇴할 수 없어요", "사용 중인 VM이 남아 있어요. VM을 먼저 삭제한 뒤 다시 시도해 주세요.");
             }
         });
     }
@@ -176,11 +176,11 @@ public class AccountService {
 
     private static ApiException passwordMismatch() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_PASSWORD_MISMATCH,
-                "본인 확인에 실패했습니다", "비밀번호를 다시 확인해 주세요.");
+                "본인 확인에 실패했어요", "비밀번호를 다시 확인해 주세요.");
     }
 
     private static ApiException sessionUserGone() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
-                "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요.");
+                "인증이 필요해요", "액세스 토큰이 없거나 만료됐어요. 토큰을 갱신한 뒤 다시 시도해 주세요.");
     }
 }

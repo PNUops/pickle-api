@@ -25,7 +25,7 @@ public class GpuLeaseJob {
         for (GpuAllocation a : store.held()) {
             if (!a.leaseEndsAt().isAfter(clock.instant())) {
                 try { mutations.expire(a.id()); }
-                catch (RuntimeException e) { notices.administrators("임대가 끝난 GPU의 회수를 완료하지 못했습니다. 장치 상태 확인이 필요합니다.", "gpu.expiry.error:" + a.id()); }
+                catch (RuntimeException e) { notices.administrators("임대가 끝난 GPU의 회수 결과를 확인하지 못했어요. 장치 상태를 확인해 주세요.", "gpu.expiry.error:" + a.id()); }
                 continue;
             }
             try {
@@ -34,7 +34,7 @@ public class GpuLeaseJob {
                 long total = Duration.between(a.allocatedAt(), a.leaseEndsAt()).toSeconds();
                 StreamSupport.stream(value.spliterator(), false).map(n -> n.asInt()).sorted(Comparator.naturalOrder())
                         .filter(h -> h * 3600L < total && remaining <= h * 3600L).findFirst().ifPresent(h ->
-                            notices.holders(a, "GPU 임대 종료 예정", "GPU 임대 종료까지 " + h + "시간 이하가 남았습니다. 실행 중인 작업을 저장해 주세요.",
+                            notices.holders(a, "GPU 임대 종료 예정", "GPU 임대 종료까지 " + h + "시간 이하가 남았어요. 실행 중인 작업을 저장해 주세요.",
                                     "gpu.lease.notice:" + a.id() + ":" + a.leaseEndsAt() + ":" + h));
             } catch (IllegalStateException e) { notices.administrators(e.getMessage(), "gpu.config:" + SettingsService.GPU_LEASE_NOTICE_HOURS); }
         }

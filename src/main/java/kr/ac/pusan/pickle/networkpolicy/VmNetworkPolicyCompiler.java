@@ -23,10 +23,10 @@ public final class VmNetworkPolicyCompiler {
             List<PublishedPath> publishedPaths, List<VmNetworkRule> userRules) {
         CidrBlock guest = CidrBlock.host(guestAddress);
         if (guest.ipv6()) {
-            throw new IllegalArgumentException("현재 VM IP 할당은 IPv4만 지원합니다.");
+            throw new IllegalArgumentException("현재 VM IP 할당은 IPv4만 지원해요.");
         }
         if (publishedPaths == null || userRules == null || userRules.size() > MAX_USER_RULES) {
-            throw new IllegalArgumentException("VM 네트워크 규칙은 최대 " + MAX_USER_RULES + "개까지 지정할 수 있습니다.");
+            throw new IllegalArgumentException("VM 통신 규칙 목록을 확인해 주세요. 최대 " + MAX_USER_RULES + "개까지 입력할 수 있어요.");
         }
         List<Map<String, String>> controls = new ArrayList<>();
         LinkedHashSet<String> sshSources = new LinkedHashSet<>(properties.sshGatewaySourceIps());
@@ -48,7 +48,7 @@ public final class VmNetworkPolicyCompiler {
         for (int index = 0; index < userRules.size(); index++) {
             VmNetworkRule rule = userRules.get(index);
             if (rule == null) {
-                throw new IllegalArgumentException("빈 VM 네트워크 규칙은 사용할 수 없습니다.");
+                throw new IllegalArgumentException("규칙 목록에 빈 항목을 넣을 수 없어요.");
             }
             Map<String, String> rendered = new LinkedHashMap<>(rule.pveFields());
             rendered.put("comment", "pickle:vmfw:v1:mutable:user:" + index);
@@ -83,7 +83,7 @@ public final class VmNetworkPolicyCompiler {
             CidrBlock.host(sourceAddress);
             if ((protocol != TCP && protocol != VmNetworkRule.Protocol.UDP)
                     || targetPort < 1 || targetPort > 65535) {
-                throw new IllegalArgumentException("공개 경로에는 TCP/UDP와 유효한 대상 포트가 필요합니다.");
+                throw new IllegalArgumentException("공개 경로에는 TCP 또는 UDP 프로토콜과 1~65535 범위의 대상 포트가 필요해요.");
             }
         }
     }

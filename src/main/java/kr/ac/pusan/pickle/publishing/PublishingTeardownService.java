@@ -84,8 +84,8 @@ public class PublishingTeardownService {
         }
         if (!failures.isEmpty()) {
             throw new IllegalStateException(
-                    "퍼블리싱 vhost 제거 실패 (route " + String.join(", ", failures)
-                            + ") — 라우트가 제거되기 전에는 VM/IP를 파기할 수 없습니다");
+                    "공개 라우트를 제거하지 못했어요 (route " + String.join(", ", failures)
+                            + "). 라우트 제거를 확인하기 전에는 VM/IP를 파기할 수 없어요");
         }
         networkCoordinator.requireVmRetired(vmId);
     }

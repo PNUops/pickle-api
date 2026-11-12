@@ -17,7 +17,7 @@ public record DomainRequestSpecResponse(
         String label,
         @Schema(description = "신청한 루트 도메인", example = "pusan.dev")
         String rootDomain,
-        @Schema(description = "승인이 실제로 발급한 이름. 승인 전에는 null입니다.",
+        @Schema(description = "승인으로 발급한 도메인 이름이며, 승인 전에는 null이에요.",
                 example = "myblog.pusan.dev")
         @Nullable String grantedFqdn) {
 }

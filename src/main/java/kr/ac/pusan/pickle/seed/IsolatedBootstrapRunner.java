@@ -30,12 +30,12 @@ public class IsolatedBootstrapRunner implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         if (!enabled) {
             throw new IllegalStateException(
-                    "격리 관리자 부트스트랩에는 PICKLE_ISOLATED_BOOTSTRAP_ENABLED=true가 필요합니다.");
+                    "격리 관리자 부트스트랩에는 PICKLE_ISOLATED_BOOTSTRAP_ENABLED=true가 필요해요.");
         }
         Set<String> activeProfiles = Set.copyOf(Arrays.asList(environment.getActiveProfiles()));
         if (!activeProfiles.equals(Set.of("isolated", "isolated-bootstrap"))) {
             throw new IllegalStateException(
-                    "격리 관리자 부트스트랩은 isolated,isolated-bootstrap 프로파일만 사용할 수 있습니다.");
+                    "격리 관리자 부트스트랩의 활성 프로파일은 isolated,isolated-bootstrap 두 개여야 해요.");
         }
         bootstrapAdminService.bootstrapIsolated(
                 environment.getProperty(ProdBootstrapSeeder.EMAIL_ENV),

@@ -127,6 +127,8 @@ class ContractDriftTest {
             "POST /auth/oauth/google/complete",
             "GET /me",
             "PUT /me/profile",
+            "GET /me/notification-preferences",
+            "PUT /me/notification-preferences",
             "DELETE /me/identities/{provider}",
             "GET /orgs",
             "GET /os-images",

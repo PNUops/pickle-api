@@ -124,8 +124,8 @@ public class WorkspaceInvitationService {
         if (support) { workspaceService.requireSupportWork(actor, workspace,
                 kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_INVITATIONS_MANAGE); }
         workspaceService.requireOwnerForMemberManagement(workspace, actor,
-                "워크스페이스 소유자(OWNER)만 구성원을 초대할 수 있습니다.",
-                "PERSONAL 워크스페이스에는 구성원을 초대할 수 없습니다.", support);
+                "워크스페이스 소유자(OWNER)만 구성원을 초대할 수 있어요.",
+                "개인 워크스페이스에는 구성원을 초대할 수 없어요.", support);
         List<Invitee> invitees = normalize(request.entries());
         var impact = invitationImpact(actor, workspace, invitees);
         kr.ac.pusan.pickle.access.ActorAccessImpacts.requireConfirmed(impact, request.confirmation());
@@ -221,12 +221,12 @@ public class WorkspaceInvitationService {
         if (support) { workspaceService.requireSupportWork(actor, workspace,
                 kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_INVITATIONS_MANAGE); }
         workspaceService.requireOwnerForMemberManagement(workspace, actor,
-                "워크스페이스 소유자만 초대를 관리할 수 있습니다.", "개인 워크스페이스에는 초대가 없습니다.", support);
+                "워크스페이스 소유자만 초대를 관리할 수 있어요.", "개인 워크스페이스에서는 초대를 관리할 수 없어요.", support);
         WorkspaceInvitation invitation = invitationRepository.findWithLockByPublicId(publicInvitationId)
                 .filter(found -> found.getWorkspaceId().equals(workspace.getId()))
                 .filter(found -> found.getStatus() == WorkspaceInvitationStatus.PENDING)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.WORKSPACE_INVITATION_NOT_FOUND,
-                        "초대를 찾을 수 없습니다", "대기 중인 초대가 아닙니다. 이미 수락되었거나 취소되었을 수 있습니다."));
+                        "초대를 찾을 수 없어요", "이 워크스페이스에서 대기 중인 초대를 찾을 수 없어요. 초대 목록을 다시 확인해 주세요."));
         workspaces.findByIdForUpdate(workspace.getId()).orElseThrow();
         recipientService.lockForInvitationTermination(invitation.getId());
         var impact = terminationImpacts.lockedSnapshot(actor, workspace, invitation, support);
@@ -248,8 +248,8 @@ public class WorkspaceInvitationService {
         Workspace workspace = workspaceService.findWorkspace(workspaceId);
         if (support) { workspaceService.requireSupportWork(actor, workspace,
                 kr.ac.pusan.pickle.security.institution.InstitutionWork.WORKSPACE_INVITATIONS_MANAGE); }
-        workspaceService.requireOwnerForMemberManagement(workspace, actor, "소유자만 초대할 수 있습니다.",
-                "개인 워크스페이스에는 초대할 수 없습니다.", support);
+        workspaceService.requireOwnerForMemberManagement(workspace, actor, "워크스페이스 소유자만 초대할 수 있어요.",
+                "개인 워크스페이스에는 초대할 수 없어요.", support);
         return invitationImpact(actor, workspace, normalize(request.entries()));
     }
 
@@ -265,8 +265,8 @@ public class WorkspaceInvitationService {
 
     private void requireOwner(Workspace workspace, AuthenticatedUser actor) {
         workspaceService.requireOwnerForMemberManagement(workspace, actor,
-                "워크스페이스 소유자(OWNER)만 초대를 관리할 수 있습니다.",
-                "PERSONAL 워크스페이스에는 초대가 없습니다.");
+                "워크스페이스 소유자(OWNER)만 초대를 관리할 수 있어요.",
+                "개인 워크스페이스에서는 초대를 관리할 수 없어요.");
     }
 
     /**
@@ -293,12 +293,12 @@ public class WorkspaceInvitationService {
                 continue;
             }
             if (email != null && !EMAIL_SHAPE.matcher(email).matches()) {
-                errors.add(new FieldValidationError(field + ".email", "올바른 이메일 형식이 아닙니다."));
+                errors.add(new FieldValidationError(field + ".email", "올바른 이메일 형식으로 입력해 주세요."));
                 continue;
             }
             if (studentNo != null && !ProfileValidator.isStudentNoFormat(studentNo)) {
                 errors.add(new FieldValidationError(field + ".studentNo",
-                        "학번 형식이 올바르지 않습니다. (영문·숫자·하이픈 4~20자)"));
+                        "학번은 영문과 숫자, 하이픈으로 4~20자를 입력해 주세요."));
                 continue;
             }
             invitees.add(email != null

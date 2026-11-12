@@ -68,7 +68,7 @@ public class AdminDomainRootService {
 
     private static ApiException rootNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "루트 도메인을 찾을 수 없습니다", "등록된 루트 도메인이 아닙니다.");
+                "루트 도메인을 찾을 수 없어요", "등록된 루트 도메인이 아니에요.");
     }
 
     /**

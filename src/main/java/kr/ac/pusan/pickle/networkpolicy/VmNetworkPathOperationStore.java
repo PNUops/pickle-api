@@ -125,7 +125,7 @@ public class VmNetworkPathOperationStore {
             return true;
         }
         if (path == null) {
-            throw new IllegalStateException("managed port mapping의 VM derived path가 없습니다.");
+            throw new IllegalStateException("managed port mapping의 VM derived path를 찾을 수 없어요.");
         }
         if ("PENDING".equals(delivery)) {
             if (live == null || live.phase() != Phase.POLICY_ADD
@@ -153,7 +153,7 @@ public class VmNetworkPathOperationStore {
             if (!addOperation(vmId, OwnerKind.PORT_MAPPING, mappingId, action,
                     Phase.CONSUMER_RETIRE, null, path)) {
                 throw VmNetworkPolicyStore.unavailable(
-                        "이 port mapping의 이전 공개 경로 작업이 아직 진행 중입니다.");
+                        "이 port mapping의 이전 공개 경로 작업이 아직 끝나지 않았어요.");
             }
             RelayMappingRetirementStore.Retirement retirement = retirements.begin(mappingId);
             int attached = jdbc.update("""
@@ -163,7 +163,7 @@ public class VmNetworkPathOperationStore {
                        and phase = 'CONSUMER_RETIRE'
                     """, retirement.generation(), retirement.id(), mappingId);
             if (attached != 1) {
-                throw new IllegalStateException("port mapping retirement 작업을 저장하지 못했습니다.");
+                throw new IllegalStateException("port mapping retirement 작업을 저장하지 못했어요.");
             }
         }
         return true;
@@ -288,7 +288,7 @@ public class VmNetworkPathOperationStore {
 
     public void retry(UUID id, RuntimeException failure) {
         String message = failure.getMessage() == null || failure.getMessage().isBlank()
-                ? "네트워크 경로 수렴 상태를 확인할 수 없습니다." : failure.getMessage();
+                ? "네트워크 경로 수렴 상태를 확인할 수 없어요." : failure.getMessage();
         if (message.length() > 500) {
             message = message.substring(0, 500);
         }
@@ -343,7 +343,7 @@ public class VmNetworkPathOperationStore {
                 """, rs -> rs.next() ? rs.getLong(1) : null,
                 vmId, ownerKind.name(), ownerId, sourceKind, protocol, targetPort);
         if (id == null) {
-            throw new IllegalStateException("VM derived path를 저장하지 못했습니다.");
+            throw new IllegalStateException("VM derived path를 저장하지 못했어요.");
         }
         return id;
     }
@@ -380,12 +380,12 @@ public class VmNetworkPathOperationStore {
     private static void requireAdded(boolean added) {
         if (!added) {
             throw VmNetworkPolicyStore.unavailable(
-                    "이 공개 경로의 이전 작업이 아직 진행 중입니다.");
+                    "이 공개 경로의 이전 작업이 아직 끝나지 않았어요.");
         }
     }
 
     private static RuntimeException busyPortPath() {
         return VmNetworkPolicyStore.unavailable(
-                "이 port mapping의 공개 경로 상태가 변경되었거나 이전 작업이 진행 중입니다.");
+                "이 port mapping의 공개 경로 상태가 달라졌거나 이전 작업이 아직 끝나지 않았어요.");
     }
 }

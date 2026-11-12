@@ -29,13 +29,13 @@ public record LlmKeyRequestSpecResponse(
         @Schema(description = "희망 일일 토큰 수")
         @Nullable Long reqDailyTokens,
 
-        @Schema(description = "신청자가 자체 서빙 모델을 쓰겠다고 했는지.")
+        @Schema(description = "신청에 자체 서빙 모델 사용을 포함하는지")
         boolean useCampusModels,
 
-        @Schema(description = "신청자가 유료 모델을 쓰겠다고 했는지.")
+        @Schema(description = "신청에 유료 모델 사용을 포함하는지")
         boolean useCommercialModels,
 
-        @Schema(description = "신청자가 요청한 금액 한도(USD). 유료를 쓰지 않는 신청은 비어 있습니다.")
+        @Schema(description = "요청한 금액 한도예요(USD). 유료 모델을 신청하지 않았으면 null이에요.")
         @Nullable BigDecimal reqCreditLimit,
 
         @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
@@ -45,36 +45,36 @@ public record LlmKeyRequestSpecResponse(
                 PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
                 PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
                 PassthroughEndpoints.FILES}),
-                arraySchema = @Schema(description = "신청자가 고른 기능 권한. 승인 화면의 "
-                        + "초깃값입니다. 이 항목이 생기기 전의 신청은 [\"chat\"]으로 이관되었습니다."))
+                arraySchema = @Schema(description = "요청된 기능 권한이며 승인 화면의 "
+                        + "초깃값이에요. 이 항목이 생기기 전의 신청은 [\"chat\"]으로 이관됐어요."))
         List<String> reqPassthroughEndpoints,
 
-        @Schema(description = "부여 분당 요청 수. 비어 있으면 서비스 기본값입니다.")
+        @Schema(description = "부여한 분당 요청 수예요. 승인 후 값이 없으면 서비스 기본값이에요.")
         @Nullable Integer grantedRpm,
 
-        @Schema(description = "부여 분당 토큰 수. 비어 있으면 서비스 기본값입니다.")
+        @Schema(description = "부여한 분당 토큰 수예요. 승인 후 값이 없으면 서비스 기본값이에요.")
         @Nullable Integer grantedTpm,
 
-        @Schema(description = "부여 동시 요청 수. 비어 있으면 서비스 기본값입니다.")
+        @Schema(description = "부여한 동시 요청 수예요. 승인 후 값이 없으면 서비스 기본값이에요.")
         @Nullable Integer grantedConcurrency,
 
-        @Schema(description = "부여 일일 토큰 수. 비어 있으면 일일 한도가 없습니다. 0이면 자체 서빙(토큰) 축을 쓸 수 없습니다.")
+        @Schema(description = "부여한 일일 토큰 수예요. 승인 후 값이 없으면 일일 한도가 없고, 0이면 자체 서빙(토큰) 축을 쓸 수 없어요.")
         @Nullable Long grantedDailyTokens,
 
-        @Schema(description = "부여 금액 한도(USD 크레딧). 비어 있거나 0이면 유료 모델을 쓸 수 없습니다.")
+        @Schema(description = "부여한 금액 한도예요(USD 크레딧). 승인 후 값이 없거나 0이면 유료 모델을 쓸 수 없어요.")
         @Nullable BigDecimal grantedCreditLimit,
 
-        @Schema(description = "금액 한도 리셋 창. 비어 있으면 리셋 없는 총액 상한입니다.")
+        @Schema(description = "금액 한도 리셋 창이에요. 승인 후 값이 없으면 리셋 없는 총액 상한이에요.")
         @Nullable CreditLimitReset grantedCreditLimitReset,
 
-        @Schema(description = "부여된 유료 모델 허용 목록. 빈 배열이면 제한이 없습니다. "
-                + "어떤 모델을 열지는 신청자가 요구하는 값이 아니라 승인자가 정하는 값이라 "
-                + "희망 쪽 짝이 없습니다."
+        @Schema(description = "승인자가 부여한 유료 모델 허용 목록이에요. "
+                + "빈 배열이면 이 목록으로 "
+                + "제한하지 않아요."
                 + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
         List<String> grantedCreditAllowedModels,
 
-        @Schema(description = "부여된 유료 모델 차단 목록. 빈 배열이면 차단이 없습니다. "
-                + "허용 목록과 함께 걸리면 차단이 이깁니다."
+        @Schema(description = "승인자가 부여한 유료 모델 차단 목록이며, 빈 배열이면 이 목록으로 차단하지 않아요. "
+                + "허용 목록과 겹치면 차단을 적용해요."
                 + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         List<String> grantedCreditDeniedModels,
         @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
@@ -84,8 +84,8 @@ public record LlmKeyRequestSpecResponse(
                 PassthroughEndpoints.SPEECH, PassthroughEndpoints.TRANSCRIPTIONS,
                 PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
                 PassthroughEndpoints.FILES}),
-                arraySchema = @Schema(description = "승인자가 부여한 기능 권한. 빈 배열이면 "
-                        + "부여된 기능이 없습니다. 검토 전 신청은 빈 배열입니다."))
+                arraySchema = @Schema(description = "승인자가 부여한 기능 권한이며, 빈 배열이면 "
+                        + "부여한 기능이 없어요. 검토 전 신청은 빈 배열이에요."))
         List<String> grantedPassthroughEndpoints) {
 
     public static LlmKeyRequestSpecResponse from(LlmKeyRequestDetail detail,

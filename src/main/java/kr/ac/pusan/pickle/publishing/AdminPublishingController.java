@@ -86,9 +86,9 @@ public class AdminPublishingController {
     @GetMapping("/domains/{domainId}")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(operationId = "getAdminDomain", summary = "도메인 단건 열람",
-            description = "학생 지원 권한으로 정확한 도메인 ID의 현재 저장 metadata를 전역 조회합니다. "
-                    + "목록과 같은 기간·해제·DNS 상태를 반환하며 외부 조회나 변경을 실행하지 않습니다. "
-                    + "삭제된 도메인과 기관·워크스페이스의 필수 식별 정보를 확인할 수 없는 도메인은 404입니다.")
+            description = "학생 지원 권한으로 정확한 도메인 ID의 현재 저장 metadata를 전역 조회해요. "
+                    + "목록과 같은 기간과 해제, DNS 상태를 반환하며 외부 조회나 변경은 실행하지 않아요. "
+                    + "삭제된 도메인과 기관 및 워크스페이스의 필수 식별 정보를 확인할 수 없는 도메인은 404로 응답해요.")
     public AdminDomainView getAdminDomain(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId) {
         return adminPublishingService.getDomain(principal, domainId);
@@ -118,9 +118,9 @@ public class AdminPublishingController {
     @GetMapping("/domain-roots")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "루트 도메인 목록",
-            description = "이름을 발급할 수 있는 루트와 그 승인 정책. 기관으로 좁히지 않습니다 — "
-                    + "이름 공간은 기관끼리 공유하므로, 자기 루트의 정책을 정하는 사람도 다른 "
-                    + "루트가 있다는 것은 볼 수 있어야 합니다.")
+            description = "허용된 루트 도메인과 승인 정책을 조회해요. "
+                    + "전체 카탈로그 조회 권한이 있으면 모든 루트를 볼 수 있어요. 기관별 정책 조회나 변경 업무만 있으면 "
+                    + "해당 기관 범위의 루트만 보여요.")
     public List<AdminDomainRootView> listDomainRoots(
             @AuthenticationPrincipal AuthenticatedUser principal) {
         return adminDomainRootService.list(principal);
@@ -129,9 +129,9 @@ public class AdminPublishingController {
     @PatchMapping("/domain-roots/{rootDomain}")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "루트 도메인 승인 정책 변경",
-            description = "이 루트 아래 이름 신청을 자동으로 승인할지, 승인 큐에 세울지 정합니다. "
+            description = "이 루트 아래 이름 신청을 자동 승인할지 승인 큐에 넣을지 정해요. "
                     + "앞으로 들어오는 신청에만 적용되며 이미 발급된 이름과 이미 기다리는 신청은 "
-                    + "건드리지 않습니다.")
+                    + "바꾸지 않아요.")
     public AdminDomainRootView updateDomainRoot(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable String rootDomain,
@@ -144,7 +144,7 @@ public class AdminPublishingController {
     @GetMapping("/domains/{domainId}/records")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "도메인 레코드 열람",
-            description = "이 이름이 지금 무엇을 가리키는지 봅니다. 읽기 전용입니다.")
+            description = "이 이름이 현재 무엇을 가리키는지 조회해요. 읽기 전용이에요.")
     public List<DnsRecordSetView> listAdminDomainRecords(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId) {
@@ -154,8 +154,8 @@ public class AdminPublishingController {
     @PatchMapping("/domains/{domainId}/renewal")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "도메인 사용 기한 조정",
-            description = "외부 도메인의 사용 기한을 옮깁니다. 미루면 그만큼 더 쓰고, 당기면 "
-                    + "그 시점에 연장하지 않는 한 이름이 해제됩니다.")
+            description = "외부 도메인의 사용 기한을 바꿔요. 미루면 그만큼 더 쓰고 당기면 "
+                    + "새 기한이 지난 뒤 연장하지 않은 이름은 해제 대상이 돼요.")
     public AdminDomainView updateDomainRenewal(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId,

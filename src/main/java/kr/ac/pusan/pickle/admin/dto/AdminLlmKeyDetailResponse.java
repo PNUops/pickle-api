@@ -28,13 +28,13 @@ public record AdminLlmKeyDetailResponse(
         @Nullable Boolean quotaExhausted,
         @Nullable BigDecimal creditLimit,
         @Nullable CreditLimitReset creditLimitReset,
-        @Schema(description = "유료 모델이 발급되어 현재 연결되어 있는지")
+        @Schema(description = "유료 모델용 키의 연결 구성 여부")
         @Nullable Boolean creditAxisConnected,
-        @Schema(description = "OpenRouter가 마지막으로 보고한 현재 limit window 사용액. 미관측이면 null")
+        @Schema(description = "OpenRouter가 마지막으로 보고한 키의 누적 사용액. 현재 리셋 창의 소비량이 아니며 미관측이면 null")
         @Nullable BigDecimal creditUsage,
-        @Schema(description = "Key 금액을 vendor에서 관측한 시각. 미관측이면 null")
+        @Schema(description = "키 금액을 공급자에서 관측한 시각. 미관측이면 null")
         @Nullable Instant creditUsageAt,
-        @Schema(description = "OpenRouter가 보고한 key 잔여 한도. 미관측 또는 무한도면 null")
+        @Schema(description = "OpenRouter가 보고한 키 잔여 한도. 미관측 또는 무한도면 null")
         @Nullable BigDecimal creditLimitRemaining,
         @Nullable UUID openrouterAccountId,
         @Nullable String openrouterAccountName,
@@ -45,11 +45,11 @@ public record AdminLlmKeyDetailResponse(
         @Nullable UUID requestId,
         Instant createdAt,
         @Nullable Instant revokedAt,
-        @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 빈 배열은 제한 없음"
+        @Schema(description = "이 키의 유료 모델 허용 패턴. 빈 배열은 목록 제한 없음"
                 + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
         @Nullable List<String> creditAllowedModels,
-        @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 빈 배열은 차단 없음. "
-                + "허용 목록과 함께 걸리면 차단이 이긴다."
+        @Schema(description = "이 키의 유료 모델 차단 패턴. 빈 배열은 차단 없음. "
+                + "허용 패턴과 겹치면 차단을 우선해요."
                 + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         @Nullable List<String> creditDeniedModels,
         @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.CHAT,
@@ -60,14 +60,14 @@ public record AdminLlmKeyDetailResponse(
                 PassthroughEndpoints.VIDEOS, PassthroughEndpoints.BATCHES,
                 PassthroughEndpoints.FILES}),
                 arraySchema = @Schema(description = "이 키에 부여된 기능 권한. 빈 배열은 "
-                        + "부여 없음(chat 포함). 모델 목록 둘과 반대로 채워야 열린다."))
+                        + "chat을 포함한 기능 부여가 없다는 뜻이에요."))
         @Nullable List<String> passthroughEndpoints,
         @Schema(description = "자체 서빙을 포함한 chat 기능 허용 상태") @Nullable Boolean chatEnabled,
         @Schema(description = "개별 키 금융 정보의 현재 열람 권한") boolean financeVisible,
-        @Schema(description = "키 metadata의 현재 열람 권한") boolean metadataVisible,
+        @Schema(description = "키 메타데이터의 현재 열람 권한") boolean metadataVisible,
         @Schema(description = "키 사용 관측의 현재 열람 권한") boolean observationVisible, @Nullable List<InstitutionLlmAccountReference> accountReferences,
         boolean tokenReferenceVisible, boolean budgetReferenceVisible, List<String> allowedWorkIds,
-        @Schema(description = "현재 예산 명령의 최초 사업 계정 결합 가능 여부. 예산 명령 참조가 없으면 null이며 사용액 관측값을 제공하지 않습니다.")
+        @Schema(description = "현재 예산 명령에서 사업 계정을 처음 연결할 수 있는지 나타내요. 예산 명령 참조가 없으면 null이며 사용액 관측값은 제공하지 않아요.")
         @Nullable Boolean initialAccountBindingAllowed, @Nullable LlmKeyLimitsProjection limitsProjection) {
 
     public static AdminLlmKeyDetailResponse from(LlmApiKey key, UUID workspaceId,

@@ -45,7 +45,7 @@ public class TermsService {
     public TermsDocumentView currentDocument(TermsDocType docType) {
         return currentVersion(docType).map(TermsDocumentView::from)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "문서를 찾을 수 없습니다", "요청한 문서가 존재하지 않습니다."));
+                        "문서를 찾을 수 없어요", "요청한 문서를 찾을 수 없어요."));
     }
 
     // ── per-user consent (/me/consents, /me profile) ─────────────────────────
@@ -101,7 +101,7 @@ public class TermsService {
         // not a green light to skip consent, so require the full set up front.
         if (current.size() != TermsDocType.values().length) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.INTERNAL_ERROR,
-                    "가입을 완료할 수 없습니다", "약관 문서가 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+                    "가입을 완료할 수 없어요", "약관이 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요.");
         }
         List<FieldValidationError> errors = new ArrayList<>();
         List<ConsentInput> submitted = inputs == null ? List.of() : inputs;
@@ -110,7 +110,7 @@ public class TermsService {
                     c -> c.docType() == doc.getDocType() && c.version() == doc.getVersion());
             if (!ok) {
                 errors.add(new FieldValidationError("consents",
-                        doc.getTitle() + "(v" + doc.getVersion() + ") 동의가 필요합니다."));
+                        doc.getTitle() + "(v" + doc.getVersion() + ") 동의가 필요해요."));
             }
         }
         if (!errors.isEmpty()) {
@@ -158,7 +158,7 @@ public class TermsService {
 
     private static ApiException versionMismatch() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.CONSENT_VERSION_MISMATCH,
-                "약관 버전이 갱신되었습니다",
-                "약관이 개정되었습니다. 최신 내용을 확인한 뒤 다시 동의해 주세요.");
+                "동의할 문서를 다시 확인해 주세요",
+                "최신 문서를 불러온 뒤 다시 동의해 주세요.");
     }
 }

@@ -28,7 +28,7 @@ public class AdminSupportOrgController {
 
     @GetMapping
     @Operation(summary = "학생 지원 조회의 기관 필터 목록",
-            description = "비활성 기관을 포함한 기관 ID·이름·상태만 조회합니다. 기관 설정이나 자격증명, 배정·운영 권한을 제공하지 않습니다.")
+            description = "비활성 기관을 포함해 기관 ID와 이름, 상태만 조회해요. 기관 설정이나 자격증명, 배정 및 운영 권한은 제공하지 않아요.")
     @Transactional(readOnly = true)
     public List<AdminSupportOrgOptionResponse> listAdminSupportOrgs(@AuthenticationPrincipal AuthenticatedUser actor) {
         studentPolicy.requireStudentSupport(actor);

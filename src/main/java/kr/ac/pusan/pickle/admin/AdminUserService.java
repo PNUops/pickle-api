@@ -89,7 +89,7 @@ public class AdminUserService {
         User target = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         mfaService.adminReset(actor.id(), actor.role().name(), target, ip);
         return new MessageResponse(
-                "2단계 인증을 초기화했습니다. 사용자는 비밀번호로 로그인한 뒤 다시 등록해야 합니다.");
+                "2단계 인증 등록을 초기화했어요.");
     }
 
     /**
@@ -175,13 +175,13 @@ public class AdminUserService {
         User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         if (actor.id().equals(user.getId())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_SELF_DISABLE_FORBIDDEN,
-                    "비활성화할 수 없는 계정입니다", "본인 계정은 비활성화할 수 없습니다.");
+                    "비활성화할 수 없는 계정이에요", "본인 계정은 비활성화할 수 없어요.");
         }
         if (user.getStatus() != UserStatus.ACTIVE && user.getStatus() != UserStatus.PENDING_VERIFICATION) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_INVALID_STATE,
-                    "비활성화할 수 없는 계정입니다",
+                    "비활성화할 수 없는 계정이에요",
                     user.getStatus() == UserStatus.DISABLED
-                            ? "이미 비활성화된 계정입니다." : "탈퇴한 계정은 비활성화할 수 없습니다.");
+                            ? "이미 비활성화된 계정이에요." : "탈퇴한 계정은 비활성화할 수 없어요.");
         }
 
         Instant now = Instant.now();
@@ -224,8 +224,8 @@ public class AdminUserService {
         User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         if (user.getStatus() != UserStatus.DISABLED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_NOT_DISABLED,
-                    "활성화할 수 없는 계정입니다",
-                    "비활성화 상태의 계정만 활성화할 수 있습니다. 탈퇴한 계정은 되돌릴 수 없습니다.");
+                    "비활성화를 해제할 수 없는 계정이에요",
+                    "비활성화된 계정만 이전 상태로 되돌릴 수 있어요. 탈퇴한 계정은 되돌릴 수 없어요.");
         }
 
         // Restore the pre-disable status (ACTIVE or PENDING_VERIFICATION) so
@@ -258,13 +258,13 @@ public class AdminUserService {
 
     private static ApiException userNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다.");
+                "사용자를 찾을 수 없어요", "해당 ID의 사용자를 찾을 수 없어요.");
     }
 
     private static void requireSystemAdministrator(AuthenticatedUser actor) {
         if (actor.role() != kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "시스템 관리자만 수행할 수 있습니다.");
+                    "접근 권한이 없어요", "시스템 관리자만 할 수 있어요.");
         }
     }
 }

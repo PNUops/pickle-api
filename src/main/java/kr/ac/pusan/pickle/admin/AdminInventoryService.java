@@ -89,10 +89,10 @@ public class AdminInventoryService {
     public AdminOsImageResponse updateCatalogStatus(AuthenticatedUser actor, UUID imageId,
             UpdateOsImageStatusRequest request, String ip) {
         OsImage image = osImageRepository.findByPublicId(imageId)
-                .orElseThrow(() -> notFound("해당 OS 이미지가 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 OS 이미지를 찾을 수 없어요."));
         if (image.getStatus() != request.status() && request.status() == CatalogStatus.ACTIVE) {
             Node node = nodeRepository.findById(image.getNodeId())
-                    .orElseThrow(() -> notFound("OS 이미지가 속한 노드가 존재하지 않습니다."));
+                    .orElseThrow(() -> notFound("OS 이미지가 속한 노드를 찾을 수 없어요."));
             node.vmNicRequirements().ifPresent(requirements -> VmNicConfiguration.requirePrepared(
                     nicConfig(proxmox.currentVmConfig(node.getApiHost(), node.getName(),
                             image.getProxmoxVmid())), requirements));
@@ -112,7 +112,7 @@ public class AdminInventoryService {
     public NodeSummaryResponse updateNodeStatus(AuthenticatedUser actor, UUID publicNodeId,
             UpdateNodeStatusRequest request, String ip) {
         Node node = nodeRepository.findByPublicId(publicNodeId)
-                .orElseThrow(() -> notFound("해당 노드가 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 노드를 찾을 수 없어요."));
         long nodeId = node.getId();
         if (node.getStatus() != request.status()
                 && request.status() == kr.ac.pusan.pickle.inventory.NodeStatus.ACTIVE) {
@@ -171,12 +171,12 @@ public class AdminInventoryService {
     public VmFlavorResponse updateFlavor(AuthenticatedUser actor, UUID flavorId,
             UpdateVmFlavorRequest request, String ip) {
         VmFlavor flavor = vmFlavorRepository.findByPublicId(flavorId)
-                .orElseThrow(() -> notFound("해당 사양 프리셋이 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 사양 프리셋을 찾을 수 없어요."));
         if (request.displayName() == null && request.vcpu() == null && request.memoryMb() == null
                 && request.diskGb() == null && request.notes() == null && request.status() == null
                 && request.displayOrder() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("displayName",
-                    "변경할 필드를 최소 1개 지정해야 합니다.")));
+                    "변경할 필드를 1개 이상 지정해 주세요.")));
         }
         Map<String, Object> changes = new LinkedHashMap<>();
         if (request.displayName() != null && !request.displayName().equals(flavor.getDisplayName())) {
@@ -221,12 +221,12 @@ public class AdminInventoryService {
 
     private static ApiException nameTaken() {
         return ApiException.validationFailed(List.of(new FieldValidationError("name",
-                "이미 존재하는 프리셋 이름입니다.")));
+                "이미 등록된 프리셋 이름이에요.")));
     }
 
     private static ApiException notFound(String detail) {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", detail);
+                "리소스를 찾을 수 없어요", detail);
     }
 
     private static String nicConfig(Map<String, Object> config) {

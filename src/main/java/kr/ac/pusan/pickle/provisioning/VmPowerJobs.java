@@ -154,12 +154,12 @@ public class VmPowerJobs {
             return;
         }
         if (vm.getProxmoxVmid() == null) {
-            recordFailure(action, vmId, actorId, actorKind, worker, "Proxmox VMID가 없는 VM입니다");
+            recordFailure(action, vmId, actorId, actorKind, worker, "Proxmox VMID가 없는 VM이에요");
             return;
         }
         Node node = nodeRepository.findById(vm.getNodeId()).orElse(null);
         if (node == null) {
-            recordFailure(action, vmId, actorId, actorKind, worker, "배치된 노드 정보를 찾을 수 없습니다");
+            recordFailure(action, vmId, actorId, actorKind, worker, "배치된 노드 정보를 찾을 수 없어요");
             return;
         }
         try {

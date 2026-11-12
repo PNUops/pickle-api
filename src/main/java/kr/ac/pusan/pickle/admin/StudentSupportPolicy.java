@@ -69,7 +69,7 @@ public final class StudentSupportPolicy {
 
     private static ApiException forbidden() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                "접근 권한이 없습니다", "이 지원 작업을 수행할 권한이 없습니다.");
+                "접근 권한이 없어요", "이 지원 작업을 할 권한이 없어요.");
     }
 
 }

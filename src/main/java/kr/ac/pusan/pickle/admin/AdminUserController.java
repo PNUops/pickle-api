@@ -91,8 +91,8 @@ public class AdminUserController {
     /** Profile correction reuses the domain mutator for fields locked on the holder's own path. */
     @PatchMapping("/{userId}/profile")
     @Operation(summary = "사용자 프로필 정정",
-            description = "프로필 정정 업무를 가진 기관 계정은 시스템 계층을 제외한 사용자를 전역 정정하며 시스템 관리자는 모든 계정을 정정합니다. "
-                    + "기존 프로필 변경 로직으로 초대 연결과 알림, 감사를 처리합니다. 계정 상태와 MFA, 기관 역할은 변경하지 않습니다.")
+            description = "프로필 정정 업무를 가진 기관 계정은 시스템 계층을 제외한 사용자를 전역 정정하며 시스템 관리자는 모든 계정을 정정해요. "
+                    + "기존 프로필 변경 로직으로 초대 연결과 알림, 감사를 처리해요. 계정 상태와 2단계 인증, 기관 역할은 바꾸지 않아요.")
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
     public UserAdminDetailResponse updateUserProfile(
             @AuthenticationPrincipal AuthenticatedUser principal,

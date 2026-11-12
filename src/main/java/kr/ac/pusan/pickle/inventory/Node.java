@@ -110,7 +110,7 @@ public class Node {
     }
 
     private static IllegalStateException invalidPreparation() {
-        return new IllegalStateException("노드의 프로비저닝 준비 정보가 완전하지 않습니다.");
+        return new IllegalStateException("노드의 프로비저닝 준비 정보가 불완전해요.");
     }
 
     @CreationTimestamp

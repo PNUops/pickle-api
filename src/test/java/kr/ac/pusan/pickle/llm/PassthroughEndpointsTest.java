@@ -40,7 +40,7 @@ class PassthroughEndpointsTest {
         assertThat(errors.getFirst().field()).isEqualTo("endpoints[0]");
         // The message names what is available, because "unknown" alone does not
         // tell somebody who mistyped one character what to type instead.
-        assertThat(errors.getFirst().message()).startsWith("알 수 없는 기능입니다.")
+        assertThat(errors.getFirst().message()).startsWith("알 수 없는 기능이에요.")
                 .contains("embeddings").contains("images");
     }
 
@@ -88,12 +88,12 @@ class PassthroughEndpointsTest {
     @Test
     void refusesAKnownNameThatCannotBeGrantedYet() {
         List<FieldValidationError> errors = new ArrayList<>();
-        assertThat(PassthroughEndpoints.normalize(List.of("chat", "videos"), "endpoints", errors))
+        assertThat(PassthroughEndpoints.normalize(List.of("chat", "containers"), "endpoints", errors))
                 .containsExactly("chat");
         assertThat(errors).hasSize(1);
         assertThat(errors.getFirst().field()).isEqualTo("endpoints[1]");
-        assertThat(errors.getFirst().message()).startsWith("아직 부여할 수 없는 기능입니다.")
-                .contains("chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions");
+        assertThat(errors.getFirst().message()).startsWith("아직 부여할 수 없는 기능이에요.")
+                .contains("chat, web_search, pdf_ocr, images, embeddings, rerank, speech, transcriptions, videos, batches");
     }
 
     /** A feature of chat means nothing without chat. */
@@ -108,6 +108,42 @@ class PassthroughEndpointsTest {
         errors.clear();
         assertThat(PassthroughEndpoints.normalizeGrant(List.of("pdf_ocr", "chat"),
                 "endpoints", errors)).containsExactly("pdf_ocr", "chat");
+        assertThat(errors).isEmpty();
+    }
+
+    /**
+     * Batches stand alone: the vendor's batch carries its requests and results
+     * inline, so granting it brings no file upload with it. It does need chat
+     * or embeddings beside it, the endpoints a batch can target.
+     */
+    @Test
+    void batchesAreGrantableAndDoNotImplyFiles() {
+        List<FieldValidationError> errors = new ArrayList<>();
+        assertThat(PassthroughEndpoints.normalizeGrant(List.of("chat", "batches"),
+                "endpoints", errors)).containsExactly("chat", "batches");
+        assertThat(errors).isEmpty();
+
+        assertThat(PassthroughEndpoints.normalizeGrant(List.of("embeddings", "batches"),
+                "endpoints", errors)).containsExactly("embeddings", "batches");
+        assertThat(errors).isEmpty();
+
+        // A batch needs the grant of the endpoint it targets, so alone it opens nothing.
+        assertThat(PassthroughEndpoints.normalizeGrant(List.of("batches"), "endpoints", errors))
+                .isEmpty();
+        assertThat(errors).hasSize(1);
+        assertThat(errors.getFirst().field()).isEqualTo("endpoints");
+        errors.clear();
+
+        assertThat(PassthroughEndpoints.normalize(List.of("files"), "endpoints", errors)).isEmpty();
+        assertThat(errors).hasSize(1);
+    }
+
+    /** Video generation stands alone: it targets no other endpoint and takes no file. */
+    @Test
+    void videosAreGrantableAlone() {
+        List<FieldValidationError> errors = new ArrayList<>();
+        assertThat(PassthroughEndpoints.normalizeGrant(List.of("videos"), "endpoints", errors))
+                .containsExactly("videos");
         assertThat(errors).isEmpty();
     }
 

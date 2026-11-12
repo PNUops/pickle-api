@@ -13,6 +13,7 @@ import java.util.Set;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
+import kr.ac.pusan.pickle.llm.alert.LlmUsageAlertState;
 import kr.ac.pusan.pickle.provisioning.DriftFindingKind;
 import kr.ac.pusan.pickle.provisioning.DriftFindingRepository;
 import org.jspecify.annotations.Nullable;
@@ -32,6 +33,8 @@ public class OpenRouterReconciler {
     private final DriftFindingRepository findings;
     private final OpenRouterSpendRecorder spendRecorder;
     private final OpenRouterCredentialResolver credentialResolver;
+    @org.springframework.beans.factory.annotation.Autowired
+    private @Nullable LlmUsageAlertState usageAlertState;
 
     public OpenRouterReconciler(LlmApiKeyRepository keyRepository,
             OpenRouterReadClient readClient, OpenRouterKeyMutationClient mutationClient,
@@ -79,6 +82,9 @@ public class OpenRouterReconciler {
         Instant observedAt = Instant.now(clock);
         OpenRouterSpendRecorder.AccountRecordResult recorded = spendRecorder.recordAccount(
                 result.spends(), observedAt, baselineExists, claim, () -> {
+                    if (usageAlertState != null) {
+                        for (ObservedKey row : result.observations()) { usageAlertState.capture(row.key(), row.observation()); }
+                    }
                     recordFindings(result.findingObservations(), observedAt);
                     credentialResolver.markReconciled(access, observedAt);
                     String prefix = "account:" + access.scopeKey() + ":key:";
@@ -116,6 +122,7 @@ public class OpenRouterReconciler {
         List<String> orphanKeys = new ArrayList<>();
         List<String> staleKeys = new ArrayList<>();
         List<OpenRouterSpendRecorder.Spend> spends = new ArrayList<>();
+        List<ObservedKey> observations = new ArrayList<>();
         List<FindingObservation> findingObservations = new ArrayList<>();
         boolean usageComplete = true;
         boolean managedBoundary = false;
@@ -131,6 +138,9 @@ public class OpenRouterReconciler {
             }
             String dedup = dedup(access, managed.hash());
             LlmApiKey local = localByHash.remove(managed.hash());
+            if (local != null && managed.currentObservation() != null) {
+                observations.add(new ObservedKey(local, managed.currentObservation()));
+            }
             if (local != null && managed.usage() != null) {
                 spends.add(new OpenRouterSpendRecorder.Spend(local.getId(), managed.usage(),
                         local.getCreditLimit(), managed.limitRemaining()));
@@ -141,7 +151,7 @@ public class OpenRouterReconciler {
                 orphanKeys.add(dedup);
                 findingObservations.add(new FindingObservation(
                         DriftFindingKind.OPENROUTER_ORPHAN,
-                        "OpenRouter account에 Pickle 기록과 연결되지 않은 key가 있습니다.",
+                        "OpenRouter 계정에 Pickle 기록과 연결되지 않은 키가 있어요.",
                         "{\"accountId\":\"%s\",\"disabled\":%s}"
                                 .formatted(access.scopeKey(), managed.disabled()),
                         dedup));
@@ -211,12 +221,12 @@ public class OpenRouterReconciler {
             staleKeys.add(dedup);
             findingObservations.add(new FindingObservation(
                     DriftFindingKind.OPENROUTER_STALE,
-                    "활성 Pickle key의 OpenRouter runtime key가 vendor account에서 사라졌습니다.",
+                    "Pickle 키에 연결된 OpenRouter 키를 계정에서 찾을 수 없어요.",
                     "{\"accountId\":\"%s\",\"llmKeyId\":\"%s\",\"direction\":\"missing_remote\"}"
                             .formatted(access.scopeKey(), local.getPublicId()),
                     dedup));
         }
-        return new ScopeResult(orphanKeys, staleKeys, spends, findingObservations,
+        return new ScopeResult(orphanKeys, staleKeys, spends, observations, findingObservations,
                 usageComplete, managedBoundary);
     }
 
@@ -244,28 +254,28 @@ public class OpenRouterReconciler {
             boolean status, boolean statusRepaired, LlmApiKeyStatus localStatus,
             boolean over, boolean shouldBeDisabled, boolean providerRepairDeferred) {
         String limit = divergence == null ? null
-                : (limitReapplied ? "OpenRouter 금액 한도를 다시 적용했습니다(" :
-                        providerRepairDeferred ? "OpenRouter 금액 한도 차이를 확인했습니다(" :
-                                "OpenRouter 금액 한도를 다시 적용하지 못했습니다(")
+                : (limitReapplied ? "OpenRouter 금액 한도를 다시 적용했어요(" :
+                        providerRepairDeferred ? "OpenRouter 금액 한도 차이를 확인했어요(" :
+                                "OpenRouter 금액 한도 재적용 결과를 확인하지 못했어요(")
                         + divergence + ")";
         String statusText = null;
         if (status) {
             if (over) {
                 statusText = statusRepaired
-                        ? "폐기·만료된 키의 OpenRouter 키가 아직 살아 있어 비활성화했습니다"
+                        ? "폐기됐거나 만료된 키의 OpenRouter 키가 활성 상태여서 비활성화했어요"
                         : providerRepairDeferred
-                                ? "폐기·만료된 키의 OpenRouter 키가 아직 살아 있습니다"
-                                : "폐기·만료된 키의 OpenRouter 키가 살아 있는데 비활성화하지 못했습니다";
+                                ? "폐기됐거나 만료된 키의 OpenRouter 키가 활성 상태예요"
+                                : "폐기됐거나 만료된 키의 OpenRouter 키 비활성화 결과를 확인하지 못했어요";
             } else if (shouldBeDisabled || localStatus == LlmApiKeyStatus.SUSPENDED) {
                 statusText = statusRepaired
-                        ? "정지된 키의 OpenRouter 키를 비활성화했습니다"
-                        : providerRepairDeferred ? "정지된 키의 OpenRouter 키가 활성 상태입니다"
-                                : "정지된 키의 OpenRouter 키를 비활성화하지 못했습니다";
+                        ? "정지된 키의 OpenRouter 키를 비활성화했어요"
+                        : providerRepairDeferred ? "정지된 키의 OpenRouter 키가 활성 상태예요"
+                                : "정지된 키의 OpenRouter 키 비활성화 결과를 확인하지 못했어요";
             } else {
                 statusText = statusRepaired
-                        ? "활성 키의 OpenRouter 키를 다시 활성화했습니다"
-                        : providerRepairDeferred ? "활성 키의 OpenRouter 키가 비활성 상태입니다"
-                                : "활성 키의 OpenRouter 키를 다시 활성화하지 못했습니다";
+                        ? "활성 키의 OpenRouter 키를 다시 활성화했어요"
+                        : providerRepairDeferred ? "활성 키의 OpenRouter 키가 비활성 상태예요"
+                                : "활성 키의 OpenRouter 키 재활성화 결과를 확인하지 못했어요";
             }
         }
         return limit != null && statusText != null ? limit + "; " + statusText
@@ -299,9 +309,12 @@ public class OpenRouterReconciler {
 
     private record ScopeResult(List<String> orphans, List<String> stale,
             List<OpenRouterSpendRecorder.Spend> spends,
+            List<ObservedKey> observations,
             List<FindingObservation> findingObservations, boolean usageComplete,
             boolean managedBoundary) {
     }
+
+    private record ObservedKey(LlmApiKey key, OpenRouterKeyObservation observation) { }
 
     private record FindingObservation(DriftFindingKind kind, String summary,
             String detail, String dedupKey) {

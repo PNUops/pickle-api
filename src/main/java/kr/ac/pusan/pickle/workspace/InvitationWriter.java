@@ -94,9 +94,9 @@ public class InvitationWriter {
 
     private static ApiException overBudget(ApiException limited) {
         return new ApiException(HttpStatus.TOO_MANY_REQUESTS, ErrorCodes.RATE_LIMITED,
-                "요청이 너무 많습니다", "한 시간에 초대할 수 있는 인원("
+                "요청이 너무 많아요", "한 시간에 초대할 수 있는 인원("
                         + WorkspaceInvitationService.INVITE_ENTRIES_PER_HOUR
-                        + "명)을 넘었습니다. 잠시 후 다시 시도해 주세요.",
+                        + "명)을 넘었어요. 잠시 후 다시 시도해 주세요.",
                 null, limited.getRetryAfterSeconds());
     }
 

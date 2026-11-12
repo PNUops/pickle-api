@@ -344,6 +344,6 @@ public class AdminUserSupportQueryService {
 
     private static ApiException notFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 대상이 존재하지 않습니다.");
+                "리소스를 찾을 수 없어요", "해당 대상을 찾을 수 없어요.");
     }
 }

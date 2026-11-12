@@ -164,7 +164,7 @@ public class MailDeliveryQueryService {
         var view = detail(id).delivery();
         if (!view.canResend() || view.notificationId() == null) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.NOTIFICATION_NOT_RESENDABLE,
-                    "재발송할 수 없습니다", "본문이 남아 있는 확실한 실패 알림만 단건 재발송할 수 있습니다.");
+                    "재발송할 수 없어요", "본문이 남아 있고 실패가 확인된 알림만 단건으로 다시 보낼 수 있어요.");
         }
         return notifications.resend(actor, view.notificationId(), ip);
     }
@@ -204,6 +204,6 @@ public class MailDeliveryQueryService {
 
     private static ApiException notFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "발송 기록을 찾을 수 없습니다", "해당 발송 또는 신청 기록이 없습니다.");
+                "발송 기록을 찾을 수 없어요", "해당 발송 또는 신청 기록을 찾을 수 없어요.");
     }
 }

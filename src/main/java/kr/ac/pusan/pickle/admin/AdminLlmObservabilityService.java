@@ -90,7 +90,7 @@ public class AdminLlmObservabilityService {
     public LlmStatusResponse status(AuthenticatedUser actor, @Nullable UUID orgId) {
         if (!institutionQueries.observationReader(actor)) {
             throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
-                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "기관 LLM 관측 업무가 필요합니다.");
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "기관 LLM 관측 업무 권한이 필요해요.");
         }
         OrgScope scope = scope(actor, orgId);
         Instant now = Instant.now();
@@ -99,7 +99,7 @@ public class AdminLlmObservabilityService {
         boolean sysDiagnostics = !actor.role().isOrgTier();
         if (!InstitutionLlmAccess.systemRead(actor) && institutionQueries.serviceReferences(actor).isEmpty()) {
             throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
-                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "현재 기관과 LLM 워크스페이스 관계를 확인할 수 없습니다.");
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "현재 기관과 LLM 워크스페이스의 관계를 확인할 수 없어요.");
         }
         Set<String> allowedRefs = allowedRefs(actor, scope);
 
@@ -188,7 +188,7 @@ public class AdminLlmObservabilityService {
     public LlmMetricsResponse metrics(AuthenticatedUser actor, @Nullable UUID orgId, int days) {
         if (!institutionQueries.observationReader(actor)) {
             throw new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
-                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없습니다", "기관 LLM 관측 업무가 필요합니다.");
+                    kr.ac.pusan.pickle.common.error.ErrorCodes.ACCESS_DENIED, "접근 권한이 없어요", "기관 LLM 관측 업무 권한이 필요해요.");
         }
         OrgScope scope = scope(actor, orgId);
         Instant to = Instant.now();

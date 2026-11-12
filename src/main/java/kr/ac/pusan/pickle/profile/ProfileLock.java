@@ -81,7 +81,7 @@ public class ProfileLock {
             return;
         }
         errors.add(new FieldValidationError(field,
-                label + "은(는) 입력한 뒤에는 직접 바꿀 수 없습니다. 변경이 필요하면 문의해 주세요."));
+                label + "은 입력한 뒤에는 직접 바꿀 수 없어요. 변경하려면 관리자에게 문의해 주세요."));
     }
 
     /**

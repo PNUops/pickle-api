@@ -7,7 +7,7 @@ import kr.ac.pusan.pickle.sshkey.VmSshKey;
 import org.jspecify.annotations.Nullable;
 
 /** The non-secret facts about a VM's issued key. */
-@Schema(description = "VM에 발급된 SSH 키 정보 (개인키는 포함하지 않는다)")
+@Schema(description = "개인키를 제외한 VM SSH 키 정보")
 public record VmSshKeyView(
         @Schema(description = "키 식별자") UUID id,
         @Schema(description = "SHA256 지문 (ssh-keygen -lf 출력과 같은 형식)",

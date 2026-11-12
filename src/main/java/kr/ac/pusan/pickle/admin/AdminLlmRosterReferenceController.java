@@ -24,8 +24,8 @@ public class AdminLlmRosterReferenceController {
 
     @GetMapping
     @Operation(operationId = "listAdminLlmRosterAccountReferences", summary = "새 LLM 명단 발급의 사업 계정 선택 참조",
-            description = "실제 기관과 살아 있는 워크스페이스에 대한 명단 발급과 키 예산 업무를 같은 권한 원천에서 확인합니다. "
-                    + "기존 신청이나 리소스, 개인 구성원 자격은 필요하지 않습니다. 계정 ID·이름·선택 가능 상태와 적용 가능한 기본 정책만 반환합니다.")
+            description = "실제 기관과 살아 있는 워크스페이스에 대한 명단 발급과 키 예산 업무를 같은 권한 원천에서 확인해요. "
+                    + "기존 신청이나 리소스, 개인 구성원 자격은 필요하지 않아요. 계정 ID와 이름, 선택 가능 상태, 적용 가능한 기본 정책만 반환해요.")
     public List<InstitutionLlmAccountReference> list(@AuthenticationPrincipal AuthenticatedUser actor,
             @RequestParam UUID orgId, @RequestParam UUID workspaceId) {
         return references.forRoster(actor, orgId, workspaceId);

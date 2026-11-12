@@ -10,6 +10,6 @@ import java.util.UUID;
  */
 public record RelayTokenResponse(
         UUID relayId,
-        @Schema(description = "새 동기화 토큰(64자 hex). 이 응답에서만 확인 가능하며 저장되지 않습니다")
+        @Schema(description = "새 동기화 토큰이에요(64자 hex). 이 응답에서만 확인할 수 있으며 평문은 저장하지 않아요.")
         String token) {
 }

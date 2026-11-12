@@ -39,7 +39,7 @@ public record AdminOrgOperationsResponse(
             UUID userId,
             String name,
             String email,
-            @Schema(description = "이 기관에서 보유한 역할. 계정의 최고 역할과 구분합니다.") UserRole role,
+            @Schema(description = "이 기관에서 보유한 역할이며 계정의 최고 역할과 구분해요.") UserRole role,
             @Nullable InstitutionPermissionView permission,
             UserStatus status,
             @Nullable Boolean requestMail,

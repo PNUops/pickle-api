@@ -144,6 +144,6 @@ public record PlacementCapacity(CapacityAmounts physical, CapacityAmounts reserv
     }
 
     private static IllegalStateException invalid() {
-        return new IllegalStateException("노드의 예약 용량 정보를 확인할 수 없습니다");
+        return new IllegalStateException("노드의 예약 용량 정보를 확인할 수 없어요");
     }
 }

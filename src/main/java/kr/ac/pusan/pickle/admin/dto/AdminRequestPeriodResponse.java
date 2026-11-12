@@ -18,7 +18,7 @@ public record AdminRequestPeriodResponse(
         String displayName,
         @Schema(description = "종료일") LocalDate endDate,
         CatalogStatus status,
-        @Schema(description = "신청 화면에서의 표시 순서. 값이 같으면 먼저 만든 것이 앞에 옵니다.")
+        @Schema(description = "신청 화면의 표시 순서예요. 값이 같으면 먼저 만든 항목이 앞에 와요.")
         int displayOrder,
         @Schema(description = "종료일이 이미 지나 신청 화면에 나오지 않는 항목인지.")
         boolean expired) {

@@ -47,8 +47,8 @@ public class AdminNodeMetricsService {
 
     public NodeMetricsResponse metrics(UUID nodeId, RrdTimeframe timeframe) {
         Node node = nodeRepository.findByPublicId(nodeId).orElseThrow(() -> new ApiException(
-                HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
-                "해당 노드가 존재하지 않습니다."));
+                HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요",
+                "해당 노드를 찾을 수 없어요."));
         List<NodeMetricPointResponse> points;
         try {
             points = proxmoxClient.nodeRrdData(node.getApiHost(), node.getName(), timeframe)
@@ -62,7 +62,7 @@ public class AdminNodeMetricsService {
             // is the same "PVE cannot be asked" as a transport failure.
             log.warn("Node {} usage read failed: {}", node.getName(), e.getMessage());
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.METRICS_UNAVAILABLE,
-                    "사용량 데이터를 불러오지 못했습니다", "잠시 후 다시 시도해 주세요.");
+                    "사용량 데이터를 불러오지 못했어요", "잠시 후 다시 시도해 주세요.");
         }
         return new NodeMetricsResponse(timeframe.name(), clock.instant(), points);
     }

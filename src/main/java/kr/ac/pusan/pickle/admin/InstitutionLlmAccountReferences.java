@@ -50,7 +50,7 @@ public class InstitutionLlmAccountReferences {
     }
     private static kr.ac.pusan.pickle.common.error.ApiException notFound() {
         return new kr.ac.pusan.pickle.common.error.ApiException(org.springframework.http.HttpStatus.NOT_FOUND,
-                kr.ac.pusan.pickle.common.error.ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다", "이 명단 발급 대상의 사업 계정 참조를 찾을 수 없습니다.");
+                kr.ac.pusan.pickle.common.error.ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없어요", "이 명단 발급 대상의 사업 계정 참조를 찾을 수 없어요.");
     }
     private List<InstitutionLlmAccountReference> ofInstitution(long institution) {
         return accounts.findAll().stream().filter(account -> account.getOrgId() == institution)

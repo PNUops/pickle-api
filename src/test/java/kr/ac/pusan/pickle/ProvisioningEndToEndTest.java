@@ -273,8 +273,8 @@ class ProvisioningEndToEndTest {
         MailMessage createdMail = mockMailSender.lastMessageTo(USER_EMAIL);
         assertThat(createdMail.subject()).contains(vm.get("hostname").asString());
         assertThat(createdMail.textBody())
-                .contains(EXPECTED_IP)
-                .contains("플랫폼은 VM 데이터를 백업하지 않습니다");
+                .contains("VM '" + vm.get("hostname").asString() + "'이 준비됐어요. 상세 화면에서 접속 방법을 확인해 주세요.")
+                .contains("/console/vms/");
 
         // 12. the audit trail covers the whole flow
         for (String action : new String[] {"auth.signup", "auth.verify", "auth.login",

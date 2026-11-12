@@ -30,10 +30,10 @@ public class IdentityService {
     public void unlink(AuthenticatedUser principal, IdentityProvider provider, String ip) {
         User user = userRepository.findById(principal.id()).orElseThrow(
                 () -> new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
-                        "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다."));
+                        "인증이 필요해요", "액세스 토큰이 없거나 만료됐어요. 다시 로그인해 주세요."));
         UserIdentity identity = repository.findByProviderAndUserId(provider, user.getId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "연동된 계정이 없습니다", "이 계정에는 해당 로그인 수단이 연동되어 있지 않습니다."));
+                        "연동된 계정이 없어요", "이 계정에는 해당 로그인 수단이 연동돼 있지 않아요."));
 
         // The console disables the button, but the console is not the authority:
         // an account whose only way in is this link must not be able to remove
@@ -41,8 +41,8 @@ public class IdentityService {
         // mail sets a password, but only for someone who knows to ask for one).
         if (!user.hasPassword() && repository.findByUserIdOrderByLinkedAtAsc(user.getId()).size() <= 1) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.IDENTITY_LAST_METHOD,
-                    "유일한 로그인 수단입니다",
-                    "이 계정의 마지막 로그인 수단이라 해제할 수 없습니다. 비밀번호 재설정 메일로 비밀번호를 먼저 설정해 주세요.");
+                    "마지막 로그인 수단이에요",
+                    "마지막 로그인 수단은 해제할 수 없어요. 비밀번호 재설정 메일을 받아 먼저 비밀번호를 설정해 주세요.");
         }
 
         repository.delete(identity);

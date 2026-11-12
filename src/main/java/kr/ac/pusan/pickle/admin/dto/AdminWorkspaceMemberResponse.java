@@ -18,7 +18,7 @@ public record AdminWorkspaceMemberResponse(
         @org.jspecify.annotations.Nullable String email,
         WorkspaceMemberRole workspaceRole,
         UserStatus userStatus,
-        @Schema(description = "현재 관리자에게 이 구성원의 사용자 관계·지원 상세를 열람할 권한이 있는지 여부")
+        @Schema(description = "현재 관리자에게 이 구성원의 사용자 관계와 지원 상세를 열람할 권한이 있는지 여부")
         boolean supportDetailVisible,
         @org.jspecify.annotations.Nullable Instant joinedAt,
         boolean canChangeRole,

@@ -23,7 +23,7 @@ public record InstitutionPermissionInput(
         @NotNull InstitutionPermissionMode mode,
         @NotNull @Size(max = 200) List<@NotNull String> work,
         @NotNull Map<@NotNull InstitutionWorkGroup, @NotNull @Valid InstitutionWorkspaceScopeInput> scopes,
-        @Schema(description = "기존 부여의 현재 버전. 새 부여는 0이며 회수 후 재부여한 버전은 재사용하지 않습니다.")
+        @Schema(description = "기존 부여의 현재 버전을 보내요. 새 부여는 0이며, 회수 후 다시 부여하면 이전과 다른 버전이 할당돼요.")
         @NotNull @Min(0) Long expectedRevision) {
 
     public InstitutionAssignment toAssignment(UUID accountId, UUID institutionId) {
@@ -43,7 +43,7 @@ public record InstitutionPermissionInput(
                     selected, selectedScopes, expectedRevision);
         } catch (IllegalArgumentException | NullPointerException exception) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("permission",
-                    "부여 방식과 업무, 그룹별 워크스페이스 범위를 확인해 주세요. FULL은 업무·범위를 비우고, SELECTED는 업무를 하나 이상 지정해야 합니다.")));
+                    "부여 방식과 업무, 그룹별 워크스페이스 범위를 확인해 주세요. FULL은 업무와 범위를 비우고 SELECTED는 업무를 하나 이상 지정해야 해요.")));
         }
     }
 }

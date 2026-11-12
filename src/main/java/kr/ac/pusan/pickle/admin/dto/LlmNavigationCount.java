@@ -3,7 +3,7 @@ package kr.ac.pusan.pickle.admin.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.jspecify.annotations.Nullable;
 
-@Schema(description = "현재 허용된 키 집합의 정확한 탐색 수. 미제공은 null이며 실제 0과 다릅니다.")
+@Schema(description = "현재 허용된 키 집합의 정확한 탐색 수예요. 미제공은 null이며 실제 0과 구분해요.")
 public record LlmNavigationCount(LlmNavigationState state, @Nullable Long totalElements) {
     public enum LlmNavigationState { AVAILABLE, NOT_PROVIDED }
     public static LlmNavigationCount available(long count) {

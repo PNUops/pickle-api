@@ -42,7 +42,7 @@ public class VmNetworkPolicyAdvisoryLock {
                 }
             }
         } catch (java.sql.SQLException failure) {
-            throw new IllegalStateException("VM 방화벽 single-writer lock을 확인할 수 없습니다.", failure);
+            throw new IllegalStateException("VM 방화벽 single-writer lock을 확인할 수 없어요.", failure);
         }
     }
 
@@ -162,7 +162,7 @@ public class VmNetworkPolicyAdvisoryLock {
             statement.setLong(1, key);
             statement.execute();
         } catch (java.sql.SQLException failure) {
-            throw new IllegalStateException("VM 방화벽 single-writer lock을 해제하지 못했습니다.", failure);
+            throw new IllegalStateException("VM 방화벽 single-writer lock 해제 여부를 확인할 수 없어요.", failure);
         }
     }
 }

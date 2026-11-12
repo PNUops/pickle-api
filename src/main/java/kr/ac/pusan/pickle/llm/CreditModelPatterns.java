@@ -53,16 +53,16 @@ public final class CreditModelPatterns {
                     + "|\\*/([a-z0-9][a-z0-9._:-]*\\*?|\\*[a-z0-9._:-]*[a-z0-9]|\\*))$");
 
     public static final String ALLOW_PATTERN_DESCRIPTION =
-            " 항목은 부호 없는 모델 패턴입니다. 공급자는 정확한 이름 또는 *만 사용할 수 "
-                    + "있습니다(예: openai/*, */*-pro). 공급자 *는 ~별칭도 포함하고, 특정 "
-                    + "공급자의 허용은 ~별칭을 별도로 적어야 합니다. 정확한 모델명은 :batch 같은 "
-                    + "변형도 포함합니다. 목록별 최대 50개, 항목별 200바이트입니다.";
+            " 각 항목에는 부호 없는 모델 패턴을 입력해요. 공급자는 정확한 이름 또는 *만 사용할 수 "
+                    + "있어요(예: openai/*, */*-pro). 공급자 *는 ~별칭도 포함하며 특정 "
+                    + "공급자를 허용할 때는 ~별칭을 별도로 적어야 해요. 정확한 모델명은 :batch 같은 "
+                    + "변형도 포함해요. 목록마다 최대 50개, 항목마다 200바이트까지 입력해요.";
 
     public static final String DENY_PATTERN_DESCRIPTION =
-            " 항목은 허용 목록과 같은 부호 없는 모델 패턴입니다. 공급자는 정확한 이름 또는 "
-                    + "*만 사용할 수 있습니다(예: openai/*, */*-pro). 차단은 ~를 제거한 이름도 "
-                    + "검사하며, 별칭의 실제 대상 모델은 추적하지 않습니다. 정확한 모델명은 "
-                    + ":batch 같은 변형도 포함합니다. 목록별 최대 50개, 항목별 200바이트입니다.";
+            " 각 항목은 허용 목록과 같은 부호 없는 모델 패턴이에요. 공급자는 정확한 이름 또는 "
+                    + "*만 사용할 수 있어요(예: openai/*, */*-pro). 차단은 ~를 제거한 이름도 "
+                    + "검사하며 별칭의 실제 대상 모델은 추적하지 않아요. 정확한 모델명은 "
+                    + ":batch 같은 변형도 포함해요. 목록마다 최대 50개, 항목마다 200바이트까지 입력해요.";
 
     /**
      * Self-serving model prefixes. A name starting with one of these is served
@@ -104,7 +104,7 @@ public final class CreditModelPatterns {
             String value = entry.trim().toLowerCase(Locale.ROOT);
             String at = field + "[" + i + "]";
             if (value.getBytes(StandardCharsets.UTF_8).length > MAX_ENTRY_BYTES) {
-                errors.add(new FieldValidationError(at, "모델 이름이 너무 깁니다."));
+                errors.add(new FieldValidationError(at, "모델 패턴이 너무 길어요."));
                 continue;
             }
             if ("*".equals(value)) {
@@ -112,20 +112,20 @@ public final class CreditModelPatterns {
                 // allow list and the deny list, and "leave it empty to allow
                 // everything" is false advice on the second one.
                 errors.add(new FieldValidationError(at,
-                        "'*' 하나만 적을 수는 없습니다. 목록을 비우면 이 목록은 아무것도 제한하지 "
-                                + "않고, 전체 공급자는 '*/*', 한 공급자는 'openai/*'처럼 적습니다."));
+                        "'*'만 입력할 수는 없어요. 빈 목록은 아무것도 제한하지 않아요. "
+                                + "전체 공급자는 '*/*', 한 공급자는 'openai/*'처럼 입력해 주세요."));
                 continue;
             }
             if (isReserved(value)) {
                 errors.add(new FieldValidationError(at,
-                        "자체 서빙 모델은 이 목록의 대상이 아닙니다. 유료 모델 이름을 적어 주세요."));
+                        "이 이름은 유료 모델 목록의 대상이 아니에요. 유료 모델 이름을 입력해 주세요."));
                 continue;
             }
             if (!PATTERN.matcher(value).matches()) {
                 errors.add(new FieldValidationError(at,
                         "모델 이름(예: openai/gpt-4o-mini), 공급자 전체(예: openai/*), 또는 "
                                 + "모델 자리에 와일드카드를 하나 포함한 패턴(예: openai/gpt-5-*, "
-                                + "*/*-pro) 형식이어야 합니다. 공급자는 정확한 이름 또는 '*'만 사용할 수 있습니다."));
+                                + "*/*-pro) 형식으로 입력해 주세요. 공급자는 정확한 이름이나 '*'만 사용할 수 있어요."));
                 continue;
             }
             kept.add(value);
@@ -137,7 +137,7 @@ public final class CreditModelPatterns {
         // bound at all.
         if (kept.size() > MAX_ENTRIES) {
             errors.add(new FieldValidationError(field,
-                    "모델은 최대 " + MAX_ENTRIES + "개까지 허용할 수 있습니다."));
+                    "모델은 최대 " + MAX_ENTRIES + "개까지 입력할 수 있어요."));
             return List.of();
         }
         return List.copyOf(kept);

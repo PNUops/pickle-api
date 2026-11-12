@@ -47,7 +47,7 @@ public class VmNetworkPolicyApplyJob {
     @Job(name = "vm-network-policy %0", retries = 3)
     public void apply(long vmId) {
         if (!lock.run(vmId, () -> applyLocked(vmId))) {
-            throw new IllegalStateException("VM 통신 정책을 다른 worker가 적용 중입니다.");
+            throw new IllegalStateException("다른 작업이 VM 통신 정책을 사용 중이에요.");
         }
     }
 
@@ -59,22 +59,22 @@ public class VmNetworkPolicyApplyJob {
         VmNetworkPolicyStore.Target target = null;
         try {
             properties.requireConfigured(); // existing row never bypasses on flag disappearance
-            Vm vm = vms.findById(vmId).orElseThrow(() -> new IllegalStateException("VM이 존재하지 않습니다."));
+            Vm vm = vms.findById(vmId).orElseThrow(() -> new IllegalStateException("VM을 찾을 수 없어요."));
             Node node = nodes.findById(vm.getNodeId()).orElseThrow();
             node.vmFirewallPolicy().orElseThrow(() -> new IllegalStateException(
-                    "노드의 VM 방화벽 정책 준비 label이 없습니다."));
+                    "노드의 VM 방화벽 정책 준비 label을 확인할 수 없어요."));
             var nicRequirements = node.vmNicRequirements().orElseThrow(() ->
-                    new IllegalStateException("노드의 VM NIC 준비 label이 없습니다."));
+                    new IllegalStateException("노드의 VM NIC 준비 label을 확인할 수 없어요."));
             if (vm.getProxmoxVmid() == null) {
-                throw new IllegalStateException("VMID가 아직 준비되지 않았습니다.");
+                throw new IllegalStateException("VMID가 준비되지 않았어요.");
             }
             IpAllocation allocation = allocations
                     .findFirstByVmIdAndStatusOrderByIdDesc(vmId, AllocationStatus.ALLOCATED)
-                    .orElseThrow(() -> new IllegalStateException("할당된 VM IPv4가 없습니다."));
+                    .orElseThrow(() -> new IllegalStateException("할당된 VM IPv4를 확인할 수 없어요."));
             List<VmNetworkPolicyCompiler.PublishedPath> paths = publishedPaths.find(vmId);
             String desiredHash = VmNetworkPolicyHashes.desired(properties, paths, snapshot.rules());
             if (!desiredHash.equals(snapshot.desiredHash())) {
-                throw new IllegalStateException("VM 통신 정책 desired hash가 현재 입력과 다릅니다.");
+                throw new IllegalStateException("VM 통신 정책 desired hash가 현재 입력과 달라요.");
             }
             VmNetworkPolicyCompiler.Plan plan = VmNetworkPolicyCompiler.compile(
                     allocation.getIp(), properties, paths, snapshot.rules());
@@ -85,7 +85,7 @@ public class VmNetworkPolicyApplyJob {
                     || !target.apiHost().equals(node.getApiHost())
                     || !target.nodeName().equals(node.getName())
                     || !target.bridge().equals(node.getVmBridge())) {
-                throw new IllegalStateException("VM 방화벽 target tuple이 적용 입력과 다릅니다.");
+                throw new IllegalStateException("VM 방화벽 target tuple이 적용 입력과 달라요.");
             }
             reconciler.reconcile(target.providerTarget(), plan);
             if (!store.markApplied(vmId, snapshot.desiredGeneration(), desiredHash, target)) {
@@ -99,7 +99,7 @@ public class VmNetworkPolicyApplyJob {
             }
             if (!store.markFailed(vmId, snapshot.desiredGeneration(),
                     VmNetworkPolicyApplyState.FAILED,
-                    "VM 대상 정보가 변경되어 차단 상태를 확인할 수 없습니다.")) {
+                    "VM 대상이나 정책 정보가 달라 차단 상태를 확인할 수 없어요.")) {
                 log.info("vm network policy {} failed-closed outcome superseded", vmId);
             }
         } catch (RuntimeException failure) {
@@ -116,6 +116,6 @@ public class VmNetworkPolicyApplyJob {
                 && failure.getMessage() != null && !failure.getMessage().isBlank()) {
             return failure.getMessage();
         }
-        return "Proxmox VM 방화벽 설정 상태를 확인할 수 없습니다.";
+        return "Proxmox VM 방화벽 설정 상태를 확인할 수 없어요.";
     }
 }

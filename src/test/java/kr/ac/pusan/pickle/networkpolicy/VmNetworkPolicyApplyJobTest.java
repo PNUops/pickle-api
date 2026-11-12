@@ -90,11 +90,11 @@ class VmNetworkPolicyApplyJobTest {
         when(fixture.store.markFailedClosed(eq(11L), eq(1L), anyString(), any(),
                 eq("guarded"))).thenReturn(false);
         when(fixture.store.markFailed(11L, 1L, VmNetworkPolicyApplyState.FAILED,
-                "VM 대상 정보가 변경되어 차단 상태를 확인할 수 없습니다.")).thenReturn(true);
+                "VM 대상이나 정책 정보가 달라 차단 상태를 확인할 수 없어요.")).thenReturn(true);
 
         assertThatCode(() -> fixture.job.apply(11L)).doesNotThrowAnyException();
         verify(fixture.store).markFailed(11L, 1L, VmNetworkPolicyApplyState.FAILED,
-                "VM 대상 정보가 변경되어 차단 상태를 확인할 수 없습니다.");
+                "VM 대상이나 정책 정보가 달라 차단 상태를 확인할 수 없어요.");
     }
 
     @Test
@@ -104,11 +104,11 @@ class VmNetworkPolicyApplyJobTest {
                 "GET https://10.0.0.8/api2/json token=do-not-store"))
                 .when(fixture.reconciler).reconcile(any(), any());
         when(fixture.store.markFailed(11L, 1L, VmNetworkPolicyApplyState.FAILED,
-                "Proxmox VM 방화벽 설정 상태를 확인할 수 없습니다.")).thenReturn(true);
+                "Proxmox VM 방화벽 설정 상태를 확인할 수 없어요.")).thenReturn(true);
 
         assertThatThrownBy(() -> fixture.job.apply(11L)).isInstanceOf(RuntimeException.class);
         verify(fixture.store).markFailed(11L, 1L, VmNetworkPolicyApplyState.FAILED,
-                "Proxmox VM 방화벽 설정 상태를 확인할 수 없습니다.");
+                "Proxmox VM 방화벽 설정 상태를 확인할 수 없어요.");
     }
 
     private static Fixture preparedFixture() {

@@ -46,7 +46,7 @@ public class MfaController {
             @Valid @RequestBody DisableMfaRequest request, HttpServletRequest httpRequest) {
         mfaService.disable(principal.id(), request.password(), request.code(), request.recoveryCode(),
                 clientIp(httpRequest));
-        return new MessageResponse("2단계 인증이 해제되었습니다.");
+        return new MessageResponse("2단계 인증이 해제됐어요.");
     }
 
     @PostMapping("/recovery-codes")

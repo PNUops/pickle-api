@@ -18,7 +18,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * router's own name. An empty list does not prove nothing was substituted.
  */
 public record LlmServedModelUsageResponse(
-        @Schema(description = "공급자가 실제로 응답한 모델 이름. 요청한 모델과 다를 때만 기록됩니다.")
+        @Schema(description = "공급자가 실제로 응답한 모델 이름이며, 공급자에게 보낸 모델과 다를 때만 기록해요.")
         String servedModelName,
         @Schema(description = "그 이름으로 돌아온 요청 수")
         long requests) {

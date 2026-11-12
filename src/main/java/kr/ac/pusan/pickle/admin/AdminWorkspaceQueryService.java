@@ -194,6 +194,6 @@ public class AdminWorkspaceQueryService {
     private static String idList(List<Long> ids) { return ids.isEmpty() ? "null" : String.join(",", ids.stream().map(String::valueOf).toList()); }
     private static ApiException notFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 워크스페이스가 존재하지 않습니다.");
+                "리소스를 찾을 수 없어요", "해당 워크스페이스를 찾을 수 없어요.");
     }
 }

@@ -340,7 +340,7 @@ class InstitutionAdministrationTest {
         change(subject, full(0));
         var request = rosterWithSubject(selected(sourceRevision(subject), List.of(InstitutionWork.VM_METADATA_READ)));
         assertThat(operations.preview(principal(sys), org.getPublicId(), request).warnings())
-                .anySatisfy(warning -> assertThat(warning).contains("마지막 FULL 출처", "비용 읽기도 없어집니다"));
+                .anySatisfy(warning -> assertThat(warning).contains("마지막 FULL 출처", "비용 읽기도 없어져요"));
         operations.save(principal(sys), org.getPublicId(), request, "127.0.0.1");
         assertThat(authority(subject).evaluate(InstitutionWork.LLM_KEY_COST_READ,
                 InstitutionWorkTarget.resource(UUID.randomUUID(), InstitutionWorkGroup.LLM, UUID.randomUUID())).allowed()).isFalse();

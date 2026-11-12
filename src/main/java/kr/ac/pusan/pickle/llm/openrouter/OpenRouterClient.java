@@ -7,6 +7,7 @@ import java.net.http.HttpClient;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,7 +26,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.core.StreamReadFeature;
+import tools.jackson.core.StreamReadConstraints;
 
 /**
  * Client for OpenRouter's key-management API. One pickle key with a money
@@ -43,13 +48,26 @@ public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMuta
 
     private static final Logger log = LoggerFactory.getLogger(OpenRouterClient.class);
     private static final JsonMapper JSON = JsonMapper.builder().build();
+    private static final JsonMapper OBSERVATION_JSON = JsonMapper.builder(JsonFactory.builder()
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(32)
+                    .maxStringLength(4096).maxNumberLength(128).build()).build())
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build();
 
     /** Pagination backstop for the key listing — see the loop's comment. */
     private static final int MAX_KEY_PAGES = 200;
 
     private final RestClient restClient;
+    private final Clock clock;
 
     public OpenRouterClient(OpenRouterProperties properties) {
+        this(properties, Clock.systemUTC());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OpenRouterClient(OpenRouterProperties properties, Clock clock) {
+        this.clock = clock;
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder().connectTimeout(properties.connectTimeout()).build());
         factory.setReadTimeout(properties.readTimeout());
@@ -71,7 +89,16 @@ public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMuta
     public record ManagedKey(String hash, String name, boolean disabled,
             @Nullable BigDecimal limit, @Nullable String limitReset,
             boolean includeByokInLimit, @Nullable BigDecimal usage,
-            @Nullable UUID workspaceId, @Nullable BigDecimal limitRemaining) {
+            @Nullable UUID workspaceId, @Nullable BigDecimal limitRemaining,
+            @Nullable OpenRouterKeyObservation currentObservation) {
+
+        public ManagedKey(String hash, String name, boolean disabled,
+                @Nullable BigDecimal limit, @Nullable String limitReset,
+                boolean includeByokInLimit, @Nullable BigDecimal usage,
+                @Nullable UUID workspaceId, @Nullable BigDecimal limitRemaining) {
+            this(hash, name, disabled, limit, limitReset, includeByokInLimit, usage,
+                    workspaceId, limitRemaining, null);
+        }
 
         public ManagedKey(String hash, String name, boolean disabled,
                 @Nullable BigDecimal limit, @Nullable String limitReset,
@@ -214,12 +241,15 @@ public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMuta
         for (int page = 0; page < MAX_KEY_PAGES; page++) {
             String path = "/keys?include_disabled=true&offset=" + offset
                     + workspaceQuery(workspaceId, true);
-            JsonNode node = exchange(managementSecret, HttpMethod.GET, path, null, 200);
+            ObservedWire wire = exchangeWire(managementSecret, HttpMethod.GET, path, null, true, 200);
+            JsonNode node = wire.legacy();
             JsonNode data = node.path("data");
             if (!data.isArray() || data.isEmpty()) {
                 return keys;
             }
+            int entryIndex = 0;
             for (JsonNode entry : data) {
+                JsonNode exact = wire.exact() == null ? null : wire.exact().path("data").path(entryIndex++);
                 String hash = text(entry, "hash");
                 if (hash == null) {
                     continue;
@@ -234,7 +264,8 @@ public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMuta
                                 ? entry.path("usage").decimalValue() : null,
                         uuid(entry, "workspace_id"),
                         entry.path("limit_remaining").isNumber()
-                                ? entry.path("limit_remaining").decimalValue() : null));
+                                ? entry.path("limit_remaining").decimalValue() : null,
+                        OpenRouterKeyObservation.from(exact, wire.startedAt(), wire.endedAt())));
             }
             offset += data.size();
         }
@@ -243,8 +274,8 @@ public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMuta
     }
 
     public ManagedKey getKey(String managementSecret, @Nullable UUID workspaceId, String hash) {
-        JsonNode node = exchange(managementSecret, HttpMethod.GET, keyPath(hash),
-                null, 200);
+        ObservedWire wire = exchangeWire(managementSecret, HttpMethod.GET, keyPath(hash), null, true, 200);
+        JsonNode node = wire.legacy();
         JsonNode data = node.path("data");
         String returnedHash = text(data, "hash");
         if (returnedHash == null) {
@@ -262,7 +293,9 @@ public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMuta
                 data.path("usage").isNumber() ? data.path("usage").decimalValue() : null,
                 returnedWorkspace,
                 data.path("limit_remaining").isNumber()
-                        ? data.path("limit_remaining").decimalValue() : null);
+                        ? data.path("limit_remaining").decimalValue() : null,
+                OpenRouterKeyObservation.from(wire.exact() == null ? null : wire.exact().path("data"),
+                        wire.startedAt(), wire.endedAt()));
     }
 
     @Override
@@ -378,6 +411,14 @@ public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMuta
     private JsonNode exchange(String managementSecret, HttpMethod method, String path,
             @Nullable Object body,
             int... acceptable) {
+        return exchangeWire(managementSecret, method, path, body, false, acceptable).legacy();
+    }
+
+    private record ObservedWire(JsonNode legacy, @Nullable JsonNode exact,
+            Instant startedAt, Instant endedAt) { }
+
+    private ObservedWire exchangeWire(String managementSecret, HttpMethod method, String path,
+            @Nullable Object body, boolean captureObservation, int... acceptable) {
         RestClient.RequestBodySpec spec = restClient.method(method)
                 .uri(path)
                 .header(HttpHeaders.AUTHORIZATION, authorizationHeader(managementSecret))
@@ -387,13 +428,19 @@ public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMuta
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(JSON.writeValueAsString(body));
         }
+        Instant startedAt = clock.instant();
         try {
             return spec.exchange((req, response) -> {
                 String responseBody = readBody(response.getBody());
                 int status = response.getStatusCode().value();
                 for (int ok : acceptable) {
                     if (status == ok) {
-                        return tree(responseBody);
+                        JsonNode exact = null;
+                        if (captureObservation) {
+                            try { exact = OBSERVATION_JSON.readTree(responseBody); }
+                            catch (RuntimeException invalidObservation) { /* Legacy parsing remains independent. */ }
+                        }
+                        return new ObservedWire(tree(responseBody), exact, startedAt, clock.instant());
                     }
                 }
                 throw new OpenRouterException(status, errorText(status));

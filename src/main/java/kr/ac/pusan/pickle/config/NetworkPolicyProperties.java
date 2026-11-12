@@ -16,12 +16,12 @@ public record NetworkPolicyProperties(boolean enabled, List<String> campusSource
 
     public SourcePolicy campusPreset(boolean ipv6Supported) {
         if (campusSourceCidrs.isEmpty()) {
-            throw new IllegalStateException("교내 출발지 IP 범위가 설정되지 않았습니다.");
+            throw new IllegalStateException("교내 출발지 IP 범위가 설정되지 않았어요.");
         }
         List<CidrBlock> supported = campusSourceCidrs.stream().map(CidrBlock::parse)
                 .filter(cidr -> ipv6Supported || !cidr.ipv6()).toList();
         if (supported.isEmpty()) {
-            throw new IllegalStateException("이 공개 경로가 지원하는 교내 출발지 IP 범위가 없습니다.");
+            throw new IllegalStateException("이 공개 경로가 지원하는 교내 출발지 IP 범위가 없어요.");
         }
         return new SourcePolicy(supported);
     }

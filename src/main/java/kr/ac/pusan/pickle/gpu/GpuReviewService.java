@@ -48,7 +48,7 @@ public class GpuReviewService {
                 on conflict (allocation_id) where decision is null do nothing returning public_id
                 """, (rs, row) -> rs.getObject(1, UUID.class), allocationId, reason, json.writeValueAsString(evidence));
         if (!ids.isEmpty()) {
-            notices.administrators("GPU '" + a.name() + "'의 " + ("UNATTACHED".equals(reason) ? "미연결" : "저사용") + " 상태를 검토해 주세요. 자동으로 회수하지 않습니다.", "gpu.review:" + ids.getFirst());
+            notices.administrators("GPU '" + a.name() + "'의 " + ("UNATTACHED".equals(reason) ? "미연결" : "저사용") + " 상태를 검토해 주세요. 자동으로 회수하지 않아요.", "gpu.review:" + ids.getFirst());
         }
     }
     @Transactional(readOnly = true)
@@ -70,7 +70,7 @@ public class GpuReviewService {
         store.lock(ids.getFirst());
         var rows = store.jdbc().query("select allocation_id, decision from gpu_reclaim_reviews where public_id = ? for update", (rs, row) -> Map.entry(rs.getLong("allocation_id"), rs.getString("decision") == null ? "" : rs.getString("decision")), id);
         if (rows.isEmpty()) { throw GpuErrors.notFound(); }
-        if (!rows.getFirst().getValue().isEmpty()) { throw GpuErrors.conflict(ErrorCodes.GPU_REVIEW_ALREADY_DECIDED, "이미 처리한 검토입니다."); }
+        if (!rows.getFirst().getValue().isEmpty()) { throw GpuErrors.conflict(ErrorCodes.GPU_REVIEW_ALREADY_DECIDED, "이미 처리한 검토예요."); }
         long allocation = rows.getFirst().getKey();
         Timestamp snooze = decision == GpuReviewDecision.KEEP ? Timestamp.from(clock.instant().plus(Duration.ofHours(settings.requiredValid(SettingsService.GPU_LOW_UTIL_SNOOZE_HOURS).asInt()))) : null;
         if (decision == GpuReviewDecision.RECLAIM) { mutations.reclaim(actor, store.allocation(allocation).orElseThrow().publicId(), reason, ip); }

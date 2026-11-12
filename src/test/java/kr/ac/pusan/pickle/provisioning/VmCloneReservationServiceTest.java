@@ -70,7 +70,7 @@ class VmCloneReservationServiceTest {
         assertThatThrownBy(() -> service.reserve(canonical.getPublicId(), first.getPublicId(),
                 new NodePlacementBudget.VmPlacementResources(1, 1024, 10)))
                 .isInstanceOf(VmCloneReservationService.NoCapacityException.class)
-                .hasMessageContaining("수용할 수 있는 노드");
+                .hasMessageContaining("조건을 만족하는 노드");
     }
 
     @Test
@@ -80,7 +80,7 @@ class VmCloneReservationServiceTest {
         assertThatThrownBy(() -> service.reserve(canonical.getPublicId(), null,
                 new NodePlacementBudget.VmPlacementResources(2, 344, 10)))
                 .isInstanceOf(VmCloneReservationService.NoCapacityException.class)
-                .hasMessageContaining("수용할 수 있는 노드");
+                .hasMessageContaining("조건을 만족하는 노드");
     }
 
     @Test

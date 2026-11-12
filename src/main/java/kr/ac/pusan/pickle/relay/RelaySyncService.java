@@ -321,7 +321,7 @@ public class RelaySyncService {
             return;
         }
         String reason = "트래픽 임계값 초과로 자동 정지 (분당 신규 연결 " + connsPerMin
-                + "건, 분당 전송량 " + mbytesPerMin + "MB)";
+                + "건, 분당 전송량 " + mbytesPerMin + "MiB)";
         boolean managed = networkPaths.retirePort(
                 jdbcTemplate.queryForObject("select vm_id from port_mappings where id = ?",
                         Long.class, mappingId),
@@ -387,12 +387,12 @@ public class RelaySyncService {
                         rs.getLong(5), rs.getLong(6), rs.getLong(7), rs.getLong(8),
                         rs.getLong(9), rs.getBoolean(10)) : null, relayId);
         if (relay == null) {
-            throw retirementUnavailable("릴레이 retirement 상태를 찾을 수 없습니다.");
+            throw retirementUnavailable("릴레이 retirement 상태를 찾을 수 없어요.");
         }
         if (!capable) {
             if (relay.armed()) {
                 throw retirementUnavailable(
-                        "retirement이 활성화된 릴레이가 mapping-retirement-v1을 보고하지 않았습니다.");
+                        "retirement이 활성화된 릴레이가 mapping-retirement-v1을 보고하지 않았어요.");
             }
             return;
         }
@@ -401,20 +401,20 @@ public class RelaySyncService {
                 || request.managedGenerationHighWater() == null
                 || request.retirementHighWater() == null
                 || request.retirementReceipts() == null) {
-            throw retirementUnavailable("retirement capability 보고가 완전하지 않습니다.");
+            throw retirementUnavailable("retirement capability 보고에 필요한 값이 빠졌어요.");
         }
         if (relay.ledgerId() != null && !relay.ledgerId().equals(request.retirementLedgerId())) {
-            throw retirementUnavailable("릴레이 retirement ledger identity가 변경되었습니다.");
+            throw retirementUnavailable("릴레이 retirement ledger identity가 저장된 값과 달라요.");
         }
         if (request.mappingIdHighWater() < relay.reportedMappingHighWater()
                 || request.flowMarkHighWater() < relay.reportedFlowHighWater()
                 || request.managedGenerationHighWater()
                         < relay.reportedManagedGenerationHighWater()
                 || request.retirementHighWater() < relay.reportedRetirementHighWater()) {
-            throw retirementUnavailable("릴레이 retirement high-watermark가 역행했습니다.");
+            throw retirementUnavailable("릴레이 retirement high-watermark가 이전 보고 값보다 작아요.");
         }
         if (relay.armed() && !relay.namespaceReady()) {
-            throw retirementUnavailable("릴레이 conntrack mark namespace 확인이 완료되지 않았습니다.");
+            throw retirementUnavailable("릴레이 conntrack mark namespace의 준비가 확인되지 않았어요.");
         }
         if (relay.armed()) {
             Long legacy = jdbcTemplate.queryForObject("""
@@ -424,7 +424,7 @@ public class RelaySyncService {
                     """, Long.class, relayId);
             if (legacy != null && legacy > 0) {
                 throw retirementUnavailable(
-                        "표시되지 않은 legacy mapping이 있어 retirement activation을 거부했습니다.");
+                        "legacy 상태의 매핑이 남아 있어 retirement activation을 거부했어요.");
             }
         }
         long maxReceiptMark = 0;
@@ -434,7 +434,7 @@ public class RelaySyncService {
             if (!"CLEARED".equals(receipt.state())
                     || receipt.tupleHash() == null
                     || !receipt.tupleHash().matches("[0-9a-f]{64}")) {
-                throw retirementUnavailable("retirement receipt 형식이 올바르지 않습니다.");
+                throw retirementUnavailable("retirement receipt 형식이 올바르지 않아요.");
             }
             maxReceiptMark = Math.max(maxReceiptMark, receipt.flowMark());
             maxReceiptGeneration = Math.max(maxReceiptGeneration, receipt.generation());
@@ -456,7 +456,7 @@ public class RelaySyncService {
                         """, Long.class, relayId, receipt.mappingId(), receipt.flowMark());
                 if (collision != null && collision > 0) {
                     throw retirementUnavailable(
-                            "복원된 DB가 consumer ledger에서 퇴역한 mapping/mark를 다시 활성화했습니다.");
+                            "consumer ledger에서 정리한 mapping 또는 flow mark가 현재 매핑과 겹쳐요.");
                 }
                 log.warn("relay {} reports durable retirement {} absent from this DB; "
                         + "high-watermark retained", relayId, receipt.retirementId());
@@ -465,7 +465,7 @@ public class RelaySyncService {
         if (request.mappingIdHighWater() < maxReceiptMappingId
                 || request.flowMarkHighWater() < maxReceiptMark
                 || request.retirementHighWater() < maxReceiptGeneration) {
-            throw retirementUnavailable("retirement receipt가 보고 high-watermark를 초과합니다.");
+            throw retirementUnavailable("retirement receipt가 보고 high-watermark를 초과해요.");
         }
         jdbcTemplate.update("""
                 update relays
@@ -515,7 +515,7 @@ public class RelaySyncService {
 
     private static ApiException retirementUnavailable(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.SOURCE_POLICY_UNAVAILABLE,
-                "릴레이 retirement 상태를 확인할 수 없습니다", detail);
+                "릴레이 retirement 상태를 확인할 수 없어요", detail);
     }
 
     private record RetirementRelay(boolean armed, java.util.UUID ledgerId,
@@ -562,13 +562,13 @@ public class RelaySyncService {
                         && !networkPolicyCapability.sourceAclAvailable(currentCapabilities)) {
                     throw new ApiException(HttpStatus.CONFLICT,
                             ErrorCodes.SOURCE_POLICY_UNAVAILABLE,
-                            "릴레이 출발지 정책을 적용할 수 없습니다",
-                            "현재 relay-agent가 source-acl-v1 기능을 보고하지 않았습니다.");
+                            "릴레이 출발지 정책을 적용할 수 없어요",
+                            "현재 relay-agent가 source-acl-v1 기능을 보고하지 않았어요.");
                 }
                 Long flowMark = rs.getObject("flow_mark", Long.class);
                 if (retirementArmed && (flowMark == null || flowMark <= 0
                         || flowMark > UINT32_MAX)) {
-                    throw retirementUnavailable("managed mapping flowMark가 올바르지 않습니다.");
+                    throw retirementUnavailable("managed mapping flowMark가 올바르지 않아요.");
                 }
                 mappings.add(new RelaySyncResponse.MappingSnapshot(mappingId,
                         rs.getString("proto"), rs.getInt("public_port"), targetAddr,

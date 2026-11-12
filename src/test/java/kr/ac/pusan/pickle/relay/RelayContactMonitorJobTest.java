@@ -46,7 +46,7 @@ class RelayContactMonitorJobTest {
                 select body from notifications
                  where event = 'relay.never_contacted'
                    and payload ->> 'relayId' = ? limit 1
-                """, String.class, String.valueOf(relayId))).contains("한 번도 동기화하지");
+                """, String.class, String.valueOf(relayId))).contains("동기화가 아직 없어요");
     }
 
     @Test
@@ -65,7 +65,7 @@ class RelayContactMonitorJobTest {
                 select body from notifications
                  where event = 'relay.never_contacted'
                    and payload ->> 'relayId' = ? limit 1
-                """, String.class, String.valueOf(relayId))).contains("토큰이 발급되지 않은");
+                """, String.class, String.valueOf(relayId))).contains("sync 토큰이 없어");
     }
 
     @Test

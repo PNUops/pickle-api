@@ -20,7 +20,7 @@ public class InstitutionAuthorityController {
 
     @GetMapping
     @Operation(operationId = "getMyInstitutionAuthority", summary = "현재 계정의 기관 업무와 부여 출처 조회",
-            description = "표시 역할과 실제 기관 업무를 구분합니다. 권한 상태를 확인할 수 없으면 INVALID로 표시하며 개인 접근권한과 시스템 역할을 바꾸지 않습니다.")
+            description = "표시 역할과 실제 기관 업무를 구분해요. 권한 상태를 확인할 수 없으면 INVALID로 표시하며 개인 접근권한과 시스템 역할은 바꾸지 않아요.")
     public InstitutionAuthorityResponse getMyInstitutionAuthority(@AuthenticationPrincipal AuthenticatedUser actor) {
         var context = actor.institutionContext();
         var grants = context.authority().map(authority -> authority.assignments().stream().map(assignment -> {

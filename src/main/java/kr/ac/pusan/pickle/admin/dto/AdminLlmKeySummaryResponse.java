@@ -24,13 +24,13 @@ public record AdminLlmKeySummaryResponse(
         @Nullable Long dailyTokens,
         @Nullable BigDecimal creditLimit,
         @Nullable CreditLimitReset creditLimitReset,
-        @Schema(description = "유료 모델이 발급되어 현재 연결되어 있는지")
+        @Schema(description = "유료 모델용 키의 연결 구성 여부")
         @Nullable Boolean creditAxisConnected,
-        @Schema(description = "OpenRouter가 마지막으로 보고한 현재 limit window 사용액. 미관측이면 null")
+        @Schema(description = "OpenRouter가 마지막으로 보고한 키의 누적 사용액. 현재 리셋 창의 소비량이 아니며 미관측이면 null")
         @Nullable BigDecimal creditUsage,
-        @Schema(description = "Key 금액을 vendor에서 관측한 시각. 미관측이면 null")
+        @Schema(description = "키 금액을 공급자에서 관측한 시각. 미관측이거나 금융 정보가 미제공이면 null")
         @Nullable Instant creditUsageAt,
-        @Schema(description = "OpenRouter가 보고한 key 잔여 한도. 미관측 또는 무한도면 null")
+        @Schema(description = "OpenRouter가 보고한 키 잔여 한도. 미관측이거나 무한도 또는 금융 정보 미제공이면 null")
         @Nullable BigDecimal creditLimitRemaining,
         @Nullable UUID openrouterAccountId,
         @Nullable String openrouterAccountName,
@@ -41,7 +41,7 @@ public record AdminLlmKeySummaryResponse(
         @Nullable UUID requestId,
         Instant createdAt,
         @Schema(description = "개별 키 금융 정보의 현재 열람 권한") boolean financeVisible,
-        @Schema(description = "키 metadata의 현재 열람 권한") boolean metadataVisible,
+        @Schema(description = "키 메타데이터의 현재 열람 권한") boolean metadataVisible,
         @Schema(description = "키 사용 관측의 현재 열람 권한") boolean observationVisible, List<String> allowedWorkIds,
         @Nullable LlmTokenObservation tokenObservation) {
 

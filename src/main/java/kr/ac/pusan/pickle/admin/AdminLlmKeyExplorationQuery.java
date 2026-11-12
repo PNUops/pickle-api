@@ -125,7 +125,7 @@ public class AdminLlmKeyExplorationQuery {
             boolean token = Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from llm_models "
                     + "where public_name=? and enabled and visibility='PUBLIC' and budget_axis='TOKEN')", Boolean.class, model));
             if (!token && catalogue.listed().stream().noneMatch(row -> row.modelId().equalsIgnoreCase(model))) {
-                throw invalid("policyModel", "현재 cache에서 확인되는 공개 모델을 선택해 주세요.");
+                throw invalid("policyModel", "현재 카탈로그에서 확인되는 공개 모델을 선택해 주세요.");
             }
             boolean financial = !token || !PassthroughEndpoints.CHAT.equals(feature);
             if (missing(base, sources.policyKeyRows(actor, financial))) { throw denied(); }
@@ -208,7 +208,7 @@ public class AdminLlmKeyExplorationQuery {
     }
     private static ApiException denied() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                "접근 권한이 없습니다", "현재 조회 집합의 해당 필드를 읽을 수 없어 이 탐색 조건을 제공하지 않습니다.");
+                "접근 권한이 없어요", "현재 조회 대상의 해당 필드를 읽을 수 없어 이 탐색 조건을 사용할 수 없어요.");
     }
     private static ApiException invalid(String field, String message) {
         return ApiException.validationFailed(List.of(new FieldValidationError(field, message)));

@@ -543,8 +543,8 @@ class RequestRecipientsTest {
                  where user_id = ? and event = 'request.approved' and link_path = ?
                 """, owner.getId(), requestPath);
         assertThat((String) summary.get("body"))
-                .startsWith("리소스 '대상자 테스트' 신청이 승인되었습니다.\n")
-                .contains("대상자 3명 중 3명의 리소스는 생성 대기열에 들어갔습니다.");
+                .startsWith("리소스 '대상자 테스트' 신청이 승인됐어요.\n")
+                .contains("대상자 3명 중 3명의 리소스는 생성 대기열에 들어갔어요.");
 
         materializer.run();
         assertThat(keyCount(requestId)).isEqualTo(3);
@@ -600,7 +600,7 @@ class RequestRecipientsTest {
                 select body from notifications where user_id = ? and event = 'request.approved' and link_path = ?
                 """, String.class, orgAdmin.getId(), "/console/requests/" + created.get("id").asString());
         assertThat(bodies).hasSize(1);
-        assertThat(bodies.get(0)).contains("대상자 2명 중 1명의 리소스는 생성 대기열에 들어갔고 1명의 리소스는 가입하면 만들어집니다.")
+        assertThat(bodies.get(0)).contains("대상자 2명 중 1명의 리소스는 생성 대기열에 들어갔고 1명은 가입 대기 상태예요.")
                 // The approver's own comment is not quoted back to them.
                 .doesNotContain("검토 의견").doesNotContain("한 번에 승인");
     }
@@ -728,7 +728,7 @@ class RequestRecipientsTest {
                 .containsExactly("CANCELED", "CANCELED");
         assertThat(jdbcTemplate.queryForObject(
                 "select reason from request_recipients where request_id = ? and user_id = ?",
-                String.class, requestId, member.getId())).isEqualTo("워크스페이스가 삭제되었습니다.");
+                String.class, requestId, member.getId())).isEqualTo("워크스페이스가 삭제됐어요.");
         materializer.run();
         assertThat(keyCount(requestId)).isZero();
     }
@@ -788,7 +788,7 @@ class RequestRecipientsTest {
         assertThat(recipientStatusByInvitation(requestId, invitation)).isEqualTo("CANCELED");
         assertThat(jdbcTemplate.queryForObject(
                 "select reason from request_recipients where request_id = ?", String.class, requestId))
-                .isEqualTo("초대가 취소되었습니다.");
+                .isEqualTo("초대가 취소됐어요.");
     }
 
     // ------------------------------------------------------------ money

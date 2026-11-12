@@ -109,7 +109,7 @@ public class TerminalService {
         // 1) global kill switch first (a disabled feature reveals nothing).
         if (!settingsService.bool(SettingsService.WEB_TERMINAL_ENABLED, false)) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.TERMINAL_DISABLED,
-                    "웹 터미널을 사용할 수 없습니다", "웹 터미널 기능이 현재 비활성화되어 있습니다.");
+                    "웹 터미널을 사용할 수 없어요", "웹 터미널 기능이 현재 꺼져 있어요.");
         }
         // 2) visible VM + workspace MEMBER+. A non-member (or missing VM) is masked as
         //    404 (existence stays private); a VIEWER already sees the VM via getVm,
@@ -117,17 +117,17 @@ public class TerminalService {
         //    a misleading 404.
         Vm vm = vmRepository.findByPublicId(publicVmId).orElseThrow(VmAccessService::vmNotFound);
         vmAccessService.of(vm, actor.id()).requireAtLeast(ResourceRole.MEMBER,
-                "웹 터미널을 열 권한이 없습니다", "이 VM의 참여자 이상만 웹 터미널을 사용할 수 있습니다.");
+                "웹 터미널을 열 권한이 없어요", "이 VM의 참여자 이상만 웹 터미널을 사용할 수 있어요.");
         // 3) RUNNING.
         if (vm.getStatus() != VmStatus.RUNNING) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 수행할 수 없는 작업입니다",
-                    "실행 중인 VM에서만 웹 터미널을 열 수 있습니다.");
+                    "현재 상태에서는 이 작업을 할 수 없어요",
+                    "실행 중인 VM에서만 웹 터미널을 열 수 있어요.");
         }
         // 4) per-VM admin block (same flag the SSH gateway reads).
         if (vm.isSshGatewayBlocked()) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근이 차단된 VM입니다", "관리자가 이 VM의 원격 접속을 차단했습니다. 관리자에게 문의하세요.");
+                    "접속이 차단된 VM이에요", "관리자가 이 VM의 SSH 게이트웨이 접속과 웹 터미널 사용을 차단했어요. 관리자에게 문의해 주세요.");
         }
         // 5) dual-key rate limit (either key over budget → 429).
         int limit = properties.rateLimitPerMinute();
@@ -160,7 +160,7 @@ public class TerminalService {
         if (userCount >= properties.perUserCap() || vmCount >= properties.perVmCap()
                 || orgCount >= properties.perOrgCap()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.TERMINAL_SESSION_LIMIT,
-                    "동시 터미널 세션 상한을 초과했습니다", "사용 중인 터미널 세션을 닫은 뒤 다시 시도해 주세요.");
+                    "동시 터미널 한도에 도달했어요", "사용 중인 터미널 세션을 닫은 뒤 다시 시도해 주세요.");
         }
     }
 
@@ -224,7 +224,7 @@ public class TerminalService {
     public void sessionStart(String sessionId, String clientIp) {
         if (!sessionRegistry.markStarted(sessionId, clientIp)) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "세션 상태가 올바르지 않습니다", "존재하지 않거나 이미 시작된 세션입니다.");
+                    "세션 상태를 확인해 주세요", "존재하지 않거나 이미 시작된 세션이에요.");
         }
         MirrorSession s = sessionRegistry.get(sessionId).orElseThrow();
         // detail carries lifecycle metadata ONLY — never frame/keystroke content.
@@ -405,7 +405,7 @@ public class TerminalService {
 
     private static ApiException sessionUserGone() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
-                "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요.");
+                "인증이 필요해요", "액세스 토큰을 사용할 수 없어요. 토큰을 갱신한 뒤 다시 시도해 주세요.");
     }
 
     /**

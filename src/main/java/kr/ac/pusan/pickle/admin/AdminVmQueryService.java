@@ -207,7 +207,7 @@ public class AdminVmQueryService {
         Sort resolved = SORTS.get(sort);
         if (resolved == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("sort",
-                    "정렬 기준이 올바르지 않습니다. (허용: " + String.join(", ",
+                    "정렬 기준은 다음 중에서 골라 주세요 (" + String.join(", ",
                             SORTS.keySet().stream().sorted().toList()) + ")")));
         }
         return resolved;

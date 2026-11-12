@@ -26,10 +26,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class OrgHeadroomService {
 
-    static final String GUIDANCE_AMPLE = "자원에 여유가 있어 승인이 가능합니다.";
-    static final String GUIDANCE_MEMORY = "메모리 여유가 부족해 신중한 승인이 필요합니다.";
-    static final String GUIDANCE_VCPU = "vCPU 오버커밋 비율이 높아 신중한 승인이 필요합니다.";
-    static final String GUIDANCE_BOTH = "vCPU와 메모리 여유가 모두 부족해 신중한 승인이 필요합니다.";
+    static final String GUIDANCE_AMPLE = "할당 현황을 참고해 승인 여부를 검토해 주세요.";
+    static final String GUIDANCE_MEMORY = "메모리 할당 비율이 높아 신중한 검토가 필요해요.";
+    static final String GUIDANCE_VCPU = "vCPU 오버커밋 비율이 높아 신중한 검토가 필요해요.";
+    static final String GUIDANCE_BOTH = "vCPU 오버커밋과 메모리 할당 비율이 높아 신중한 검토가 필요해요.";
 
     private static final double DEFAULT_VCPU_OVERCOMMIT_WARN = 3.0;
     private static final double DEFAULT_MEMORY_USAGE_WARN = 0.8;
@@ -74,11 +74,11 @@ public class OrgHeadroomService {
 
         List<String> warnings = new ArrayList<>();
         if (vcpuRatio >= vcpuWarn) {
-            warnings.add("vCPU 오버커밋 비율이 경고 임계값을 초과했습니다 (%.2f ≥ %.2f)."
+            warnings.add("vCPU 오버커밋 비율이 경고 기준 이상이에요 (%.2f ≥ %.2f)."
                     .formatted(vcpuRatio, vcpuWarn));
         }
         if (memoryRatio >= memoryWarn) {
-            warnings.add("메모리 할당 비율이 경고 임계값을 초과했습니다 (%.2f ≥ %.2f)."
+            warnings.add("메모리 할당 비율이 경고 기준 이상이에요 (%.2f ≥ %.2f)."
                     .formatted(memoryRatio, memoryWarn));
         }
         return new HeadroomResult(allocated, cpuThreads, memoryMb, capacity.diskGb(), vcpuRatio,

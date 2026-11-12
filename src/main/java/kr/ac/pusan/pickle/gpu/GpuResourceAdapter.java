@@ -17,11 +17,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class GpuResourceAdapter implements ResourceTypeAdapter {
     public static final ResourceAccessMessages MESSAGES = new ResourceAccessMessages(
-            "해당 GPU 할당이 존재하지 않습니다.",
-            new ResourceAccessMessages.Refusal("접근 권한이 없습니다", "GPU 할당에 대한 접근 권한을 요청해 주세요."),
-            new ResourceAccessMessages.Refusal("권한을 관리할 수 없습니다", "GPU 또는 워크스페이스 소유자만 접근 권한을 관리할 수 있습니다."),
-            "같은 워크스페이스의 구성원만 접근 권한을 받을 수 있습니다.", ErrorCodes.GPU_ACCESS_GRANT_EXISTS,
-            new ResourceAccessMessages.Refusal("이미 접근 권한이 있습니다", "기존 접근 권한의 등급을 변경해 주세요."));
+            "GPU 할당을 찾을 수 없어요.",
+            new ResourceAccessMessages.Refusal("접근 권한이 없어요", "GPU 할당 소유자나 워크스페이스 소유자에게 접근 권한을 요청해 주세요."),
+            new ResourceAccessMessages.Refusal("접근 권한을 관리할 수 없어요", "GPU 할당 소유자나 워크스페이스 소유자만 접근 권한을 관리할 수 있어요."),
+            "같은 워크스페이스 구성원에게만 접근 권한을 줄 수 있어요.", ErrorCodes.GPU_ACCESS_GRANT_EXISTS,
+            new ResourceAccessMessages.Refusal("이미 접근 권한이 있어요", "기존 접근 목록에서 등급을 바꿔 주세요."));
     private final GpuStore store;
     private final GpuQueryService query;
     public GpuResourceAdapter(GpuStore store, GpuQueryService query) { this.store = store; this.query = query; }

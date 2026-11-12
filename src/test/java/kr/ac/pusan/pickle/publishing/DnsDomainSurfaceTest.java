@@ -143,7 +143,7 @@ class DnsDomainSurfaceTest {
 
         assertThatThrownBy(() -> issue("onemore"))
                 .isInstanceOf(ApiException.class)
-                .hasMessageContaining("더 만들 수 없습니다");
+                .hasMessageContaining("더 만들 수 없어요");
     }
 
     @Test
@@ -445,7 +445,7 @@ class DnsDomainSurfaceTest {
         // refusal a request form makes.
         assertThatThrownBy(() -> issue("disabled"))
                 .isInstanceOf(ApiException.class)
-                .hasMessageContaining("발급할 수 없습니다");
+                .hasMessageContaining("발급할 수 없어요");
     }
 
     /**
