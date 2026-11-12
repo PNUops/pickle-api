@@ -92,6 +92,14 @@ springdoc:
     path: /api/v1/openapi
 
 pickle:
+  platform-hardware-observations:
+    enabled: ${PICKLE_PLATFORM_HARDWARE_ENABLED:false}
+    token: ${PICKLE_PLATFORM_HARDWARE_TOKEN:}
+    previous-token: ${PICKLE_PLATFORM_HARDWARE_PREVIOUS_TOKEN:}
+    allowed-source-ip: ${PICKLE_PLATFORM_HARDWARE_SOURCE_IP:}
+    source-id: ${PICKLE_PLATFORM_HARDWARE_SOURCE_ID:}
+    expected-asset-ids: ${PICKLE_PLATFORM_HARDWARE_ASSET_IDS:}
+    max-age: ${PICKLE_PLATFORM_HARDWARE_MAX_AGE:PT15M}
   jwt:
     # HS256 signing key, >= 32 bytes. No default in any profile: startup fails
     # fast when unset (secrets policy; set via /etc/pickle/api.env). Only the

@@ -136,6 +136,31 @@ TOKEN 사용량은 보존된 당일 이벤트로 집계하며 저장 한도와 v
 
 `GET /api/v1/admin/llm/usage`의 소비처는 `consumerPage`, `consumerSize`, `consumerSort`로,
 현재 한도 검토는 `reviewPage`, `reviewSize`로 탐색해요.
+
+`GET /api/v1/admin/llm/usage/performance`는 보관 중인 일별 기록 전체의 활용 성과를 읽어요.
+`days`를 생략하면 전체 기간, 지정하면 7일이나 30일, 90일을 집계해요. 실제 관측 업무의
+기관과 워크스페이스 범위를 적용해 요청과 토큰, 이용 기관과 워크스페이스, 키 수를 계산해요.
+180일을 넘는 추이는 월별로 반환해요. 모델과 소비처의 상위 목록 밖 요청도 별도 합계로
+제공하며 키에 연결되지 않은 요청은 소비처 수에 더하지 않아요.
+이용 모델 수는 성공한 요청의 모델 이름을 세요. 캐시 입력과 추론 토큰은 각각 입력과 출력
+토큰에 이미 포함돼 있어 전체 토큰에 다시 더하지 않아요.
+
+`GET /api/v1/admin/performance/overview`는 시스템 운영자와 시스템 관리자에게 자동 수집한
+장비 사양을 제공해요. 시스템 관리자에게만 현재 등록 계정과 워크스페이스, 승인 신청과 VM
+등록 이력, 활성 도메인의 전역 합계도 제공해요. 이 전역 합계는 LLM 조회 기간과 별개예요.
+
+전용 수집 원천은 `/internal/platform-hardware-observations`에 실제 장비 보고를 보내요.
+`PICKLE_PLATFORM_HARDWARE_ENABLED`는 기본 `false`이고, 전용 `TOKEN`과 `SOURCE_ID`, 직접
+접속하는 `SOURCE_IP`, 전체 장비의 `ASSET_IDS`를 같은 접두사로 설정해요. 교체 중인 이전
+bearer는 `PREVIOUS_TOKEN`으로 지정할 수 있어요. 전달 헤더는 허용하지 않으며
+`server.forward-headers-strategy=none`을 사용해요.
+
+보고는 64KiB 이내이며 설정한 전체 장비 목록이 있어야 해요. 이전 시각과 같은 시각의 보고는
+최신 값을 덮어쓰지 않아요. `PICKLE_PLATFORM_HARDWARE_MAX_AGE`는 기본 `PT15M`이고 설정이나
+신선한 전체 보고가 없으면 장비 정보는 null이에요. RAM은 OS가 실제 보고한 메모리이며,
+GPU 메모리를 측정할 수 없으면 null을 유지해요. 통합 메모리는 전용 VRAM에 더하지 않아요.
+자산 ID와 주소, 시리얼은 관리자 응답에 포함하지 않고 조회 중 장비에 접속하지도 않아요.
+
 `GET /api/v1/admin/llm/accounts/{id}/usage`는 `days`, `page`, `size`, `sort`를 받아요.
 계정의 키 페이지와 `keysUsed`, 전체 합계는 같은 KST 일별 rollup과 현재 계정 연결 관계로
 계산해요. 실제 일자 범위와 출처를 함께 제공하며 원시 요청의 capacity 키 개수와는 구분해요.
