@@ -983,7 +983,8 @@ SYS 세 역할은 `/admin/mail-deliveries`에서 당시 수신 주소와 결과,
 | `PICKLE_PROXMOX_CA_CERT` | PVE API 검증용 신뢰 CA PEM 경로 | 없음(JVM 기본) |
 | `PICKLE_TERMINAL_PUBLIC_KEY` | 웹 터미널 브리지 공개키. 게이트웨이 키와 따로 폐기 가능 | 없음(경고만) |
 | `PICKLE_SSH_HOST` / `PICKLE_SSH_PORT` | 응답에 노출하는 SSH 접속 주소 | 없음 / `0` |
-| `PICKLE_MFA_ENFORCE_ADMIN` | SYS 계층의 2FA 등록 강제. ORG 계층은 콘솔에서 권유해요 | `false` (prod `true`) |
+| `PICKLE_MFA_ENFORCE_ADMIN` | SYS 계층의 2FA 등록 강제 | `false` (prod `true`) |
+| `PICKLE_MFA_ENFORCE_ORG_ADMIN` | ORG 계층(ORG_ADMIN, ORG_MANAGER, ORG_VIEWER)의 2FA 등록 강제. 끄면 콘솔 권유만 남아요 | `false` (모든 프로필) |
 | `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | staging/prod 최초 SYS_ADMIN. 12자 이상과 비밀번호 정책을 통과해야 기동 | 없음 |
 | `PICKLE_ISOLATED_BOOTSTRAP_ENABLED` | `isolated-bootstrap` one-shot 명시 opt-in. 일반 `isolated`에서는 항상 false로 둠 | `false` |
 | `PICKLE_LLM_USAGE_ROLLUP_DIRECT_ENABLED` | 공유 JobRunr 워커가 꺼진 API의 일별 사용량 직접 집계. 기동 때 누락분을 채운 뒤 5분마다 실행하고 성공 시각과 watermark를 따로 감시해요 | `false` |

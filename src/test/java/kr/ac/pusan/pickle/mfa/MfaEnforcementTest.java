@@ -300,19 +300,19 @@ class MfaEnforcementTest {
     }
 
     /**
-     * The org tier is asked for 2FA, not required to have it (operator
-     * decision, 2026-08-25). Enforcement covers the two sys roles, which are
-     * the ones holding every destructive operation.
+     * The system switch alone covers the system tier only. The org tier has its
+     * own switch, which this class leaves at its default (off); the org-tier
+     * requirement is exercised in {@link MfaOrgEnforcementTest}.
      */
     @Test
-    void enforcementCoversTheSysTierOnly() throws Exception {
+    void theSystemSwitchAloneCoversTheSysTierOnly() throws Exception {
         User sysManager = createUser("mfa.enforce.sysmanager@pusan.ac.kr", UserRole.SYS_MANAGER);
         mockMvc.perform(get("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(sysManager)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
 
-        for (UserRole orgTier : new UserRole[] {UserRole.ORG_ADMIN, UserRole.ORG_MANAGER}) {
+        for (UserRole orgTier : new UserRole[] {UserRole.ORG_ADMIN, UserRole.ORG_MANAGER, UserRole.ORG_VIEWER}) {
             User orgAdmin = createUser("mfa.enforce." + orgTier.name().toLowerCase()
                     + "@pusan.ac.kr", orgTier);
             mockMvc.perform(get("/api/v1/workspaces")

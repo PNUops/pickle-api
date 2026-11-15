@@ -16,19 +16,18 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * When admin 2FA enforcement is on (the default in production), a <b>sys-tier</b>
- * account that has not enrolled in 2FA is a <b>scope restriction, not a login
- * block</b> — every endpoint returns 403 {@code MFA_ENROLLMENT_REQUIRED}
- * <i>except</i> the enrollment/auth/profile/meta surfaces it needs to actually
- * enroll. Runs right after {@link JwtAuthenticationFilter} so the principal is
- * already resolved.
+ * When admin 2FA enforcement covers an account's tier, an account that has not
+ * enrolled in 2FA is a <b>scope restriction, not a login block</b> — every
+ * endpoint returns 403 {@code MFA_ENROLLMENT_REQUIRED} <i>except</i> the
+ * enrollment/auth/profile/meta surfaces it needs to actually enroll. Runs right
+ * after {@link JwtAuthenticationFilter} so the principal is already resolved.
  *
- * <p>The org tier is deliberately outside it (operator decision, 2026-08-25).
- * Enforcement was switched off for all four admin roles because the
- * organisations' administrators could not use TOTP, which left the two roles
- * that hold every destructive operation unprotected as well. Splitting the
- * requirement by tier is what lets it come back on for those: the org tier is
- * asked in the console rather than blocked here.
+ * <p>Which tiers are covered is {@link MfaProperties#requiresEnrollment}'s
+ * call, and each tier has its own switch. The system tier is on in production.
+ * The org tier was left out on 2026-08-25 because the organisations'
+ * administrators could not use TOTP at the time, and switching enforcement off
+ * for every admin role had left the destructive system roles unprotected too;
+ * a separate org switch lets that tier be turned on without touching the other.
  */
 @Component
 public class MfaEnrollmentFilter extends OncePerRequestFilter {
@@ -47,10 +46,10 @@ public class MfaEnrollmentFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
-        if (mfaProperties.enforceAdmin() && !isExempt(request.getRequestURI())) {
+        if (!isExempt(request.getRequestURI())) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof AuthenticatedUser principal
-                    && principal.role().isSysTier()
+                    && mfaProperties.requiresEnrollment(principal.role())
                     && !mfaService.isEnrolled(principal.id())) {
                 problemJsonWriter.write(request, response, HttpStatus.FORBIDDEN.value(),
                         ErrorCodes.MFA_ENROLLMENT_REQUIRED, "2단계 인증 등록이 필요해요",

@@ -312,7 +312,7 @@ class InstitutionActorProviderTest {
         MfaService mfa = new MfaService(null, null, null, null, null, null, null, null, null, null) {
             @Override public boolean isEnrolled(long userId) { return false; }
         };
-        LifecycleActors actors = new LifecycleActors(provider, new MfaProperties(true), mfa, org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
+        LifecycleActors actors = new LifecycleActors(provider, new MfaProperties(true, false), mfa, org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
         AuthenticatedUser user = authenticate(account(UserRole.USER));
         TransactionTemplate preview = new TransactionTemplate(manager); preview.setReadOnly(true);
         preview.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
