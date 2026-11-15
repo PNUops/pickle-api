@@ -86,11 +86,19 @@ public class MfaEnrollmentFilter extends OncePerRequestFilter {
      * safe to leave open: accepting the current terms and filling 직책·학번·소속
      * grant nothing. The profile write can also change 이름, which is a display
      * string, and cannot move a stored 직책, 학번 or 소속.
+     *
+     * <p>{@code /api/v1/me/institution-authority} is listed, exactly, for the
+     * org tier. The console reads it before it will open the admin shell for an
+     * org role, and the enrolment screen lives inside that shell; refused, the
+     * shell shows "no institution to manage" and the redirect to enrolment
+     * lands on a dead end. It is a read-only GET of the account's own
+     * assignments, the same information {@code /me} already returns.
      */
     private static boolean isExempt(String uri) {
         return "/api/v1/me".equals(uri)
                 || "/api/v1/me/profile".equals(uri)
                 || "/api/v1/me/consents".equals(uri)
+                || "/api/v1/me/institution-authority".equals(uri)
                 || uri.startsWith("/api/v1/me/mfa/")
                 || uri.startsWith("/api/v1/auth/")
                 || uri.startsWith("/api/v1/meta/")

@@ -64,6 +64,12 @@ class MfaOrgEnforcementTest {
             mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.mfaEnabled").value(false));
+
+            // The console needs this read to open the admin shell for an org
+            // role, and the enrolment screen is inside that shell.
+            mockMvc.perform(get("/api/v1/me/institution-authority").header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.accountRole").value(role.name()));
         }
     }
 
