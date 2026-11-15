@@ -125,6 +125,9 @@ pickle:
     # Enforce 2FA enrollment for admin-tier accounts (scope-restrict the
     # unenrolled). Off in dev/test; the prod profile turns it on.
     enforce-admin: ${PICKLE_MFA_ENFORCE_ADMIN:false}
+    # The same requirement for the org tier (ORG_ADMIN/MANAGER/VIEWER). A
+    # separate switch so it can ship off and be turned on per environment.
+    enforce-org-admin: ${PICKLE_MFA_ENFORCE_ORG_ADMIN:false}
   console:
     # Console origin the notification mails link back to (no path, no trailing
     # slash): the stored link_path is appended to it.
@@ -494,6 +497,8 @@ pickle:
   mfa:
     # Admin-tier 2FA is mandatory in production; override per env if needed.
     enforce-admin: ${PICKLE_MFA_ENFORCE_ADMIN:true}
+    # Org-tier enforcement stays off until the environment turns it on.
+    enforce-org-admin: ${PICKLE_MFA_ENFORCE_ORG_ADMIN:false}
   mail:
     from: ${PICKLE_MAIL_FROM:}
 

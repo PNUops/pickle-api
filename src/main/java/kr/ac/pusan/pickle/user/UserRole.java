@@ -21,9 +21,9 @@ public enum UserRole {
 
     /**
      * Sys tier: not scoped to any organisation. Their {@code @PreAuthorize}
-     * grants differ, and this is also the 2FA enforcement boundary — a system
-     * viewer reads every organisation's data, personal data included, so it is
-     * inside it.
+     * grants differ. The whole tier, viewer included, is covered by the system
+     * 2FA enforcement switch: a system viewer reads every organisation's data,
+     * personal data included.
      */
     public boolean isSysTier() {
         return this == SYS_ADMIN || this == SYS_MANAGER || this == SYS_VIEWER;
