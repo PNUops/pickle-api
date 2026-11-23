@@ -2,21 +2,15 @@ package kr.ac.pusan.pickle.admin;
 
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
-import java.time.Clock;
-import kr.ac.pusan.pickle.admin.dto.AdminApprovalImageReference;
 import kr.ac.pusan.pickle.admin.dto.AdminVmPlacementPreviewRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminVmPlacementPreviewResponse;
-import kr.ac.pusan.pickle.admin.dto.AdminVmPlacementPreviewResponse.AdminVmPlacementCandidate;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
-import kr.ac.pusan.pickle.provisioning.NodePlacementBudget;
-import kr.ac.pusan.pickle.provisioning.VmCloneReservationService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,43 +22,32 @@ import org.springframework.web.bind.annotation.RestController;
 @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_ADMIN')")
 public class AdminVmPlacementController {
     private final OrgRepository orgs;
-    private final VmCloneReservationService reservations;
-    private final Clock clock;
+    private final AdminVmPlacementPreviewService previews;
     private final kr.ac.pusan.pickle.security.institution.InstitutionAuthorization authorization;
     private final kr.ac.pusan.pickle.workspace.WorkspaceRepository workspaces;
 
-    public AdminVmPlacementController(OrgRepository orgs, VmCloneReservationService reservations, Clock clock,
+    public AdminVmPlacementController(OrgRepository orgs, AdminVmPlacementPreviewService previews,
             kr.ac.pusan.pickle.security.institution.InstitutionAuthorization authorization,
             kr.ac.pusan.pickle.workspace.WorkspaceRepository workspaces) {
-        this.orgs = orgs; this.reservations = reservations; this.clock = clock; this.authorization = authorization; this.workspaces = workspaces;
+        this.orgs = orgs; this.previews = previews; this.authorization = authorization; this.workspaces = workspaces;
     }
 
     @PostMapping("/preview")
-    @Operation(summary = "제안 VM 사양의 현재 한 VM 배치 조건 조회",
-            description = "신청 저장 전과 승인 검토에서 같은 이미지 revision과 VM 한 대의 사양을 조회해요. "
-                    + "호환 ACTIVE replica와 ACTIVE 노드, 실제 배치 용량 계산을 재사용해요. "
-                    + "용량을 예약하거나 승인 규칙을 바꾸지 않으며 여러 사람의 전체 생성이나 외부 적용 완료를 보장하지 않아요.")
-    @Transactional(readOnly = true)
+    @Operation(summary = "제안 VM 사양과 수량의 현재 배치 여유 조회",
+            description = "같은 사양 1~200대의 배치 가능 수량과 노드별 예산, 할당, 잔여와 계획 배치 후 잔여를 조회해요. "
+                    + "실제 배치 예산과 호환 이미지 조건을 사용하고 관리 상태와 실제 연결 관측을 구분해요. "
+                    + "확인되지 않은 노드는 가용 합계에서 제외해요. 용량을 예약하거나 승인 규칙을 바꾸지 않으며 전체 생성 완료를 보장하지 않아요.")
     public AdminVmPlacementPreviewResponse previewAdminVmPlacement(@AuthenticationPrincipal AuthenticatedUser actor,
             @Valid @RequestBody AdminVmPlacementPreviewRequest request) {
         var org = orgs.findByPublicId(request.orgId())
                 .filter(value -> placementAllowed(actor, value.getId(), request.workspaceId()))
                 .orElseThrow(() -> ApiException.validationFailed(java.util.List.of(
                         new FieldValidationError("orgId", "신청을 승인할 수 있는 기관을 선택해 주세요."))));
-        var observedAt = clock.instant();
-        VmCloneReservationService.VmClonePlacementObservation observation;
         try {
-            observation = reservations.observe(request.imageId(), new NodePlacementBudget.VmPlacementResources(
-                    request.vcpu(), request.memoryMb(), request.diskGb()), observedAt);
+            return previews.preview(org.getPublicId(), request);
         } catch (IllegalArgumentException missing) {
             throw ApiException.validationFailed(java.util.List.of(new FieldValidationError("imageId", missing.getMessage())));
         }
-        var image = observation.image();
-        var candidates = observation.candidates().stream().map(value -> new AdminVmPlacementCandidate(
-                value.node().getPublicId(), value.node().getName(), value.fitsOneNow())).toList();
-        return new AdminVmPlacementPreviewResponse(org.getPublicId(), observedAt, request.imageId(),
-                new AdminApprovalImageReference(image.getPublicId(), image.getDisplayName(), image.getVersion(), observation.selectableNow()),
-                candidates, candidates.stream().anyMatch(AdminVmPlacementCandidate::fitsOneNow));
     }
     private boolean placementAllowed(AuthenticatedUser actor, long orgId, java.util.UUID workspaceId) {
         if (actor.role().isSysTier()) { return actor.role() == UserRole.SYS_ADMIN; }

@@ -359,6 +359,26 @@ class AdminRequestReviewTest {
     }
 
     @Test
+    void placementPreviewValidatesBatchBoundsAndPreservesTheDefaultCount() throws Exception {
+        var body = new java.util.LinkedHashMap<String, Object>(Map.of("orgId", pub("orgs", org),
+                "imageId", pub("os_images", image), "vcpu", 1, "memoryMb", 512, "diskGb", 10));
+        preview(sys, body).andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1))
+                .andExpect(jsonPath("$.candidates[0].liveStatus").exists())
+                .andExpect(jsonPath("$.totals.remaining").exists());
+        for (int count : List.of(0, 201)) {
+            body.put("count", count);
+            preview(sys, body).andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.errors[0].field").value("count"));
+        }
+        body.put("count", 200);
+        body.put("nodeId", pub("nodes", node));
+        preview(sys, body).andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(200))
+                .andExpect(jsonPath("$.nodeId").value(pub("nodes", node).toString()));
+    }
+
+    @Test
     void periodAndTextFiltersUseSnapshotAndRunBeforePagination() throws Exception {
         String prefix = "filter-" + UUID.randomUUID();
         LocalDate date = LocalDate.now(ClockConfig.KST).plusDays(30);

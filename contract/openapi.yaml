@@ -3068,20 +3068,80 @@ components:
       type: "object"
     AdminVmPlacementCandidate:
       properties:
+        after:
+          anyOf:
+          - $ref: "#/components/schemas/PlacementResources"
+          - type: "null"
+        allocated:
+          $ref: "#/components/schemas/PlacementResources"
+        budget:
+          anyOf:
+          - $ref: "#/components/schemas/PlacementResources"
+          - type: "null"
+        capacityMode:
+          $ref: "#/components/schemas/PlacementCapacityMode"
+        eligible:
+          type: "boolean"
+        exclusionReasons:
+          items:
+            $ref: "#/components/schemas/PlacementExclusionReason"
+          type: "array"
         fitsOneNow:
           type: "boolean"
+        limitingResources:
+          items:
+            $ref: "#/components/schemas/PlacementResourceAxis"
+          type: "array"
+        liveObservedAt:
+          format: "date-time"
+          type: "string"
+        liveStatus:
+          $ref: "#/components/schemas/PlacementLiveStatus"
+          description: "실제 상태 조회의 응답 여부예요. UNKNOWN은 꺼짐을 확정하지 않으며 확인된 가용량에서 제외해요."
         nodeId:
           format: "uuid"
           type: "string"
         nodeName:
           type: "string"
+        placeableCount:
+          description: "이 노드에 배치할 수 있는 수량이며 요청 count를 넘지 않아요."
+          format: "int32"
+          type: "integer"
+        plannedCount:
+          description: "자동 배치 우선순위 또는 지정 노드로 계산한 이번 제안의 배치 대수예요."
+          format: "int32"
+          type: "integer"
+        remaining:
+          anyOf:
+          - $ref: "#/components/schemas/PlacementResources"
+          - type: "null"
+        status:
+          $ref: "#/components/schemas/NodeStatus"
       required:
+      - "allocated"
+      - "capacityMode"
+      - "eligible"
+      - "exclusionReasons"
       - "fitsOneNow"
+      - "limitingResources"
+      - "liveObservedAt"
+      - "liveStatus"
       - "nodeId"
       - "nodeName"
+      - "placeableCount"
+      - "plannedCount"
+      - "status"
       type: "object"
     AdminVmPlacementPreviewRequest:
       properties:
+        count:
+          description: "같은 사양으로 만들 VM 수예요. 생략하면 1대이며 용량을 예약하지 않아요."
+          format: "int32"
+          maximum: 200
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
         diskGb:
           format: "int32"
           minimum: 1
@@ -3093,6 +3153,12 @@ components:
           format: "int32"
           minimum: 256
           type: "integer"
+        nodeId:
+          description: "직접 지정할 노드예요. 생략하면 자동 배치 조건으로 계산해요."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         orgId:
           format: "uuid"
           type: "string"
@@ -3119,32 +3185,53 @@ components:
           items:
             $ref: "#/components/schemas/AdminVmPlacementCandidate"
           type: "array"
+        count:
+          format: "int32"
+          type: "integer"
+        fitsAllNow:
+          type: "boolean"
         fitsAnyOneNow:
-          description: "현재 한 VM의 제안 사양에 맞는 노드가 있는지 나타내요. N명 전체의 용량 예약이나 승인 성공을 보장하\
-            지 않아요."
+          description: "현재 확인된 후보에 한 대 이상 배치할 수 있는지 나타내요."
           type: "boolean"
         image:
           $ref: "#/components/schemas/AdminApprovalImageReference"
-          description: "입력 이미지와 같은 논리 revision의 canonical 이미지 정보예요. 입력 ID는 inputImageId로\
-            \ 확인해요."
+          description: "입력 이미지와 같은 논리 revision의 canonical 이미지 정보예요."
         inputImageId:
           description: "검증한 입력 이미지 ID예요. 호환 replica를 입력하면 image.id의 canonical ID와\
             \ 다를 수 있어요."
           format: "uuid"
           type: "string"
+        nodeId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         observedAt:
           format: "date-time"
           type: "string"
         orgId:
           format: "uuid"
           type: "string"
+        placeableCount:
+          format: "int32"
+          type: "integer"
+        shortfallCount:
+          format: "int32"
+          type: "integer"
+        totals:
+          $ref: "#/components/schemas/PlacementTotals"
       required:
       - "candidates"
+      - "count"
+      - "fitsAllNow"
       - "fitsAnyOneNow"
       - "image"
       - "inputImageId"
       - "observedAt"
       - "orgId"
+      - "placeableCount"
+      - "shortfallCount"
+      - "totals"
       type: "object"
     AdminWorkspaceDetailResponse:
       properties:
@@ -12022,6 +12109,70 @@ components:
       - "memoryMiB"
       - "physicalHosts"
       type: "object"
+    PlacementCapacityMode:
+      enum:
+      - "PREPARED"
+      - "LEGACY"
+      - "INVALID"
+      type: "string"
+    PlacementExclusionReason:
+      enum:
+      - "INACTIVE_NODE"
+      - "IMAGE_UNAVAILABLE"
+      - "NODE_NOT_SELECTED"
+      - "LIVE_STATUS_UNKNOWN"
+      - "INVALID_CAPACITY"
+      - "DISK_BELOW_MINIMUM"
+      type: "string"
+    PlacementLiveStatus:
+      enum:
+      - "REACHABLE"
+      - "UNKNOWN"
+      type: "string"
+    PlacementResourceAxis:
+      enum:
+      - "CPU"
+      - "MEMORY"
+      - "DISK"
+      type: "string"
+    PlacementResources:
+      description: "배치 예산의 자원 수치예요. null은 해당 축에 합계 배치 한도가 없거나 확인할 수 없다는 뜻이며 0과 달라요\
+        ."
+      properties:
+        diskGb:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        memoryMb:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        vcpu:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+      type: "object"
+    PlacementTotals:
+      description: "현재 확인된 유효 후보만 합산해요. 후보가 없으면 각 축은 0이에요. after는 배치 가능한 수량을 계획한 뒤\
+        의 잔여량이며 부족 대수는 shortfallCount로 구분해요."
+      properties:
+        after:
+          $ref: "#/components/schemas/PlacementResources"
+        allocated:
+          $ref: "#/components/schemas/PlacementResources"
+        budget:
+          $ref: "#/components/schemas/PlacementResources"
+        remaining:
+          $ref: "#/components/schemas/PlacementResources"
+      required:
+      - "after"
+      - "allocated"
+      - "budget"
+      - "remaining"
+      type: "object"
     PortForwardApplyState:
       enum:
       - "PENDING"
@@ -15777,7 +15928,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API예요. JWT Bearer로 인증해요. 오류 응답은 RFC 9457\
     \ problem+json(Problem 스키마)을 따라요."
   title: "Pickle API"
-  version: "0.116.0"
+  version: "0.117.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -20858,9 +21009,9 @@ paths:
       - "admin-vm-flavor-controller"
   /admin/vm-placement/preview:
     post:
-      description: "신청 저장 전과 승인 검토에서 같은 이미지 revision과 VM 한 대의 사양을 조회해요. 호환 ACTIVE\
-        \ replica와 ACTIVE 노드, 실제 배치 용량 계산을 재사용해요. 용량을 예약하거나 승인 규칙을 바꾸지 않으며 여러 사람의\
-        \ 전체 생성이나 외부 적용 완료를 보장하지 않아요."
+      description: "같은 사양 1~200대의 배치 가능 수량과 노드별 예산, 할당, 잔여와 계획 배치 후 잔여를 조회해요. 실제 배\
+        치 예산과 호환 이미지 조건을 사용하고 관리 상태와 실제 연결 관측을 구분해요. 확인되지 않은 노드는 가용 합계에서 제외해요. 용량을\
+        \ 예약하거나 승인 규칙을 바꾸지 않으며 전체 생성 완료를 보장하지 않아요."
       operationId: "previewAdminVmPlacement"
       requestBody:
         content:
@@ -20881,7 +21032,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류: 상태 코드와 무관하게 Problem 형태"
-      summary: "제안 VM 사양의 현재 한 VM 배치 조건 조회"
+      summary: "제안 VM 사양과 수량의 현재 배치 여유 조회"
       tags:
       - "admin-vm-placement-controller"
   /admin/vms:
