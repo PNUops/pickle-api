@@ -58,6 +58,14 @@ public final class NodePlacementBudget {
         return reservationAware;
     }
 
+    /** A null axis has no aggregate admission limit under the legacy policy. */
+    public VmPlacementLimits limits() {
+        return new VmPlacementLimits(reservationAware ? cpuThreads : null, memoryMb,
+                reservationAware ? diskGb : null);
+    }
+
+    public record VmPlacementLimits(@Nullable Long vcpu, long memoryMb, @Nullable Long diskGb) { }
+
     private static boolean fitsDimension(long limit, long allocated, long requested) {
         return requested <= limit && allocated <= limit - requested;
     }

@@ -92,11 +92,15 @@ public class ProxmoxClient {
 
     private final ProxmoxProperties properties;
     private final RestClient restClient;
+    private final RestClient placementObservationClient;
 
     public ProxmoxClient(ProxmoxProperties properties) {
         this.properties = properties;
         this.restClient = RestClient.builder()
                 .requestFactory(requestFactory(properties))
+                .build();
+        this.placementObservationClient = RestClient.builder()
+                .requestFactory(requestFactory(properties, Duration.ofSeconds(1), Duration.ofSeconds(2)))
                 .build();
     }
 
@@ -114,6 +118,12 @@ public class ProxmoxClient {
     /** {@code GET /nodes/{n}/status} — live CPU/memory numbers for the admin dashboard. */
     public NodeStatusInfo nodeStatus(String apiHost, String node) {
         return call(HttpMethod.GET, uri(apiHost, "nodes", node, "status"), null, NODE_STATUS_RESPONSE);
+    }
+
+    /** A short, read-only status request for an interactive placement observation. */
+    public NodeStatusInfo nodeStatusForPlacementPreview(String apiHost, String node) {
+        return call(placementObservationClient, HttpMethod.GET, uri(apiHost, "nodes", node, "status"), null,
+                NODE_STATUS_RESPONSE);
     }
 
     /** {@code GET /nodes/{n}/storage} — pool capacity/usage (needs Datastore.Audit). */
@@ -535,9 +545,14 @@ public class ProxmoxClient {
      */
     private <T> T call(HttpMethod method, URI uri, Map<String, String> form,
             TypeReference<Envelope<T>> responseType) {
+        return call(restClient, method, uri, form, responseType);
+    }
+
+    private <T> T call(RestClient client, HttpMethod method, URI uri, Map<String, String> form,
+            TypeReference<Envelope<T>> responseType) {
         String description = method + " " + uri.getPath();
         log.debug("proxmox {}", description);
-        RestClient.RequestBodySpec spec = restClient.method(method)
+        RestClient.RequestBodySpec spec = client.method(method)
                 .uri(uri)
                 .header(HttpHeaders.AUTHORIZATION, authorizationHeader())
                 .accept(MediaType.APPLICATION_JSON);
@@ -617,13 +632,18 @@ public class ProxmoxClient {
 
     private static org.springframework.http.client.JdkClientHttpRequestFactory requestFactory(
             ProxmoxProperties properties) {
+        return requestFactory(properties, properties.connectTimeout(), properties.readTimeout());
+    }
+
+    private static org.springframework.http.client.JdkClientHttpRequestFactory requestFactory(
+            ProxmoxProperties properties, Duration connectTimeout, Duration readTimeout) {
         java.net.http.HttpClient.Builder builder = java.net.http.HttpClient.newBuilder()
-                .connectTimeout(properties.connectTimeout());
+                .connectTimeout(connectTimeout);
         if (!isBlank(properties.caCertPath())) {
             builder.sslContext(pinnedSslContext(properties.caCertPath()));
         }
         var factory = new org.springframework.http.client.JdkClientHttpRequestFactory(builder.build());
-        factory.setReadTimeout(properties.readTimeout());
+        factory.setReadTimeout(readTimeout);
         return factory;
     }
 
