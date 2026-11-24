@@ -751,11 +751,23 @@ VM은 그날까지 포함하는 종료일, LLM 키는 정확한 만료 시각을
 제공하며 외부 DNS 조회와 provider 적용, 감사나 작업 생성은 하지 않아요.
 
 `POST /api/v1/admin/vm-placement/preview`는 승인 가능한 기관과 `imageId`, `vcpu`, `memoryMb`,
-`diskGb`로 한 VM의 현재 배치를 확인해요. 저장 전과 승인 검토가 같은 조회를 사용해요.
-같은 논리 revision의 호환 ACTIVE replica와 노드, 실제 용량 계산으로 판정하고 노드 ID와 이름,
-한 VM 적합성만 제공해요. 일반 노드 읽기를 확대하거나 용량이나 다인 전체 용량을 예약하거나 승인하지 않아요.
-실제 생성 때 다시 확인해요. `inputImageId`는 검증한 입력, `image.id`는 canonical 식별자라
+`diskGb`, 선택 `count`(1~200, 기본 1)와 `nodeId`로 현재 배치 여유를 확인해요. 저장 전과
+승인 검토가 같은 조회를 사용해요. 실제 배치 예산에서 모든 기관의 삭제되지 않은 VM 할당을
+빼고, 호환 이미지와 노드 조건에 맞춰 배치 가능한 대수를 계산해요. CPU와 메모리, 디스크의
+예산과 할당, 현재 잔여와 계획 배치 후 잔여를 전체와 서버별로 제공해요. 배치 후 잔여는
+배치 가능한 대수까지만 반영하며 들어가지 않는 수량은 `shortfallCount`로 구분해요.
+예약 metadata가 없는 노드의 CPU와 디스크 합계에는 강제 한도가 없어 해당 잔여는 null이에요.
+
+노드의 등록 상태와 실제 연결 관측은 별개예요. 점검과 OFFLINE 노드, 이미지가 없는 노드도
+표시하며 실제 상태 조회에 응답하지 않은 노드는 `UNKNOWN`으로 표시하고 가용 합계에서 제외해요.
+확인 실패가 전원 꺼짐을 확정하지는 않아요. 조회는 예산이나 VM을 예약하지 않으며 실제 생성 때
+다시 확인해요. 연결 관측은 최대 네 노드를 병렬로 조회하고 전체 3초까지만 기다려요.
+미완료 조회는 미확인으로 처리해요.
+이 조회의 연결과 응답 제한은 각각 1초와 2초이며 일반 프로비저닝 제한과 별개예요. 최근 5초의
+관측은 원래 시각과 함께 재사용해요. `inputImageId`는 검증한 입력, `image.id`는 canonical 식별자라
 호환 replica를 입력하면 둘이 다를 수 있어요.
+배치 미리보기의 `candidates`는 배치 제외 노드도 담으므로 `eligible`과 제외 사유를 읽는 콘솔과
+함께 릴리스해요. 이전 콘솔과 새 API를 혼용하면 제외 노드를 선택지로 표시할 수 있어요.
 
 관리자 신청 목록의 `q`는 표시 이름과 목적, 신청자 이름과 이메일, 워크스페이스 이름을 검색하고
 프로필 학번은 검색하지 않아요. `requestedEndFrom`과 `requestedEndTo`, `reqIndefinite`는 저장된
@@ -983,7 +995,8 @@ SYS 세 역할은 `/admin/mail-deliveries`에서 당시 수신 주소와 결과,
 | `PICKLE_PROXMOX_CA_CERT` | PVE API 검증용 신뢰 CA PEM 경로 | 없음(JVM 기본) |
 | `PICKLE_TERMINAL_PUBLIC_KEY` | 웹 터미널 브리지 공개키. 게이트웨이 키와 따로 폐기 가능 | 없음(경고만) |
 | `PICKLE_SSH_HOST` / `PICKLE_SSH_PORT` | 응답에 노출하는 SSH 접속 주소 | 없음 / `0` |
-| `PICKLE_MFA_ENFORCE_ADMIN` | SYS 계층의 2FA 등록 강제. ORG 계층은 콘솔에서 권유해요 | `false` (prod `true`) |
+| `PICKLE_MFA_ENFORCE_ADMIN` | SYS 계층의 2FA 등록 강제 | `false` (prod `true`) |
+| `PICKLE_MFA_ENFORCE_ORG_ADMIN` | ORG 계층(ORG_ADMIN, ORG_MANAGER, ORG_VIEWER)의 2FA 등록 강제. 끄면 콘솔 권유만 남아요 | `false` (모든 프로필) |
 | `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | staging/prod 최초 SYS_ADMIN. 12자 이상과 비밀번호 정책을 통과해야 기동 | 없음 |
 | `PICKLE_ISOLATED_BOOTSTRAP_ENABLED` | `isolated-bootstrap` one-shot 명시 opt-in. 일반 `isolated`에서는 항상 false로 둠 | `false` |
 | `PICKLE_LLM_USAGE_ROLLUP_DIRECT_ENABLED` | 공유 JobRunr 워커가 꺼진 API의 일별 사용량 직접 집계. 기동 때 누락분을 채운 뒤 5분마다 실행하고 성공 시각과 watermark를 따로 감시해요 | `false` |

@@ -84,6 +84,26 @@ class ProxmoxClientTest {
     }
 
     @Test
+    void placementObservationUsesTheSameAuthenticatedReadWithItsOwnShortDeadline() {
+        String path = "/api2/json/nodes/" + NODE + "/status";
+        wm.server().stubFor(get(urlPathEqualTo(path)).willReturn(aResponse()
+                .withHeader("Content-Type", "application/json").withBody("{\"data\":{\"cpu\":0.25}}")));
+        assertThat(client.nodeStatusForPlacementPreview(wm.apiHost(), NODE).cpu()).isEqualTo(0.25);
+        wm.server().verify(getRequestedFor(urlPathEqualTo(path))
+                .withHeader("Authorization", equalTo(EXPECTED_AUTHORIZATION)));
+    }
+
+    @Test
+    void placementObservationTimeoutDoesNotShortenTheRegularClientTimeout() {
+        String path = "/api2/json/nodes/" + NODE + "/status";
+        wm.server().stubFor(get(urlPathEqualTo(path)).willReturn(aResponse().withFixedDelay(2500)
+                .withHeader("Content-Type", "application/json").withBody("{\"data\":{\"cpu\":0.25}}")));
+        assertThatThrownBy(() -> client.nodeStatusForPlacementPreview(wm.apiHost(), NODE))
+                .isInstanceOf(ProxmoxApiException.class);
+        assertThat(client.nodeStatus(wm.apiHost(), NODE).cpu()).isEqualTo(0.25);
+    }
+
+    @Test
     void firewallMutationUsesTheObservedDigestAndNeverTargetsTheHostFirewall() {
         String base = "/api2/json/nodes/pve1/qemu/102/firewall";
         wm.server().stubFor(put(urlPathEqualTo(base + "/options"))
